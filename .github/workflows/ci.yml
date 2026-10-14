@@ -1,0 +1,37 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call: # reused by publish.yml before anything is released
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: astral-sh/setup-uv@v6
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: deno publish --dry-run
+
+      # Conformance suite against what would actually ship: the packed npm
+      # tarball installed outside the checkout, and the CLI run by Deno (the
+      # JSR path). Each covers node, deno and node-deno targets.
+      - name: e2e (npm package)
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/pkg" && cd "$RUNNER_TEMP/pkg"
+          echo '{"private":true}' > package.json
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/tlockney-cdp-kernel-*.tgz
+          cd "$GITHUB_WORKSPACE"
+          CDPK_E2E_CLI="$RUNNER_TEMP/pkg/node_modules/.bin/cdp-kernel" npm run e2e
+      - name: e2e (Deno host)
+        run: CDPK_E2E_CLI="deno run -A src/main.ts" npm run e2e

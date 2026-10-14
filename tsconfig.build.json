@@ -1,0 +1,13 @@
+{
+  // Compiles src/ to dist/ for the npm package. Node won't type-strip .ts
+  // files under node_modules, so the published package has to be JS.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src/**/*.ts"]
+}

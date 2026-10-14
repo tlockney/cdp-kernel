@@ -1,0 +1,51 @@
+name: publish
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: tag matches package version
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json $version" >&2
+            exit 1
+          fi
+
+  jsr:
+    needs: [verify, version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # JSR OIDC: link this repo in the package's JSR settings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno publish
+
+  npm:
+    needs: [verify, version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets npm trusted publishing replace NPM_TOKEN later
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      # prepack builds dist/. No --provenance: npm only generates provenance
+      # for public source repositories.
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

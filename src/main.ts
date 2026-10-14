@@ -2,17 +2,19 @@
 // cdp-kernel CLI.
 //   cdp-kernel install [--runtime node|deno] [--deno-compat] [--name NAME] [--display NAME]
 //   cdp-kernel kernel --runtime node|deno [--deno-compat] --conn CONNECTION_FILE
+//   cdp-kernel version
 //
 // --deno-compat (Node only) adds a `Deno` namespace for notebooks written for
 // `deno jupyter`; see runtime/deno-compat.mjs.
 
+import process from "node:process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { Kernel, parseConnectionInfo } from "./kernel.ts";
 import type { RuntimeName } from "./target.ts";
+import { hostRuntime, kernelArgv, moduleOrigin, VERSION } from "./package.ts";
 
 function isRuntime(value: unknown): value is RuntimeName {
   return value === "node" || value === "deno";
@@ -29,22 +31,20 @@ function install(runtime: RuntimeName, denoCompat: boolean, name: string, displa
   const dir = join(kernelsDir(), name);
   mkdirSync(dir, { recursive: true });
   const spec = {
-    argv: [
-      process.execPath,
-      fileURLToPath(import.meta.url),
+    argv: kernelArgv(hostRuntime(), process.execPath, moduleOrigin(import.meta.url), [
       "kernel",
       "--runtime",
       runtime,
       ...(denoCompat ? ["--deno-compat"] : []),
       "--conn",
       "{connection_file}",
-    ],
+    ]),
     display_name: display,
     language: "typescript",
     // Interrupts arrive as interrupt_request on the control channel rather
     // than as SIGINT to this process.
     interrupt_mode: "message",
-    metadata: { runtime, denoCompat },
+    metadata: { runtime, denoCompat, version: VERSION },
   };
   writeFileSync(join(dir, "kernel.json"), JSON.stringify(spec, null, 2) + "\n");
   console.log(`installed kernelspec ${name} -> ${dir}`);
@@ -90,7 +90,12 @@ switch (positionals[0]) {
     await kernel.run();
     break;
   }
+  case "version":
+    console.log(VERSION);
+    break;
   default:
-    console.error("usage: cdp-kernel install [--runtime node|deno] | kernel --runtime node|deno --conn FILE");
+    console.error(
+      "usage: cdp-kernel install [--runtime node|deno] [--deno-compat] | kernel --runtime node|deno --conn FILE | version",
+    );
     process.exit(2);
 }

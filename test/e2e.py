@@ -8,10 +8,13 @@ gaps those tests leave (display ordering, TS, imports, npm:/jsr:).
     uv run --with jupyter_client --with nbformat python test/e2e.py [node] [deno]
 
 Set CDPK_E2E_OFFLINE=1 to skip the npm:/jsr: checks (they hit registries).
+Set CDPK_E2E_CLI to the command that runs the CLI (default: node src/main.ts),
+e.g. an installed npm bin, or "deno run -A src/main.ts" to test a Deno host.
 """
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -257,6 +260,11 @@ def checks(runtime, workdir, offline):
     return tests
 
 
+def cli_command():
+    override = os.environ.get("CDPK_E2E_CLI")
+    return shlex.split(override) if override else ["node", str(ROOT / "src/main.ts")]
+
+
 def main():
     # node-deno: the Node target with the opt-in Deno compatibility shim.
     runtimes = sys.argv[1:] or ["node", "deno", "node-deno"]
@@ -267,7 +275,7 @@ def main():
         for runtime in runtimes:
             base, _, compat = runtime.partition("-")
             subprocess.run(
-                ["node", str(ROOT / "src/main.ts"), "install", "--runtime", base] + (["--deno-compat"] if compat else []),
+                cli_command() + ["install", "--runtime", base] + (["--deno-compat"] if compat else []),
                 check=True, env={**os.environ, "JUPYTER_DATA_DIR": data_dir}, stdout=subprocess.DEVNULL,
             )
             workdir = Path(tempfile.mkdtemp())

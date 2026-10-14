@@ -1,17 +1,42 @@
 {
-  "name": "cdp-kernel",
+  "name": "@tlockney/cdp-kernel",
   "version": "0.1.0",
-  "private": true,
-  "description": "Jupyter kernel extracted from Deno's, driving any V8 runtime over the Chrome DevTools Protocol",
+  "description": "Deno's Jupyter kernel, extracted to run notebooks on any V8 runtime over the Chrome DevTools Protocol",
   "license": "MIT",
+  "author": "Thomas Lockney <thomas@lockney.net>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tlockney/cdp-kernel.git"
+  },
+  "keywords": ["jupyter", "kernel", "typescript", "notebook", "deno", "node", "cdp", "devtools-protocol"],
   "type": "module",
   "engines": {
     "node": ">=24"
   },
   "bin": {
-    "cdp-kernel": "src/main.ts"
+    "cdp-kernel": "dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/mod.d.ts",
+      "default": "./dist/mod.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "runtime/*.mjs",
+    "runtime/*.d.mts"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json",
+    "install:node": "node src/main.ts install --runtime node",
+    "install:deno": "node src/main.ts install --runtime deno",
+    "install:node-deno": "node src/main.ts install --runtime node --deno-compat",
+    "prepack": "npm run build",
     "test": "node --test test/*.test.ts",
     "e2e": "uv run --with nbclient --with nbformat --with jupyter_client python test/e2e.py"
   },
