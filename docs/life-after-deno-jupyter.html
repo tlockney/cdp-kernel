@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<!--
+  Field-dossier template.
+
+  REGIONS. The file is split into marked regions — <!== NAME:start ==> …
+  <!== NAME:end ==> (written with = here only because this outer comment
+  can't nest; in the file they are ordinary HTML comments). Exactly three
+  regions belong to the DOCUMENT:
+
+      DOC-TITLE   the <title> line
+      DOC-CSS     per-doc style overrides (empty by default)
+      CONTENT     cover band + shell — the entire authored body
+
+  Everything else — FONTS, TEMPLATE-CSS, SYNTAX-HIGHLIGHT, TEMPLATE-JS —
+  is TEMPLATE CHROME. Don't hand-edit chrome in a finished doc, and never
+  put document content outside CONTENT. That split is what lets
+  `assets/doc-tool.py retemplate <doc.html>` re-apply an updated template
+  to an existing document, and `doc-tool.py fonts embed|link <doc.html>`
+  swap the font strategy in one command.
+-->
+<html lang="en" data-ed-theme="off">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- DOC-TITLE:start --><title>Life after deno jupyter</title>
+<!-- DOC-TITLE:end -->
+<!-- FONTS:start — swap this whole region with:
+       assets/doc-tool.py fonts embed <doc.html>   (artifact / CSP-safe)
+       assets/doc-tool.py fonts link  <doc.html>   (back to the default)
+     FONTS-LINK is the default: Archivo (incl. wdth 125% for the expanded
+     display face) / Source Serif 4 / JetBrains Mono, loaded from Google
+     Fonts. Under the Claude artifact CSP this link is BLOCKED and the
+     page falls back to system stacks, losing the expanded display face
+     that carries the cover. The embed form inlines
+     assets/fonts-embedded.css instead. For off-CSP use (local file,
+     Reading Room, email) keep the link; the two are mutually exclusive —
+     never ship both. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400&family=JetBrains+Mono:wght@400..700&display=swap" rel="stylesheet">
+<!-- FONTS:end -->
+<!-- TEMPLATE-CSS:start — the design. Chrome: don't edit per-doc.
+     Per-doc overrides go in the DOC-CSS region below. -->
+<style>
+  :root{
+    /* cover band */
+    --cover:#0F1F1C;
+    --cover-2:#16302C;
+    --cover-ink:#E7E6DA;
+    --cover-soft:#9FB0AB;
+    /* body */
+    --ground:#E7E5DA;
+    --paper:#F4F2EA;
+    --ink:#1A2926;
+    --ink-soft:#46544F;
+    --ink-faint:#6C7872;
+    /* accents — brass + verdigris are the ONLY two. Don't add more. */
+    --brass:#9A6620;
+    --brass-bright:#C68A3A;
+    --verdigris:#2E6E64;
+    --verdigris-bright:#4F9488;
+    --line:rgba(26,41,38,0.14);
+    --line-soft:rgba(26,41,38,0.08);
+
+    --serif:"Source Serif 4","Charter","Iowan Old Style",Georgia,serif;
+    --grotesk:"Archivo","Avenir Next","Helvetica Neue",system-ui,sans-serif;
+    /* expanded display face = Archivo's variable wdth axis at 125% — pair
+       var(--expanded) with font-stretch:125% ("Archivo Expanded" is NOT a
+       real Google Fonts family; requesting it 400s). */
+    --expanded:"Archivo","Avenir Next Condensed",Futura,sans-serif;
+    --mono:"JetBrains Mono","SF Mono",ui-monospace,monospace;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto;}}
+
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--serif);
+    font-size:18px;
+    line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* ---------- COVER BAND ---------- */
+  .cover{
+    background:var(--cover);
+    color:var(--cover-ink);
+    position:relative;
+    overflow:hidden;
+    border-bottom:3px solid var(--brass);
+  }
+  .cover::before{
+    /* faint engraved grid */
+    content:"";
+    position:absolute;inset:0;
+    background-image:
+      linear-gradient(var(--cover-2) 1px,transparent 1px),
+      linear-gradient(90deg,var(--cover-2) 1px,transparent 1px);
+    background-size:46px 46px;
+    opacity:.5;
+    mask-image:radial-gradient(ellipse 90% 80% at 70% 30%,#000 10%,transparent 75%);
+    -webkit-mask-image:radial-gradient(ellipse 90% 80% at 70% 30%,#000 10%,transparent 75%);
+    pointer-events:none;
+  }
+  .cover-inner{
+    max-width:1180px;margin:0 auto;
+    padding:34px 40px 46px;
+    position:relative;z-index:1;
+  }
+  .cover-top{
+    display:flex;justify-content:space-between;align-items:baseline;
+    gap:20px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--cover-soft);
+  }
+  .cover-top .tag{color:var(--brass-bright);}
+  .masthead{
+    display:grid;grid-template-columns:1fr auto;gap:30px;align-items:center;
+    margin-top:46px;
+  }
+  .title-block h1{
+    font-family:var(--expanded);
+    font-stretch:125%;
+    font-weight:800;
+    font-size:clamp(40px,7.2vw,86px);
+    line-height:.94;
+    letter-spacing:-0.015em;
+    margin:0;
+    color:var(--cover-ink);
+  }
+  .title-block h1 .glyph{color:var(--brass-bright);font-family:var(--grotesk);font-weight:700;}
+  .subtitle{
+    font-family:var(--grotesk);font-weight:500;
+    font-size:clamp(15px,2vw,19px);
+    color:var(--cover-soft);
+    margin:18px 0 0;max-width:46ch;line-height:1.45;
+  }
+  .subtitle b{color:var(--verdigris-bright);font-weight:600;}
+
+  /* signature mark — replace the SVG in the masthead with a doc-specific one,
+     or delete the <svg> and let the title span the full width */
+  .loopmark{width:150px;height:150px;flex-shrink:0;}
+  @media(max-width:760px){.masthead{grid-template-columns:1fr;} .loopmark{width:104px;height:104px;}}
+  .loopmark path,.loopmark circle{
+    fill:none;stroke-linecap:round;
+  }
+  .loop-ring{stroke:var(--verdigris-bright);stroke-width:2.4;stroke-dasharray:1;}
+  .loop-arrow{stroke:var(--brass-bright);stroke-width:3;}
+  .loop-node{fill:var(--brass-bright);stroke:none;}
+  .loop-spine{stroke:var(--cover-soft);stroke-width:2;opacity:.55;}
+  @media (prefers-reduced-motion:no-preference){
+    .loop-ring{
+      stroke-dasharray:360;stroke-dashoffset:360;
+      animation:draw 2.4s ease forwards .3s;
+    }
+    .loop-rotor{transform-origin:75px 75px;animation:spin 14s linear infinite;}
+  }
+  @keyframes draw{to{stroke-dashoffset:0;}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* metadata strip */
+  .meta{
+    display:grid;grid-template-columns:repeat(5,1fr);
+    gap:1px;margin-top:42px;
+    background:var(--line-soft);
+    border:1px solid rgba(231,230,218,.14);
+  }
+  @media(max-width:760px){
+    .meta{grid-template-columns:repeat(2,1fr);}
+    /* the verdict cell is the payoff — give it the full row when the grid wraps */
+    .meta div:last-child{grid-column:1/-1;}
+  }
+  .meta div{background:var(--cover);padding:14px 16px;}
+  .meta .k{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--cover-soft);}
+  .meta .v{font-family:var(--grotesk);font-weight:600;font-size:14px;margin-top:5px;color:var(--cover-ink);}
+  .meta .v.accent{color:var(--brass-bright);}
+
+  /* ---------- LAYOUT ---------- */
+  .shell{max-width:1180px;margin:0 auto;padding:0 40px;
+    display:grid;grid-template-columns:210px 1fr;gap:54px;align-items:start;}
+  @media(max-width:920px){.shell{grid-template-columns:1fr;padding:0 26px;}}
+
+  /* TOC */
+  .toc{position:sticky;top:24px;padding-top:54px;font-family:var(--mono);font-size:12px;}
+  @media(max-width:920px){.toc{display:none;}}
+  .toc .toc-h{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:14px;}
+  .toc a{
+    display:flex;gap:10px;text-decoration:none;color:var(--ink-soft);
+    padding:5px 0;line-height:1.3;border-left:2px solid transparent;padding-left:12px;margin-left:-12px;
+    transition:color .18s,border-color .18s;
+  }
+  .toc a .num{color:var(--ink-faint);}
+  .toc a:hover{color:var(--brass);}
+  .toc a.active{color:var(--ink);border-left-color:var(--brass);}
+  .toc a.active .num{color:var(--brass);}
+
+  /* min-width:0 defeats the grid-item auto minimum — without it a wide pre
+     or table forces the whole page past the viewport on narrow screens */
+  main{padding:54px 0 80px;max-width:760px;min-width:0;}
+
+  /* ---------- BLUF (front-loaded summary panel) ---------- */
+  .bluf{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-top:3px solid var(--verdigris);
+    padding:30px 34px;
+    margin-bottom:64px;
+    box-shadow:0 1px 0 rgba(0,0,0,.02);
+  }
+  .bluf .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--verdigris);margin-bottom:14px;}
+  .bluf p{margin:0 0 16px;font-size:17px;}
+  .bluf p:last-child{margin-bottom:0;}
+
+  /* ---------- SECTIONS ---------- */
+  .sec{margin-bottom:58px;scroll-margin-top:24px;}
+  .sec-head{display:flex;align-items:baseline;gap:16px;
+    padding-bottom:14px;margin-bottom:22px;border-bottom:1px solid var(--line);}
+  .sec-num{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--brass);
+    letter-spacing:.05em;padding-top:6px;white-space:nowrap;}
+  .sec-head h2{font-family:var(--expanded);font-stretch:125%;font-weight:700;font-size:clamp(22px,3vw,30px);
+    line-height:1.06;letter-spacing:-0.01em;margin:0;}
+
+  main h3{font-family:var(--grotesk);font-weight:700;font-size:17px;letter-spacing:.01em;
+    margin:30px 0 8px;color:var(--ink);}
+  main p{margin:0 0 16px;}
+  main a{color:var(--brass);text-decoration:none;border-bottom:1px solid rgba(154,102,32,.32);}
+  main a:hover{border-bottom-color:var(--brass);}
+  strong{font-weight:600;}
+  code,.mono{font-family:var(--mono);font-size:.84em;background:rgba(46,110,100,.1);
+    color:var(--verdigris);padding:1px 5px;border-radius:3px;}
+  /* block code — cover-dark plate so code reads as a distinct register */
+  pre{background:var(--cover);color:var(--cover-ink);font-family:var(--mono);
+    font-size:13px;line-height:1.62;padding:16px 18px;overflow-x:auto;
+    border:1px solid var(--line);border-left:3px solid var(--verdigris);margin:18px 0;}
+  pre code{background:none;color:inherit;padding:0;font-size:inherit;border-radius:0;}
+  pre .cm{color:var(--cover-soft);font-style:italic;}   /* comment */
+  pre .st{color:var(--verdigris-bright);}                /* string */
+  pre .kw{color:var(--brass-bright);}                    /* keyword/flag */
+
+  /* SYNTAX-HIGHLIGHT:css:start — dossier Prism theme. Pairs with the inlined
+     Prism bundle in the SYNTAX-HIGHLIGHT:js block at the end of the page. Tag
+     block code with class="language-<lang>" on the inner <code> to
+     highlight; untagged blocks keep the plain cover-plate style (or the
+     legacy hand-tag spans .cm/.st/.kw above). Token colors stay inside
+     the two-accent rule — brass ramp for control/identity, verdigris
+     ramp for strings/types, warm neutrals for the rest. No third hue.
+     Scoped to <pre> so inline <code> is never tinted. Harmless when no
+     code blocks are present. To drop highlighting entirely, delete this
+     CSS block AND the SYNTAX-HIGHLIGHT:js script block at the end of the page. */
+  pre[class*="language-"], code[class*="language-"]{
+    font-family:var(--mono);text-shadow:none;tab-size:2;hyphens:none;}
+  pre .token.comment, pre .token.prolog, pre .token.doctype, pre .token.cdata{
+    color:var(--cover-soft);font-style:italic;}          /* recede */
+  pre .token.punctuation, pre .token.template-punctuation{color:#7E938D;}
+  pre .token.namespace{opacity:.8;}
+  /* brass-bright — control words & "look here" */
+  pre .token.keyword, pre .token.tag, pre .token.selector,
+  pre .token.atrule, pre .token.rule, pre .token.important,
+  pre .token.instruction, pre .token.for-or-select, pre .token.coord{
+    color:var(--brass-bright);font-weight:600;}
+  /* muted brass — operators & links */
+  pre .token.operator, pre .token.entity, pre .token.combinator,
+  pre .token.url, pre .token.atrule .token.url{color:#BE9660;}
+  /* light brass — numeric & identity literals, function names */
+  pre .token.number, pre .token.boolean, pre .token.constant,
+  pre .token.symbol, pre .token.function, pre .token.function-definition,
+  pre .token.macro{color:#DCAB63;}
+  /* verdigris-bright — string-like text */
+  pre .token.string, pre .token.char, pre .token.attr-value,
+  pre .token.regex, pre .token.template-string, pre .token.string-property{
+    color:#6FB3A6;}
+  /* light verdigris — types, keys, properties, builtins */
+  pre .token.class-name, pre .token.builtin, pre .token.type,
+  pre .token.key, pre .token.property, pre .token.attr-name,
+  pre .token.title{color:#8CC3B8;}
+  /* warm neutral — variables & parameters */
+  pre .token.variable, pre .token.parameter, pre .token.property-access{
+    color:#D6D2C0;}
+  pre .token.bold{font-weight:600;}
+  pre .token.italic{font-style:italic;}
+  /* diff — accent-tinted bands; scoped to the diff language */
+  pre[class*="language-diff"] .token.inserted{
+    color:#6FB3A6;background:rgba(79,148,136,.14);display:block;}
+  pre[class*="language-diff"] .token.deleted{
+    color:#DCAB63;background:rgba(198,138,58,.13);display:block;}
+  pre .token.inserted{color:#6FB3A6;}
+  pre .token.deleted{color:#DCAB63;}
+  /* SYNTAX-HIGHLIGHT:css:end */
+
+  /* lists — brass dash bullets, verdigris for nested */
+  main ul{list-style:none;margin:0 0 18px;padding:0;}
+  main ul li{position:relative;padding-left:26px;margin-bottom:10px;}
+  main ul li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:2px;background:var(--brass);}
+  main ul li ul{margin:10px 0 0;}
+  main ul li ul li::before{background:var(--verdigris);width:6px;left:6px;}
+
+  /* callout */
+  .note{
+    border-left:3px solid var(--brass);
+    background:rgba(154,102,32,.06);
+    padding:16px 20px;margin:22px 0;font-size:16px;
+  }
+  .note .nlabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--brass);display:block;margin-bottom:6px;}
+
+  /* ---------- COMPARISON TABLE (signature component) ---------- */
+  .faceoff{margin:26px 0 8px;border:1px solid var(--ink);background:var(--paper);}
+  .faceoff-cap{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--ink-faint);padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  table{width:100%;border-collapse:collapse;font-size:14.5px;}
+  thead th{font-family:var(--grotesk);font-weight:700;text-align:left;padding:13px 16px;
+    vertical-align:top;border-bottom:2px solid var(--ink);}
+  thead th.dim{font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-faint);width:23%;}
+  thead th.h{color:var(--verdigris);font-size:16px;}
+  thead th.o{color:var(--brass);font-size:16px;}
+  tbody td{padding:12px 16px;vertical-align:top;border-bottom:1px solid var(--line-soft);line-height:1.42;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody td.dim{font-family:var(--grotesk);font-weight:600;font-size:13px;color:var(--ink-soft);}
+  tbody tr:nth-child(even){background:rgba(26,41,38,.025);}
+  .faceoff-wrap{overflow-x:auto;}
+  @media(max-width:620px){
+    table{font-size:13px;}
+    thead th,tbody td{padding:10px 11px;}
+    /* below this width three columns crush — hold a readable minimum and
+       let .faceoff-wrap scroll instead */
+    .faceoff-wrap table{min-width:520px;}
+  }
+
+  /* ---------- FIGURES / DIAGRAMS ---------- */
+  .figure{margin:30px 0;border:1px solid var(--line);background:var(--paper);padding:24px 24px 16px;}
+  .figure.wide{overflow-x:auto;}
+  .figure svg{display:block;width:100%;height:auto;}
+  .figure.wide svg{min-width:600px;}
+  .figure figcaption{font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--ink-faint);
+    margin-top:16px;padding-top:12px;border-top:1px solid var(--line-soft);line-height:1.55;}
+  /* .dg — hand-authored SVG diagram vocabulary */
+  .dg text{dominant-baseline:middle;}
+  .dg .box{fill:#FBFAF4;stroke:var(--ink);stroke-width:1.5;}
+  .dg .box-soft{fill:rgba(26,41,38,.03);stroke:var(--line);stroke-width:1.2;}
+  .dg .box-core{fill:rgba(154,102,32,.07);stroke:var(--brass);stroke-width:2;}
+  .dg .box-verd{fill:rgba(46,110,100,.13);stroke:var(--verdigris);stroke-width:2;}
+  .dg .box-dash{fill:rgba(26,41,38,.02);stroke:var(--ink-soft);stroke-width:1.4;stroke-dasharray:5 4;}
+  .dg .lbl{font-family:var(--grotesk);font-weight:600;font-size:13px;fill:var(--ink);}
+  .dg .lbl-sm{font-family:var(--mono);font-size:10px;fill:var(--ink-faint);}
+  .dg .ey{font-family:var(--mono);font-size:9.5px;fill:var(--ink-faint);letter-spacing:.14em;text-transform:uppercase;}
+  .dg .num{fill:var(--brass);font-weight:700;}
+  .dg .flow{fill:none;stroke:var(--ink-soft);stroke-width:1.6;}
+  .dg .flow-accent{fill:none;stroke:var(--brass);stroke-width:2.4;}
+  .dg .flow-verd{fill:none;stroke:var(--verdigris);stroke-width:2.4;}
+  .dg .ring{fill:none;stroke:var(--verdigris);stroke-width:1.6;stroke-dasharray:4 5;opacity:.65;}
+  .dg .axis{fill:none;stroke:var(--line);stroke-width:1.4;}
+  .dg .dash{fill:none;stroke:var(--ink-faint);stroke-width:1.2;stroke-dasharray:3 4;}
+  .dg .tri{fill:var(--verdigris);}
+  .dg .ah{fill:var(--ink-soft);}
+  .dg .ah-accent{fill:var(--brass);}
+
+  /* ---------- FOOTER ---------- */
+  .foot{border-top:1px solid var(--line);margin-top:40px;padding-top:24px;
+    font-family:var(--mono);font-size:12px;color:var(--ink-faint);line-height:1.7;}
+  .foot .row{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+  .foot .cad{color:var(--brass);}
+
+  /* reveal-on-scroll (sections opt in with class="reveal") */
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease;}
+  .reveal.in{opacity:1;transform:none;}
+  @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;}}
+
+  /* ---------- GLOSSARY TERMS / TOOLTIPS ---------- */
+  .term{border-bottom:1px dotted var(--brass);cursor:help;position:relative;color:inherit;}
+  .term:focus-visible{outline:2px solid var(--brass);outline-offset:2px;border-radius:2px;}
+  .term::after{
+    content:attr(data-def);
+    position:absolute;left:50%;bottom:calc(100% + 11px);transform:translateX(-50%) translateY(5px);
+    width:min(290px,74vw);
+    background:var(--cover);color:var(--cover-ink);
+    font-family:var(--grotesk);font-weight:500;font-size:13px;line-height:1.5;letter-spacing:0;
+    text-align:left;text-transform:none;white-space:normal;
+    padding:12px 14px;border-radius:7px;border:1px solid var(--brass);
+    box-shadow:0 10px 28px rgba(15,31,28,.28);
+    opacity:0;visibility:hidden;transition:opacity .16s ease,transform .16s ease;
+    z-index:60;pointer-events:none;
+  }
+  .term::before{
+    content:"";position:absolute;left:50%;bottom:calc(100% + 5px);transform:translateX(-50%);
+    border:6px solid transparent;border-top-color:var(--brass);
+    opacity:0;visibility:hidden;transition:opacity .16s ease;z-index:61;pointer-events:none;
+  }
+  .term:hover::after,.term:focus::after{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0);}
+  .term:hover::before,.term:focus::before{opacity:1;visibility:visible;}
+  @media (prefers-reduced-motion:reduce){.term::after{transition:opacity .16s ease;}}
+
+  .gloss-intro{color:var(--ink-faint);font-size:15px;margin-bottom:6px;}
+  .glossary{margin:10px 0 0;}
+  .glossary div{padding:15px 0;border-bottom:1px solid var(--line-soft);}
+  .glossary div:last-child{border-bottom:none;}
+  .glossary dt{font-family:var(--grotesk);font-weight:700;font-size:15px;color:var(--ink);margin-bottom:5px;}
+  .glossary dd{margin:0;font-size:16px;color:var(--ink-soft);line-height:1.5;}
+
+  /* ---------- PHONES (≤640px) ---------- */
+  @media(max-width:640px){
+    .cover-inner{padding:24px 22px 34px;}
+    .cover-top{font-size:10.5px;}
+    .masthead{margin-top:32px;gap:22px;}
+    .title-block h1{font-size:clamp(30px,10vw,40px);overflow-wrap:break-word;}
+    .meta{margin-top:30px;}
+    .meta div{padding:12px 13px;}
+    .shell{padding:0 20px;}
+    main{padding:40px 0 64px;}
+    .bluf{padding:22px 20px;margin-bottom:44px;}
+    .sec{margin-bottom:44px;}
+    .sec-head{gap:12px;}
+    .note{padding:14px 16px;}
+    .figure{padding:16px 14px 12px;}
+    code{overflow-wrap:anywhere;}
+    /* Tooltips stay anchored to their term on phones. A tap focuses the
+       term (tabindex=0); the mobile-tooltip script writes --tip-x/--tip-w
+       so the panel hugs the term but never escapes the viewport, and adds
+       .tip-below when the term sits too close to the top to open upward.
+       Do NOT go back to position:fixed here — a fixed panel detaches from
+       the term and lands at the bottom of the screen, and inside any
+       transformed ancestor (.reveal mid-animation) it lands at the bottom
+       of the section instead. */
+    .term::after{
+      left:var(--tip-x,0);right:auto;bottom:calc(100% + 10px);top:auto;
+      transform:none;width:var(--tip-w,min(290px,86vw));
+    }
+    .term:hover::after,.term:focus::after{transform:none;}
+    .term.tip-below::after{bottom:auto;top:calc(100% + 10px);}
+    .term.tip-below::before{bottom:auto;top:calc(100% + 5px);
+      border-top-color:transparent;border-bottom-color:var(--brass);}
+    /* A hidden panel still occupies layout. For a term near the right edge
+       its 290px box runs past the viewport and gives the whole page a
+       horizontal scroll, so keep it out of layout until it's shown. */
+    .term::after,.term::before{display:none;}
+    .term:hover::after,.term:focus::after,
+    .term:hover::before,.term:focus::before{display:block;}
+  }
+
+  
+
+  ::selection{background:var(--brass);color:#fff;}
+  a:focus-visible,.toc a:focus-visible{outline:2px solid var(--brass);outline-offset:3px;border-radius:2px;}
+</style>
+<!-- TEMPLATE-CSS:end -->
+
+<!-- DOC-CSS:start — per-document style overrides. This region is carried
+     across `doc-tool.py retemplate`, so anything doc-specific belongs
+     HERE, not in TEMPLATE-CSS. Stay inside the two-accent rule (brass +
+     verdigris) and reuse the existing custom properties; if you need
+     more than a handful of rules, the document probably wants a
+     different style. -->
+<style>
+  /* (no per-doc overrides) */
+</style>
+<!-- DOC-CSS:end -->
+
+<!-- PRINT-OVERRIDES:start — print rules live HERE, after DOC-CSS,
+     so they out-cascade per-document styles. A rule of equal
+     specificity in DOC-CSS would otherwise silently beat them and the
+     page would print wrong with nothing on screen to show it.
+     Chrome: don't edit per-doc. -->
+<style>
+  @media print{
+    body{background:#fff;}
+    /* browsers default to not printing backgrounds, so the dark cover band
+       would leave light text on white — flip it to ink-on-paper instead */
+    .cover{background:none;color:var(--ink);}
+    .cover::before{display:none;}
+    .cover-top{color:var(--ink-faint);}
+    .cover-top .tag{color:var(--brass);}
+    .title-block h1{color:var(--ink);}
+    .title-block h1 .glyph{color:var(--brass);}
+    .subtitle{color:var(--ink-soft);}
+    .subtitle b{color:var(--verdigris);}
+    .loop-spine{stroke:var(--ink-soft);}
+    .loop-ring{stroke:var(--verdigris);}
+    .loop-arrow{stroke:var(--brass);}
+    .loop-node{fill:var(--brass);}
+    .meta{background:none;border-color:var(--line);}
+    .meta div{background:none;border:1px solid var(--line-soft);}
+    .meta .k{color:var(--ink-faint);}
+    .meta .v{color:var(--ink);}
+    .meta .v.accent{color:var(--brass);}
+    /* single column; the sticky TOC is nav chrome, not content */
+    .shell{display:block;padding:0 8px;}
+    .toc{display:none;}
+    main{max-width:100%;padding-top:28px;}
+    /* sections the reader never scrolled to must not print blank */
+    .reveal{opacity:1 !important;transform:none !important;}
+    /* code flips from the cover-dark plate to ink-on-light */
+    pre{background:#f5f3ec;color:#1a2926;}
+    pre .cm{color:#6b6357;}
+    pre .st{color:var(--verdigris);}
+    pre .kw{color:var(--brass);}
+    pre .token{color:#1a2926;background:none;}
+    pre .token.comment,pre .token.prolog,pre .token.doctype,pre .token.cdata{
+      color:#6b6357;font-style:italic;}
+    pre .token.keyword,pre .token.tag,pre .token.selector,pre .token.atrule,
+    pre .token.rule,pre .token.important,pre .token.instruction,
+    pre .token.for-or-select,pre .token.coord{color:var(--brass);}
+    pre .token.string,pre .token.char,pre .token.attr-value,pre .token.regex,
+    pre .token.template-string,pre .token.string-property{color:var(--verdigris);}
+    /* out-specify the diff-band rules so paper diffs read as dark text */
+    pre .token.inserted,pre .token.deleted,
+    pre[class*="language-diff"] .token.inserted,
+    pre[class*="language-diff"] .token.deleted{color:#1a2926;background:none;}
+    /* paper cannot scroll. A wrapper that scrolls on screen CLIPS on
+       paper, silently dropping the columns past the page edge — the
+       reader has no way to tell. Let wide content shrink to fit instead. */
+    .faceoff-wrap,.figure.wide,.data-wrap{overflow:visible;}
+    .faceoff-wrap table{min-width:0;}
+    .figure.wide svg{min-width:0;width:100%;}
+    .data-wrap table{font-size:10.5px;width:100%;max-width:100%;}
+    .data-wrap thead th,.data-wrap tbody td{padding:5px 6px;}
+    .data-wrap .n{white-space:normal;}
+    /* folded notebook code (collapse-notebook.py): reveal it on paper —
+       a disclosure control the reader can't click is just lost content.
+       ::details-content is what actually works; overriding the children
+       directly does not. */
+    details.nb-code::details-content{content-visibility:visible !important;}
+    details.nb-code>*:not(summary){display:block;}
+    details.nb-code>summary{display:none;}
+    /* break hygiene */
+    .sec-head,main h3{break-after:avoid;page-break-after:avoid;}
+    pre,.figure,.faceoff,.note,.bluf,.data-wrap,
+    details.nb-code{break-inside:avoid;page-break-inside:avoid;}
+  }
+</style>
+<!-- PRINT-OVERRIDES:end -->
+</head>
+<body>
+<!-- CONTENT:start — everything the document actually says lives between
+     these two markers, and nothing else does. Keep it that way: it is
+     the only region `doc-tool.py retemplate` carries into a refreshed
+     template. --><!-- ===================== COVER ===================== -->
+<header class="cover">
+  <div class="cover-inner">
+    <div class="cover-top">
+      <span>Feasibility briefing · Notebook runtimes</span>
+      <span class="tag">// deno jupyter v2.9.6 · commit e518fbd</span>
+    </div>
+
+    <div class="masthead">
+      <div class="title-block">
+        <h1>Life after deno jupyter <span class="glyph">§</span></h1>
+        <p class="subtitle">Deno's kernel is two halves joined by thirteen ops, and both halves come apart cleanly. Re-joined over the DevTools Protocol, <b>the same kernel now runs notebooks on Node and on Deno</b>.</p>
+      </div>
+
+      <svg class="loopmark" viewBox="0 0 150 150" role="img" aria-label="Two linked rings: a kernel host and a target runtime joined by one line">
+        <g class="loop-rotor">
+          <circle class="loop-ring" cx="75" cy="75" r="57"/>
+        </g>
+        <circle class="loop-node" cx="47" cy="75" r="9"/>
+        <circle class="loop-node" cx="103" cy="75" r="9"/>
+        <path class="loop-arrow" d="M58 75 L92 75"/>
+        <path class="loop-arrow" d="M84 68 L93 75 L84 82"/>
+      </svg>
+    </div>
+
+    <div class="meta">
+      <div><div class="k">Subject</div><div class="v">Deno's Jupyter kernel, after Deno winds down</div></div>
+      <div><div class="k">Targets weighed</div><div class="v">Node · Deno · workerd · Bun · rusty_v8 · FFI</div></div>
+      <div><div class="k">Evidence</div><div class="v">Working prototype; 28/28 e2e checks on Deno, 26/26 on Node; 112 unit tests</div></div>
+      <div><div class="k">Compiled</div><div class="v">2026-10-14</div></div>
+      <div><div class="k">Verdict</div><div class="v accent">Extract the JS halves; drive any runtime over CDP</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== SHELL ===================== -->
+<div class="shell">
+
+  <nav class="toc" aria-label="Contents">
+    <div class="toc-h">Contents</div>
+    <a href="#bluf"><span class="num">00</span> Bottom line</a>
+    <a href="#s1"><span class="num">01</span> What changed</a>
+    <a href="#s2"><span class="num">02</span> Anatomy of the kernel</a>
+    <a href="#s3"><span class="num">03</span> The extraction</a>
+    <a href="#s4"><span class="num">04</span> Evidence</a>
+    <a href="#s5"><span class="num">05</span> Options compared</a>
+    <a href="#s6"><span class="num">06</span> workerd</a>
+    <a href="#s7"><span class="num">07</span> Bun</a>
+    <a href="#s8"><span class="num">08</span> rusty_v8 &amp; FFI</a>
+    <a href="#s9"><span class="num">09</span> Risks &amp; gaps</a>
+    <a href="#s10"><span class="num">10</span> Next steps</a>
+    <a href="#glossary"><span class="num">§</span> Glossary</a>
+  </nav>
+
+  <main>
+
+    <section class="bluf reveal" id="bluf">
+      <div class="eyebrow">Bottom line up front</div>
+      <p><strong>Extraction is not only possible; it is done, as a spike.</strong> In June 2026 Deno rewrote its kernel (denoland/deno#34083). The Jupyter wire protocol, ZeroMQ included, is now about 600 lines of plain JavaScript. Execution happens in a separate isolate driven by standard <span class="term" tabindex="0" data-term="CDP" data-def="Chrome DevTools Protocol: the JSON-over-WebSocket protocol V8 runtimes expose through --inspect. Runtime.evaluate, Runtime.callFunctionOn and friends let an outside process run code in the runtime and inspect the results.">Chrome DevTools Protocol</span> calls. Node, Deno and workerd all expose CDP through <code>--inspect</code>, so the kernel can be pulled apart and pointed at a different runtime.</p>
+      <p><code>cdp-kernel</code> does that. It is a Node-hosted port of Deno's protocol half, the <code>Deno.jupyter</code> display API, and a replacement for the parts of Deno's module loader that notebooks lean on: TypeScript, <code>npm:</code> and <code>jsr:</code>. It passes a conformance suite derived from Deno's own Jupyter tests on both a <strong>Node 26</strong> target and a <strong>Deno 2.9</strong> target. A notebook written for <code>deno jupyter</code>, with Polars DataFrames, Vega-Lite, SVG and in-place display updates, gives the same outputs on both.</p>
+      <p>The other routes rank below it:</p>
+      <ul>
+        <li><strong>workerd</strong> works only with a hybrid design. Timers and I/O are forbidden outside a request.</li>
+        <li><strong>Bun</strong> needs its own backend, because it speaks WebKit's protocol rather than CDP.</li>
+        <li><strong>rusty_v8 or FFI</strong> buys nothing for an evaluator. FFI cannot reach the host's V8 isolate, and a rusty_v8 host means rebuilding most of deno_core.</li>
+      </ul>
+      <p>Recommendation: package <code>cdp-kernel</code> as a standalone, runtime-neutral kernel. Treat CDP as the primary backend. Add backends for Bun and workerd only if you need them.</p>
+    </section>
+
+    <!-- ===================== 01 ===================== -->
+    <section class="sec reveal" id="s1">
+      <div class="sec-head"><span class="sec-num">01</span><h2>What changed</h2></div>
+      <p>Ryan Dahl's post of 2026-10-09 (<code>deno.com/blog/cloudflare</code>) moves the Deno team to Cloudflare.</p>
+      <ul>
+        <li><strong>The runtime</strong> gets about a year of monthly bug-fix and security releases, then development ends.</li>
+        <li><strong>Deploy</strong> shuts down in six months.</li>
+        <li><strong>JSR</strong> stays up, with its infrastructure moving to Cloudflare.</li>
+        <li><strong>rusty_v8</strong> is the one piece with a stated future: "We will continue supporting rusty_v8 and work toward integrating it into workerd." No timeline is given.</li>
+      </ul>
+      <p>The joint Cloudflare post, by Dahl and Kenton Varda, frames the goal as making self-hosted workerd a first-class way to run Workers apps, with celld folded back in. Neither post mentions deno_core, notebooks, or Jupyter.</p>
+      <p>On the community side, denoland/deno#36995 collects fork announcements: <em>rjs</em>, <em>dodo</em>, and one maintainer's planned conservative fork. Nobody has claimed the Jupyter kernel. The existing Node kernels are stale: tslab last released in mid-2024, IJavascript in 2021, and both depend on the native <code>zeromq</code> addon.</p>
+      <div class="note">
+        <span class="nlabel">Sourcing</span>
+        The announcement terms come from the Deno post, which I read directly. The fork names, the Cloudflare post's wording, and the kernel release dates come from a research sweep. I did not re-open those sources, so treat them as reported, not verified.
+      </div>
+    </section>
+
+    <!-- ===================== 02 ===================== -->
+    <section class="sec reveal" id="s2">
+      <div class="sec-head"><span class="sec-num">02</span><h2>Anatomy of deno jupyter in 2.9</h2></div>
+      <p>Older write-ups describe a Rust kernel built on libzmq or the runtimed crates. That kernel is gone. PR #34083, "rewrite kernel in JS, drop zeromq/runtimelib deps" (merged 2026-06-01), left two isolates in one process:</p>
+      <ul>
+        <li><strong>Kernel isolate, <code>cli/js/jupyter_kernel.js</code>.</strong> It implements <span class="term" tabindex="0" data-term="ZMTP" data-def="ZeroMQ Message Transport Protocol: the wire format ZeroMQ sockets speak over TCP. Jupyter frontends use it for all five kernel channels. Deno implements the NULL-security subset in plain JavaScript.">ZMTP</span> 3.0 over <code>Deno.listen</code> TCP: the greeting, the READY command, and framing. On top of that sit the five Jupyter channels and HMAC signing via WebCrypto.</li>
+        <li><strong>REPL isolate, <code>cli/tools/repl/session.rs</code>.</strong> Each cell is parsed as TSX by swc and transpiled with <code>var_decl_imports</code>, which turns static imports into awaited dynamic imports. It then runs through <code>Runtime.evaluate</code> with <span class="term" tabindex="0" data-term="replMode" data-def="A Runtime.evaluate flag in V8's inspector that gives console semantics: top-level await, and let/const/class declarations that can be redeclared in later evaluations.">replMode</span>.</li>
+        <li><strong>The bridge, <code>cli/ops/jupyter.rs</code>.</strong> Thirteen Rust ops forward requests over channels. Nearly all are thin wrappers over CDP calls: <code>evaluate</code>, <code>callFunctionOn</code>, <code>getProperties</code>, <code>globalLexicalScopeNames</code>. The others are interrupt (<code>terminate_execution</code>), iopub and stdin plumbing, and two version strings.</li>
+        <li><strong>Display, <code>cli/js/40_jupyter.js</code>.</strong> <code>Deno.jupyter.display</code>, <code>md</code>, <code>html</code>, <code>svg</code>, <code>image</code>, plus <code>Symbol.for("Jupyter.display")</code>. It is duck-typed JavaScript with four Deno-internal dependencies: <code>inspectArgs</code>, base64, <code>readFileSync</code>, and WebGPU.</li>
+      </ul>
+
+      <figure class="figure">
+        <svg viewBox="0 0 680 270" class="dg" role="img" aria-label="Deno 2.9 kernel: a kernel isolate and a REPL isolate joined by 13 ops; cdp-kernel: a Node host and a target runtime joined by CDP over WebSocket plus stdio pipes">
+          <text x="16" y="20" class="ey">DENO 2.9 — ONE PROCESS, TWO ISOLATES</text>
+          <rect x="16" y="32" width="220" height="80" rx="4" class="box"/>
+          <text x="126" y="60" text-anchor="middle" class="lbl">Kernel isolate</text>
+          <text x="126" y="80" text-anchor="middle" class="lbl-sm">jupyter_kernel.js · ZMTP · HMAC</text>
+          <text x="126" y="96" text-anchor="middle" class="lbl-sm">pure JS over Deno.listen</text>
+          <line x1="236" y1="72" x2="436" y2="72" class="flow"/>
+          <polygon points="436,67 446,72 436,77" class="ah"/>
+          <text x="341" y="62" text-anchor="middle" class="lbl-sm">13 Rust ops · mpsc channels</text>
+          <text x="341" y="90" text-anchor="middle" class="lbl-sm">(≈ CDP calls)</text>
+          <rect x="446" y="32" width="218" height="80" rx="4" class="box"/>
+          <text x="555" y="60" text-anchor="middle" class="lbl">REPL isolate</text>
+          <text x="555" y="80" text-anchor="middle" class="lbl-sm">swc transpile · Runtime.evaluate</text>
+          <text x="555" y="96" text-anchor="middle" class="lbl-sm">Deno module loader · npm:/jsr:</text>
+
+          <text x="16" y="152" class="ey">CDP-KERNEL — TWO PROCESSES, ANY CDP RUNTIME</text>
+          <rect x="16" y="164" width="220" height="90" rx="4" class="box-verd"/>
+          <text x="126" y="190" text-anchor="middle" class="lbl">Node host</text>
+          <text x="126" y="210" text-anchor="middle" class="lbl-sm">zmtp.ts · wire.ts · kernel.ts</text>
+          <text x="126" y="226" text-anchor="middle" class="lbl-sm">esbuild + acorn cell transform</text>
+          <text x="126" y="242" text-anchor="middle" class="lbl-sm">ported from jupyter_kernel.js</text>
+          <line x1="236" y1="194" x2="436" y2="194" class="flow-accent"/>
+          <polygon points="436,189 446,194 436,199" class="ah-accent"/>
+          <text x="341" y="184" text-anchor="middle" class="lbl-sm">CDP over --inspect WebSocket</text>
+          <line x1="446" y1="226" x2="246" y2="226" class="flow-verd"/>
+          <polygon points="246,221 236,226 246,231" class="ah"/>
+          <text x="341" y="244" text-anchor="middle" class="lbl-sm">stdout/stderr pipes + barrier markers</text>
+          <rect x="446" y="164" width="218" height="90" rx="4" class="box-core"/>
+          <text x="555" y="190" text-anchor="middle" class="lbl">Target runtime</text>
+          <text x="555" y="210" text-anchor="middle" class="lbl-sm">node · deno (workerd, others)</text>
+          <text x="555" y="226" text-anchor="middle" class="lbl-sm">bootstrap.mjs · display.mjs</text>
+          <text x="555" y="242" text-anchor="middle" class="lbl-sm">resolve hooks for npm:/jsr:</text>
+        </svg>
+        <figcaption>The 13 ops are already CDP in disguise, so swapping the in-process channel for an --inspect WebSocket is the whole trick.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ===================== 03 ===================== -->
+    <section class="sec reveal" id="s3">
+      <div class="sec-head"><span class="sec-num">03</span><h2>The extraction: cdp-kernel</h2></div>
+      <p>The prototype lives in <code>docs/spikes/cdp-kernel/</code>: about 2,350 lines of TypeScript and plain ESM, plus about 1,500 lines of tests. The host runs on Node 26 with native type stripping and has two runtime dependencies, esbuild and acorn. The kernel host and the target runtime are separate processes:</p>
+      <ul>
+        <li>The host speaks Jupyter to the frontend.</li>
+        <li>The target runs your code.</li>
+        <li>The target is launched as <code>node --inspect=127.0.0.1:0 runtime/bootstrap.mjs</code> or <code>deno run -A --inspect=… runtime/bootstrap.mjs</code>. The same bootstrap file loads unchanged in both.</li>
+      </ul>
+
+      <h3>What was ported, what was new</h3>
+      <ul>
+        <li><strong>Ported almost line for line:</strong>
+          <ul>
+            <li>the ZMTP greeting, READY command and framing, keeping Deno's hard-won libzmq interop fixes;</li>
+            <li>HMAC sign and verify, dropping forged messages;</li>
+            <li>the shell, control and stdin handlers;</li>
+            <li>completion via <code>getProperties</code> and <code>globalLexicalScopeNames</code>;</li>
+            <li>the <code>is_complete</code> scanner and the codepoint/UTF-16 cursor maths;</li>
+            <li>the whole display formatter, covering DataFrames, Vega, images, HTML/SVG elements and the display symbol.</li>
+          </ul>
+        </li>
+        <li><strong>Replaced:</strong> swc became esbuild (TS, TSX, enums, JSX, with a TS fallback for <code>&lt;T&gt;x</code>) plus an acorn pass that rewrites imports, <code>import()</code> and <code>import.meta</code>. On Node, Deno's module loader became a <code>module.registerHooks</code> resolver: it re-parents cell imports to the notebook directory and adds <code>npm:</code> (install on first use, one npm alias per range) and <code>jsr:</code> (mapped onto <code>npm.jsr.io</code>).</li>
+        <li><strong>New:</strong>
+          <ul>
+            <li>the two-session interrupt;</li>
+            <li>the pipe/WebSocket ordering barrier;</li>
+            <li>synchronous <code>prompt()</code> across a process boundary;</li>
+            <li>crash guards;</li>
+            <li>a <code>Deno.jupyter</code> proxy on Deno targets;</li>
+            <li>an opt-in <code>Deno</code> compatibility namespace on Node.</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h3>The four problems that weren't mechanical</h3>
+      <div class="faceoff">
+        <div class="faceoff-cap"><span>// Hard parts</span><span>Found by probing, fixed in the spike</span></div>
+        <div class="faceoff-wrap">
+        <table>
+          <thead>
+            <tr><th class="dim">Problem</th><th class="o">What happens naively</th><th class="h">What cdp-kernel does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="dim">Imports</td><td>Code evaluated through the inspector has no module referrer. Node rejects <code>import()</code> with "A dynamic import callback was not specified".</td><td>Rewrites static imports to <code>var x = (await __cdpk.import("m")).x</code>, and routes <code>import()</code> and <code>import.meta</code> through a function defined in the bootstrap module. A resolve hook re-parents those imports to the notebook directory.</td></tr>
+            <tr><td class="dim">Interrupt</td><td>While a busy loop runs inside a <code>Runtime.evaluate</code> dispatch, the inspector processes no messages on any session, so <code>terminateExecution</code> is never seen. This was tested on both Node and Deno.</td><td>Each cell first awaits one macrotask, so user code runs as an ordinary task. <code>terminateExecution</code> then arrives on a second CDP session. The host abandons the dead evaluate, and state survives: a test counter kept about 466M increments across the interrupt.</td></tr>
+            <tr><td class="dim">Output order</td><td><code>console.log</code> travels on a pipe and <code>display()</code> on the WebSocket, so "after" text overtook the display. This was the first e2e failure.</td><td>A numbered <span class="term" tabindex="0" data-term="barrier marker" data-def="An escape-delimited sequence number the target writes to both stdout and stderr before each display message. The host releases the message only once both pipes reach it, and holds later pipe output until the message is out.">barrier marker</span> goes to both pipes before each display message. The message waits for both markers, and later output waits for the message.</td></tr>
+            <tr><td class="dim">Sync <code>prompt()</code></td><td>The target is a separate process, so it can't block on the host's stdin channel.</td><td>The target sends <code>input_request</code> through a CDP binding, then blocks on <code>readSync</code> of its own stdin. The host writes the reply as one JSON line.</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      <h3>The Deno namespace</h3>
+      <p>On a Deno target, <code>Deno.jupyter</code> is a non-configurable getter that throws outside <code>deno jupyter</code>. The <code>Deno</code> global itself is configurable, though, so the bootstrap swaps in a Proxy that answers <code>jupyter</code> and forwards everything else. Existing notebooks run unchanged, and a <code>jupyter</code> global is available everywhere.</p>
+      <p>On Node, <code>--deno-compat</code> installs a separate kernelspec (<code>cdp-node-deno</code>). It provides a <code>Deno</code> namespace covering:</p>
+      <ul>
+        <li><code>jupyter</code>, <code>version</code> and <code>build</code>;</li>
+        <li><code>env</code>, <code>args</code>, <code>cwd</code> and <code>chdir</code>;</li>
+        <li>text and binary file I/O, with Node errno codes mapped to <code>Deno.errors.*</code>;</li>
+        <li><code>readDir</code>, <code>stat</code>, <code>mkdir</code>, <code>remove</code>, <code>rename</code>, <code>realPath</code>, and temp files and directories;</li>
+        <li><code>inspect</code>, <code>stdout</code> and <code>stderr</code>.</li>
+      </ul>
+      <div class="note">
+        <span class="nlabel">Why opt-in</span>
+        Libraries detect Deno with <code>typeof Deno !== "undefined"</code>. With a shim present they take their Deno code paths, which may call APIs the shim doesn't cover (<code>Deno.serve</code>, <code>Deno.Command</code>, <code>Deno.openKv</code>). APIs outside the shim are simply absent, so feature checks still return false instead of throwing. Turning it on by default is a one-line change if that trade suits you.
+      </div>
+    </section>
+
+    <!-- ===================== 04 ===================== -->
+    <section class="sec reveal" id="s4">
+      <div class="sec-head"><span class="sec-num">04</span><h2>Evidence</h2></div>
+      <p>The e2e suite drives the kernel through Python's <code>jupyter_client</code>, which uses pyzmq and therefore real libzmq, so a pass also proves the pure-JS ZMTP interoperates. It follows Deno's <code>tests/integration/jupyter_tests.rs</code> and adds the gaps those tests leave. Kernelspecs go into a temporary <code>JUPYTER_DATA_DIR</code>.</p>
+      <div class="data-cap">Conformance suite · final run, 2026-10-14</div>
+      <div class="data-wrap">
+        <table>
+          <thead><tr><th>Check group</th><th>What it exercises</th><th class="n">node</th><th class="n">deno</th><th class="n">node + compat</th></tr></thead>
+          <tbody>
+            <tr><td>Protocol</td><td>kernel_info, stream, execute_result, shutdown exits the process</td><td class="n good">4/4</td><td class="n good">4/4</td><td class="n good">4/4</td></tr>
+            <tr><td>Language</td><td>TS + enums, const redeclare, top-level await, object-literal cells, thrown and syntax errors</td><td class="n good">6/6</td><td class="n good">6/6</td><td class="n good">6/6</td></tr>
+            <tr><td>Display</td><td>stream/display ordering, display symbol, md template, update_display_data, PNG bytes</td><td class="n good">5/5</td><td class="n good">5/5</td><td class="n good">5/5</td></tr>
+            <tr><td>Modules</td><td><code>node:</code> builtins, relative <code>.ts</code>, <code>import.meta</code>, <code>npm:is-odd</code>, <code>jsr:@std/text</code></td><td class="n good">5/5</td><td class="n good">5/5</td><td class="n good">5/5</td></tr>
+            <tr><td>Interaction</td><td>prompt with and without stdin, interrupt keeps state, late uncaught error survives, completion, is_complete</td><td class="n good">6/6</td><td class="n good">6/6</td><td class="n good">6/6</td></tr>
+            <tr><td>Deno namespace</td><td><code>Deno.jupyter === jupyter</code>, <code>Deno.*</code> file APIs and <code>Deno.errors.NotFound</code></td><td class="n">—</td><td class="n good">2/2</td><td class="n good">2/2</td></tr>
+            <tr><td class="em">Total</td><td></td><td class="n em">26/26</td><td class="n em">28/28</td><td class="n em">28/28</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Counts include the shutdown check. Unit tests cover the wire codec, ZMTP framing (including a real loopback ROUTER), the cell transformer, the text helpers, the pipe demultiplexer, the display formatter, the resolve-hook parsers, the connection-file parser, and the compat shim: <strong>112/112 pass</strong>, and <code>tsc --strict</code> is clean with <code>erasableSyntaxOnly</code>. The unit suite caught one real bug, a marker cut inside its own prefix leaking as text, which is now fixed.</p>
+
+      <h3>A real Deno-style notebook</h3>
+      <p><code>examples/deno-style.ipynb</code> is written against <code>deno jupyter</code>'s APIs. It uses <code>import pl from "npm:nodejs-polars@0.18.0"</code> DataFrames, which are a native N-API addon, plus a filtered and derived frame, a Vega-Lite v5 chart object, a <code>Deno.jupyter.svg</code> badge, a progress bar updated in place via <code>display_id</code>, a class with <code>Symbol.for("Jupyter.display")</code>, and <code>Deno.makeTempDir</code>/<code>writeTextFile</code>/<code>readDir</code>. Executed by nbclient, it produced the same output types cell for cell on the Deno target ("Running on <strong>Deno 2.9.6</strong>, V8 15.0") and on the Node target with the shim ("Running on <strong>Node 26.8.1</strong>, V8 14.6"). The executed copies sit next to the source notebook.</p>
+    </section>
+
+    <!-- ===================== 05 ===================== -->
+    <section class="sec reveal" id="s5">
+      <div class="sec-head"><span class="sec-num">05</span><h2>Options compared</h2></div>
+      <p>Seven routes, ranked by how much of the Deno experience they keep for the effort, and by how well they survive Deno going quiet.</p>
+      <div class="data-cap">Routes to a post-Deno notebook kernel</div>
+      <div class="data-wrap">
+        <table>
+          <thead><tr><th>Route</th><th>Status</th><th>Fidelity to deno jupyter</th><th>Effort from here</th><th>Durability</th></tr></thead>
+          <tbody>
+            <tr><td class="em">cdp-kernel, Node target</td><td class="good">Working spike</td><td>High: TS, npm:/jsr:, display API, interrupt, stdin. No widgets; <code>util.inspect</code> formatting</td><td>Packaging, plus comms if you want widgets</td><td class="good">Node and V8's inspector, both long-lived</td></tr>
+            <tr><td class="em">cdp-kernel, Deno target</td><td class="good">Working spike</td><td>Highest: Deno's own loader, permissions model off, real <code>Deno.*</code></td><td>None beyond the above</td><td class="bad">Rides the frozen runtime; fine while it lasts</td></tr>
+            <tr><td>cdp-kernel, workerd target</td><td>Probed (§06)</td><td>Medium: hybrid needed; no replMode in request scope</td><td>New backend: request-scoped evaluator plus declaration hoisting</td><td class="good">Cloudflare's stated direction</td></tr>
+            <tr><td>Bun backend</td><td>Probed (§07)</td><td>Medium: WebKit protocol lacks replMode, bindings, terminate</td><td>New backend: in-process evaluator with hoisting</td><td>Depends on Bun</td></tr>
+            <tr><td>rusty_v8 native host</td><td>Assessed (§08)</td><td>Whatever you rebuild</td><td class="bad">Large: event loop, module loader, web APIs, inspector wiring</td><td>rusty_v8 is supported; the rest is yours</td></tr>
+            <tr><td>Native FFI shell (runtimed)</td><td>Assessed (§08)</td><td>Transport only</td><td>Medium, and it solves a solved problem</td><td>Good, but unnecessary</td></tr>
+            <tr><td>Adopt tslab or IJavascript</td><td>Survey</td><td>Low: no Deno display API, no npm:/jsr:, old TS</td><td>Fork and modernize</td><td class="bad">Stale since 2024 and 2021</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The ranking turns on one fact. Deno already did the separation, and the seam it chose (<span class="term" tabindex="0" data-term="CDP" data-def="Chrome DevTools Protocol: the JSON-over-WebSocket protocol V8 runtimes expose through --inspect. Runtime.evaluate, Runtime.callFunctionOn and friends let an outside process run code in the runtime and inspect the results.">CDP</span>) is a public, multi-vendor protocol. Every route that keeps that seam inherits Deno's REPL semantics almost for free. Every route that drops it has to rebuild them.</p>
+    </section>
+
+    <!-- ===================== 06 ===================== -->
+    <section class="sec reveal" id="s6">
+      <div class="sec-head"><span class="sec-num">06</span><h2>workerd as a target</h2></div>
+      <p>The probe ran workerd 2026-09-30 (npm <code>workerd@1.20260930.1</code>) with <code>--inspector-addr</code> and <code>--experimental</code>, and gave the worker an <code>UnsafeEval</code> binding. It compared inspector evaluation against evaluation inside a <code>fetch</code> handler.</p>
+      <div class="data-cap">workerd probe · inspector vs request scope</div>
+      <div class="data-wrap">
+        <table>
+          <thead><tr><th>Capability</th><th>Inspector <code>Runtime.evaluate</code> (no request)</th><th>Inside a request (UnsafeEval)</th></tr></thead>
+          <tbody>
+            <tr><td>replMode, const redeclare, resolved top-level await</td><td class="good">works</td><td>n/a (function body; needs hoisting)</td></tr>
+            <tr><td><code>eval</code> / <code>new Function</code> inside a cell</td><td class="good">works</td><td class="good">works via binding</td></tr>
+            <tr><td>Dynamic <code>import()</code>, CDP <code>addBinding</code></td><td class="good">works</td><td>—</td></tr>
+            <tr><td>Timers, <code>fetch</code>, <code>crypto.randomUUID</code></td><td class="bad">"Disallowed operation called within global scope"</td><td class="good">works (fetch needed an outbound network service allowing private addresses)</td></tr>
+            <tr><td>Globals persist between cells</td><td class="good">yes</td><td class="good">yes, across requests</td></tr>
+            <tr><td>Interrupt via second session</td><td class="bad">no reply; the first session then stopped responding</td><td>untested (CPU limits are the likely lever)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A notebook needs timers and I/O, so a workerd backend has to run cells inside a request. workerd marks that context with an <span class="term" tabindex="0" data-term="IoContext" data-def="workerd's per-request context. Timers, fetch, random values and other I/O are only allowed while one is active; code running at global scope, including inspector evaluations, has none.">IoContext</span>.</p>
+      <p>The design that follows from the probe:</p>
+      <ul>
+        <li>A driver Worker exposes <code>POST /eval</code>.</li>
+        <li>The host hoists each cell's top-level declarations onto <code>globalThis</code> (the tslab technique) and runs it through <code>UnsafeEval.newAsyncFunction</code>.</li>
+        <li>Display messages travel back in the response.</li>
+        <li>The inspector is used only for completion.</li>
+      </ul>
+      <p>That is a new backend behind the same host, not a change to the protocol half. If "rusty_v8 in workerd" eventually lets Rust code reach workerd's inspector or isolate directly, an in-process variant becomes possible. Nothing public yet says that it will.</p>
+    </section>
+
+    <!-- ===================== 07 ===================== -->
+    <section class="sec reveal" id="s7">
+      <div class="sec-head"><span class="sec-num">07</span><h2>Bun</h2></div>
+      <p>Bun 1.4.0's <code>--inspect</code> speaks the WebKit Inspector Protocol. Probed directly:</p>
+      <ul>
+        <li><code>Runtime.evaluate</code> works.</li>
+        <li><code>const</code> redeclaration is tolerated even without <code>replMode</code>, because of JSC's console semantics.</li>
+        <li>Top-level <code>await</code> is a SyntaxError.</li>
+        <li><code>awaitPromise</code> is ignored.</li>
+        <li><code>Runtime.addBinding</code>, <code>globalLexicalScopeNames</code> and <code>terminateExecution</code> do not exist.</li>
+      </ul>
+      <p>A Bun backend would therefore evaluate in-process: wrap cells in async functions, hoist declarations, report output through a socket back to the host, and interrupt by restarting the process. The host, wire protocol, transformer and display module carry over unchanged.</p>
+    </section>
+
+    <!-- ===================== 08 ===================== -->
+    <section class="sec reveal" id="s8">
+      <div class="sec-head"><span class="sec-num">08</span><h2>rusty_v8 and FFI surfaces</h2></div>
+      <p>Probed on this machine. <code>Deno.dlopen</code> (Deno 2.9.6) and <code>bun:ffi</code> (Bun 1.4.0) both loaded libSystem and called <code>getpid()</code>. Node 26.8.1 has a <code>node:ffi</code> module only behind <code>--experimental-ffi</code>. Without the flag, it is an unknown built-in, so the research sweep's "on by default" was wrong for this version. With the flag, <code>dlopen</code> worked. So one C-ABI library can be loaded by all three runtimes.</p>
+      <p>What FFI <em>can't</em> do is the important part. A kernel's evaluator has to run code in the host runtime's own isolate. A <span class="term" tabindex="0" data-term="cdylib" data-def="A Rust crate compiled as a C-compatible dynamic library (.dylib/.so/.dll) that any FFI layer can load.">cdylib</span> that links rusty_v8 brings a <em>second</em> V8 with its own heap. It cannot see the host's globals, modules, or <code>node_modules</code>. FFI is useful only for the transport, and the transport is already solved in pure JS. runtimed's pure-Rust <code>jupyter-zmq-client</code> (reported by the sweep, not opened) is a good reference implementation, but it isn't needed.</p>
+      <p>rusty_v8 as the base of a <em>standalone</em> kernel binary is coherent but expensive. The <code>v8</code> crate has complete inspector bindings. You would still build an event loop, a module loader with TS transpile and <code>npm:</code> resolution, console, timers and fetch, which is most of what deno_core is. deno_core is still shipping releases (0.412 in September, per the sweep), but nobody has committed to its future. The CDP route reaches a richer result by borrowing an existing runtime instead.</p>
+      <div class="note">
+        <span class="nlabel">Where Rust would earn its keep</span>
+        A single-binary, dependency-free kernel host: ZMTP plus the Jupyter protocol in Rust, driving any CDP target. That's a packaging choice, not a capability gain. It's worth doing only if shipping a Node-based host becomes the obstacle.
+      </div>
+    </section>
+
+    <!-- ===================== 09 ===================== -->
+    <section class="sec reveal" id="s9">
+      <div class="sec-head"><span class="sec-num">09</span><h2>Risks and gaps</h2></div>
+      <ul>
+        <li><strong>No comms, so no ipywidgets.</strong> Deno lacks them too. Adding <code>comm_open</code>/<code>comm_msg</code> routing is the largest missing protocol feature.</li>
+        <li><strong>Formatting differs on Node.</strong> <code>util.inspect</code> is used instead of Deno's <code>inspectArgs</code>, so strings render with <code>'</code> rather than <code>"</code>, among other small differences.</li>
+        <li><strong>Node <code>npm:</code> is simple.</strong> Installs go into a shared cache under per-range aliases, with no lockfile, and peer dependencies resolve by real name. It's good for notebooks and wrong for reproducible environments.</li>
+        <li><strong>Two processes.</strong> Startup is roughly the target's boot plus one WebSocket handshake. The kernel is local-only, with the inspector bound to 127.0.0.1. The host still verifies HMAC on every frontend message.</li>
+        <li><strong>The interrupt recipe relies on observed V8 inspector behaviour</strong>: messages are processed between tasks but not during a dispatch. It holds on Node 26 and Deno 2.9; pin it with the e2e test.</li>
+        <li><strong>Deno targets use <code>--node-modules-dir=none</code>.</strong> Deno discovers config from the main module's location. Without the flag, it put <code>npm:</code> into BYONM mode against the spike's own <code>package.json</code>. A notebook relying on a project-local <code>node_modules</code> under Deno would need that revisited.</li>
+        <li><strong>Not done:</strong> type checking (Deno doesn't type-check cells either), WebGPU display, a debugger, and <code>inspect_request</code> content.</li>
+      </ul>
+    </section>
+
+    <!-- ===================== 10 ===================== -->
+    <section class="sec reveal" id="s10">
+      <div class="sec-head"><span class="sec-num">10</span><h2>Recommended next steps</h2></div>
+      <ol>
+        <li><strong>Promote the spike to its own repo</strong>, for example <code>tlockney/cdp-kernel</code>. Publish it to npm and JSR, so <code>npx cdp-kernel install</code> writes a kernelspec that doesn't point into a checkout.</li>
+        <li><strong>Ship typings for the <code>jupyter</code> global.</strong> The <code>.d.mts</code> files written for the tests are most of it already.</li>
+        <li><strong>Add comms</strong>, so ipywidgets and anywidget work. Deno never had this, and it would make the kernel strictly better than the original.</li>
+        <li><strong>Offer it upstream.</strong> No one has claimed the Jupyter kernel in denoland/deno#36995 or the forks. A runtime-neutral kernel is useful to all of them, and it keeps working whichever fork wins.</li>
+        <li><strong>Only then</strong> consider the workerd hybrid backend or a Bun backend, both behind the same host.</li>
+      </ol>
+    </section>
+
+    <section class="sec reveal" id="glossary">
+      <div class="sec-head"><span class="sec-num">§</span><h2>Glossary</h2></div>
+      <p class="gloss-intro">Every dotted-underline term in this dossier, collected. Definitions also appear on hover/focus in place. <span class="term" tabindex="0" data-term="BYONM" data-def="Bring Your Own node_modules: Deno's mode where npm packages resolve from a local node_modules directory managed by another tool, instead of Deno's global cache.">BYONM</span> and <span class="term" tabindex="0" data-term="kernelspec" data-def="A kernel.json file in a Jupyter data directory telling frontends how to launch a kernel: argv with {connection_file}, display name, language, interrupt mode.">kernelspec</span> appear here only.</p>
+      <dl class="glossary" id="glossary-list"></dl>
+    </section>
+
+    <footer class="foot">
+      <div class="row">
+        <span class="cad">§ Life after deno jupyter</span>
+        <span>Compiled 2026-10-14 · denoland/deno v2.9.6 source, live probes of Node 26.8.1, Deno 2.9.6, workerd 2026-09-30, Bun 1.4.0</span>
+      </div>
+    </footer>
+
+  </main>
+</div>
+<!-- CONTENT:end -->
+
+<!-- TEMPLATE-JS:start — the three bundled scripts (scroll reveal, TOC
+     scrollspy, glossary builder). Chrome: no-ops when their targets are
+     absent; don't add others. -->
+<script>
+  // scroll reveal
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const items = document.querySelectorAll('.reveal');
+  if(reduce){ items.forEach(el=>el.classList.add('in')); }
+  else{
+    // threshold must stay 0: a fractional threshold can never be met by a
+    // section taller than (1/threshold) viewports, leaving it invisible
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} });
+    },{threshold:0, rootMargin:'0px 0px -8% 0px'});
+    items.forEach(el=>io.observe(el));
+  }
+
+  // active TOC highlighting
+  const links = [...document.querySelectorAll('.toc a')];
+  const map = new Map(links.map(a=>[a.getAttribute('href').slice(1), a]));
+  const secObserver = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        links.forEach(l=>l.classList.remove('active'));
+        const a = map.get(e.target.id);
+        if(a) a.classList.add('active');
+      }
+    });
+  },{rootMargin:'-20% 0px -70% 0px',threshold:0});
+  document.querySelectorAll('section[id]').forEach(s=>secObserver.observe(s));
+
+  // mobile glossary tooltips — anchor the panel to its term, clamped to the
+  // viewport. CSS alone can only center on the term, which pushes the panel
+  // off-screen for terms near either edge; the old workaround pinned it to
+  // the bottom of the screen, which read as "the note fell to the footer".
+  (function(){
+    const phone = window.matchMedia('(max-width:640px)');
+    const GAP = 14, MAXW = 290;
+    function place(el){
+      if(!phone.matches){
+        el.style.removeProperty('--tip-x');
+        el.style.removeProperty('--tip-w');
+        el.classList.remove('tip-below');
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      const w = Math.min(MAXW, window.innerWidth - GAP * 2);
+      const centered = r.left + r.width / 2 - w / 2;
+      const left = Math.max(GAP, Math.min(centered, window.innerWidth - w - GAP));
+      el.style.setProperty('--tip-x', (left - r.left) + 'px');
+      el.style.setProperty('--tip-w', w + 'px');
+      // no room to open upward near the top of the viewport — flip below
+      el.classList.toggle('tip-below', r.top < 150);
+    }
+    const terms = [...document.querySelectorAll('.term')];
+    terms.forEach(el=>{
+      ['focus','mouseenter','touchstart'].forEach(ev=>
+        el.addEventListener(ev, ()=>place(el), {passive:true}));
+    });
+    // focus is what reveals the panel, so a tap elsewhere has to blur it
+    document.addEventListener('touchstart', (e)=>{
+      const open = document.activeElement;
+      if(open && open.classList && open.classList.contains('term') && !open.contains(e.target)){
+        open.blur();
+      }
+    }, {passive:true});
+    window.addEventListener('resize', ()=>terms.forEach(place));
+  })();
+
+  // build the glossary from inline term definitions (single source of truth)
+  (function(){
+    const els = [...document.querySelectorAll('[data-def]')];
+    const seen = new Map();
+    els.forEach(el=>{
+      const term = (el.getAttribute('data-term') || el.textContent).trim();
+      const def = el.getAttribute('data-def');
+      const key = term.toLowerCase();
+      if(def && !seen.has(key)) seen.set(key, {term, def});
+    });
+    const list = document.getElementById('glossary-list');
+    if(!list) return;
+    [...seen.values()].sort((a,b)=>a.term.localeCompare(b.term)).forEach(({term,def})=>{
+      const wrap = document.createElement('div');
+      const dt = document.createElement('dt'); dt.textContent = term;
+      const dd = document.createElement('dd'); dd.textContent = def;
+      wrap.append(dt, dd); list.append(wrap);
+    });
+  })();
+</script>
+<!-- TEMPLATE-JS:end -->
+
+
+
+</body>
+</html>

@@ -1,0 +1,391 @@
+// A target runtime driven over CDP: the stand-in for Deno's REPL isolate and
+// the ops in cli/ops/jupyter.rs. Any runtime whose --inspect speaks CDP and
+// can load runtime/bootstrap.mjs works; Node and Deno are wired up here.
+
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
+import { SHIM } from "./transform.ts";
+
+export type RuntimeName = "node" | "deno";
+
+const BOOTSTRAP = fileURLToPath(new URL("../runtime/bootstrap.mjs", import.meta.url));
+const BINDING = "__cdpk_send";
+const MARKER_RE = /\x1b\[cdpk:(\d+)(m?)\]\x1b/;
+const MAX_MARKER_LEN = 24;
+// Lines the runtimes print to stderr on their own: inspector notices, and
+// Deno's npm/jsr "Download https://..." progress (which `deno jupyter`
+// sends to the server log rather than the notebook).
+const INSPECTOR_CHATTER =
+  /^(?:\x1b\[[0-9;]*m)*(Debugger listening on |Debugger attached\.|For help, see: |Visit chrome:\/\/inspect|Waiting for the debugger to disconnect|Download(?:\x1b\[[0-9;]*m)* https?:\/\/).*\n/gm;
+
+export function launchCommand(runtime: RuntimeName, executable?: string): { cmd: string; args: string[] } {
+  const inspect = "--inspect=127.0.0.1:0";
+  if (runtime === "deno") {
+    // Deno discovers config from the main module's location, which would
+    // put npm: imports in BYONM mode against this package's own
+    // package.json. `none` gives the global-cache behaviour `deno jupyter`
+    // has in a plain directory; --no-lock stops it writing a deno.lock
+    // into this package.
+    return {
+      cmd: executable ?? "deno",
+      args: ["run", "--allow-all", "--node-modules-dir=none", "--no-lock", inspect, BOOTSTRAP],
+    };
+  }
+  return { cmd: executable ?? process.execPath, args: [inspect, BOOTSTRAP] };
+}
+
+/** Messages the bootstrap sends through the CDP binding. */
+export type TargetMessage =
+  | { kind: "iopub"; msg_type: string; content: CdpParams; metadata: CdpParams; buffers: string[]; barrier: number }
+  | { kind: "input_request"; prompt: string; password: boolean; barrier: number };
+
+function isTargetMessage(value: unknown): value is TargetMessage {
+  if (typeof value !== "object" || value === null) return false;
+  const kind = (value as { kind?: unknown }).kind;
+  return (kind === "iopub" || kind === "input_request") &&
+    typeof (value as { barrier?: unknown }).barrier === "number";
+}
+
+type PipeItem = { text: string } | { barrier: number; gated: boolean };
+
+const MARKER_PREFIX = "\x1b[cdpk:";
+
+function isPartialMarker(tail: string): boolean {
+  if (tail.length >= MAX_MARKER_LEN) return false;
+  return MARKER_PREFIX.startsWith(tail) || /^\x1b\[cdpk:\d*m?\]?$/.test(tail);
+}
+
+/**
+ * Splits one output pipe into text and barrier markers, and releases them
+ * in order. A gated marker (one that announces a binding message) pauses
+ * the pipe until `gate(n)` resolves, i.e. until that message has been
+ * delivered, so later output can't overtake it. A possible partial marker
+ * at the end of a chunk is held back until the next chunk decides it.
+ */
+export class PipeDemux {
+  #buffer = "";
+  #items: PipeItem[] = [];
+  #pumping = false;
+  #closed = false;
+  #reached = 0;
+  #waiters: { n: number; resolve: () => void }[] = [];
+  readonly onText: (text: string) => void;
+  readonly gate: (n: number) => Promise<void>;
+
+  constructor(onText: (text: string) => void, gate: (n: number) => Promise<void> = () => Promise.resolve()) {
+    this.onText = onText;
+    this.gate = gate;
+  }
+
+  push(chunk: string): void {
+    this.#buffer += chunk;
+    for (;;) {
+      const m = MARKER_RE.exec(this.#buffer);
+      if (!m) break;
+      if (m.index > 0) this.#items.push({ text: this.#buffer.slice(0, m.index) });
+      this.#items.push({ barrier: Number(m[1]), gated: m[2] === "m" });
+      this.#buffer = this.#buffer.slice(m.index + m[0].length);
+    }
+    // Hold back a tail that could still grow into a marker, including one
+    // cut inside the "\x1b[cdpk:" prefix itself.
+    const esc = this.#buffer.lastIndexOf("\x1b");
+    const tail = esc === -1 ? "" : this.#buffer.slice(esc);
+    const holdFrom = esc !== -1 && isPartialMarker(tail) ? esc : this.#buffer.length;
+    if (holdFrom > 0) {
+      this.#items.push({ text: this.#buffer.slice(0, holdFrom) });
+      this.#buffer = this.#buffer.slice(holdFrom);
+    }
+    void this.#pump();
+  }
+
+  async #pump(): Promise<void> {
+    if (this.#pumping) return;
+    this.#pumping = true;
+    try {
+      for (let item = this.#items.shift(); item; item = this.#items.shift()) {
+        if ("text" in item) {
+          this.onText(item.text);
+          continue;
+        }
+        this.#reach(item.barrier);
+        if (item.gated && !this.#closed) await this.gate(item.barrier);
+      }
+    } finally {
+      this.#pumping = false;
+    }
+  }
+
+  #reach(n: number): void {
+    this.#reached = Math.max(this.#reached, n);
+    this.#waiters = this.#waiters.filter((w) => {
+      if (w.n > this.#reached) return true;
+      w.resolve();
+      return false;
+    });
+  }
+
+  waitFor(n: number): Promise<void> {
+    if (n <= this.#reached) return Promise.resolve();
+    return new Promise((resolve) => this.#waiters.push({ n, resolve }));
+  }
+
+  /** Release everything (the process died). */
+  close(): void {
+    this.#closed = true;
+    if (this.#buffer) this.#items.push({ text: this.#buffer });
+    this.#buffer = "";
+    this.#items.push({ barrier: Number.MAX_SAFE_INTEGER, gated: false });
+    void this.#pump();
+  }
+}
+
+/** Promises keyed by barrier number, resolvable before or after first use. */
+class Gates {
+  #map = new Map<number, { promise: Promise<void>; resolve: () => void }>();
+  #entry(n: number) {
+    let entry = this.#map.get(n);
+    if (!entry) {
+      let resolve = () => {};
+      const promise = new Promise<void>((r) => (resolve = r));
+      entry = { promise, resolve };
+      this.#map.set(n, entry);
+    }
+    return entry;
+  }
+  wait(n: number): Promise<void> {
+    return this.#entry(n).promise;
+  }
+  open(n: number): void {
+    this.#entry(n).resolve();
+  }
+  openAll(): void {
+    for (const entry of this.#map.values()) entry.resolve();
+    this.#map.clear();
+  }
+}
+
+export interface TargetEvents {
+  stream(name: "stdout" | "stderr", text: string): void;
+  message(msg: TargetMessage): void;
+  exit(code: number | null): void;
+}
+
+export class Interrupted extends Error {
+  override name = "Interrupted";
+}
+
+export class Target {
+  readonly runtime: RuntimeName;
+  #child: ChildProcessWithoutNullStreams;
+  #shell: CdpSession;
+  #control: CdpSession;
+  #stdout: PipeDemux;
+  #stderr: PipeDemux;
+  #gates: Gates;
+  #contextId: number;
+  #messages: Promise<void> = Promise.resolve();
+  #interrupted = false;
+  readonly versions: { runtime: string; v8: string };
+
+  private constructor(
+    runtime: RuntimeName,
+    child: ChildProcessWithoutNullStreams,
+    shell: CdpSession,
+    control: CdpSession,
+    stdout: PipeDemux,
+    stderr: PipeDemux,
+    gates: Gates,
+    contextId: number,
+    versions: { runtime: string; v8: string },
+  ) {
+    this.runtime = runtime;
+    this.#child = child;
+    this.#shell = shell;
+    this.#control = control;
+    this.#stdout = stdout;
+    this.#stderr = stderr;
+    this.#gates = gates;
+    this.#contextId = contextId;
+    this.versions = versions;
+  }
+
+  static async launch(
+    runtime: RuntimeName,
+    events: TargetEvents,
+    options: { cwd?: string; executable?: string; denoCompat?: boolean } = {},
+  ): Promise<Target> {
+    const { cmd, args } = launchCommand(runtime, options.executable);
+    const env: NodeJS.ProcessEnv = { ...process.env, FORCE_COLOR: "1" };
+    if (options.denoCompat) env.CDPK_DENO_COMPAT = "1";
+    delete env.NO_COLOR;
+    const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+
+    const gates = new Gates();
+    const stdout = new PipeDemux((text) => events.stream("stdout", text), (n) => gates.wait(n));
+    const stderr = new PipeDemux((text) => events.stream("stderr", text), (n) => gates.wait(n));
+    const pushStderr = (chunk: string) => {
+      const text = chunk.replace(INSPECTOR_CHATTER, "");
+      if (text) stderr.push(text);
+    };
+    // Until the inspector URL appears, stderr carries the runtime's banner.
+    const wsUrl = await new Promise<string>((resolve, reject) => {
+      let banner = "";
+      const onData = (chunk: string) => {
+        banner += chunk;
+        const m = /ws:\/\/\S+/.exec(banner);
+        if (!m) return;
+        child.stderr.off("data", onData);
+        pushStderr(banner.slice(m.index + m[0].length).replace(/^.*\n?/, ""));
+        child.stderr.on("data", pushStderr);
+        resolve(m[0]);
+      };
+      child.stderr.on("data", onData);
+      child.once("error", reject);
+      child.once("exit", (code) => reject(new Error(`${cmd} exited (${code}) before its inspector came up:\n${banner}`)));
+    });
+    child.stdout.on("data", (c: string) => stdout.push(c));
+    child.once("exit", (code) => {
+      gates.openAll();
+      stdout.close();
+      stderr.close();
+      events.exit(code);
+    });
+
+    const shell = await CdpSession.connect(wsUrl);
+    const control = await CdpSession.connect(wsUrl);
+
+    const contextReady = new Promise<number>((resolve) => {
+      shell.on("Runtime.executionContextCreated", (params) => {
+        const context = params.context as { id: number; auxData?: { isDefault?: boolean } };
+        if (context.auxData?.isDefault !== false) resolve(context.id);
+      });
+    });
+    await shell.send("Runtime.enable");
+    await shell.send("Runtime.addBinding", { name: BINDING });
+    const contextId = await contextReady;
+
+    const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", v8: "" });
+    shell.on("Runtime.bindingCalled", (params) => {
+      if (params.name !== BINDING || typeof params.payload !== "string") return;
+      const msg: unknown = JSON.parse(params.payload);
+      if (isTargetMessage(msg)) target.#deliver(msg, events);
+    });
+
+    // Wait for the bootstrap's top-level await to finish installing the shim.
+    for (let i = 0; i < 200; i++) {
+      const probe = await target.#evaluateRaw(`typeof globalThis.${SHIM}?.tick === "function"`);
+      if (probe.result.value === true) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const versions = await target.#evaluateRaw(
+      `JSON.stringify(typeof Deno !== "undefined" ? { runtime: Deno.version.deno, v8: Deno.version.v8 } : { runtime: process.versions.node, v8: process.versions.v8 })`,
+    );
+    Object.assign(target.versions, JSON.parse(String(versions.result.value)));
+    return target;
+  }
+
+  // Binding messages wait until both pipes have caught up to their marker,
+  // and are delivered strictly in order.
+  #deliver(msg: TargetMessage, events: TargetEvents): void {
+    this.#messages = this.#messages.then(async () => {
+      await Promise.all([this.#stdout.waitFor(msg.barrier), this.#stderr.waitFor(msg.barrier)]);
+      events.message(msg);
+      this.#gates.open(msg.barrier);
+    });
+  }
+
+  /** Resolves once all output and messages sent so far have been delivered. */
+  async flush(): Promise<void> {
+    const n = await this.#evaluateRaw(`${SHIM}.barrier()`);
+    const barrier = Number(n.result.value);
+    await Promise.all([this.#stdout.waitFor(barrier), this.#stderr.waitFor(barrier)]);
+    await this.#messages;
+  }
+
+  #evaluateRaw(expression: string, session = this.#shell): Promise<EvaluateResult> {
+    return session
+      .send("Runtime.evaluate", { expression, contextId: this.#contextId, replMode: true, awaitPromise: true })
+      .then(asEvaluateResult);
+  }
+
+  /** Runs transformed cell code. Rejects with Interrupted after interrupt(). */
+  async evaluate(script: string): Promise<EvaluateResult> {
+    this.#interrupted = false;
+    try {
+      return await this.#evaluateRaw(script);
+    } catch (err) {
+      if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Execution interrupted");
+      throw err;
+    }
+  }
+
+  /**
+   * Deno calls IsolateHandle::terminate_execution from another thread. The
+   * CDP equivalent is Runtime.terminateExecution, sent on a second session
+   * because the shell session is the one blocked on the running evaluate.
+   * Terminated code never settles the awaited promise, so the pending
+   * evaluate is abandoned here and the session stays usable.
+   */
+  async interrupt(): Promise<void> {
+    this.#interrupted = true;
+    await this.#control.send("Runtime.terminateExecution");
+    this.#shell.abandonPending();
+  }
+
+  callFunctionOn(functionDeclaration: string, args: CdpParams[]): Promise<CdpParams> {
+    return this.#shell.send("Runtime.callFunctionOn", {
+      functionDeclaration,
+      arguments: args,
+      executionContextId: this.#contextId,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+  }
+
+  /** The broadcastResult step of Deno's execute flow (jupyter/mod.rs). */
+  async broadcastResult(executionCount: number, result: RemoteObject): Promise<void> {
+    const arg = result.objectId
+      ? { objectId: result.objectId }
+      : result.unserializableValue !== undefined
+      ? { unserializableValue: result.unserializableValue }
+      : { value: result.value };
+    await this.callFunctionOn(`function (n, r) { return globalThis.${SHIM}.broadcastResult(n, r); }`, [
+      { value: executionCount },
+      arg,
+    ]);
+  }
+
+  async describeError(exception: RemoteObject): Promise<{ name: string; message: string; stack: string }> {
+    const arg = exception.objectId ? { objectId: exception.objectId } : { value: exception.value };
+    const res = await this.callFunctionOn(`function (e) { return globalThis.${SHIM}.describeError(e); }`, [arg]);
+    const value = (res.result as RemoteObject | undefined)?.value;
+    return JSON.parse(typeof value === "string" ? value : '{"name":"Error","message":"","stack":""}');
+  }
+
+  async propertyNames(expression: string): Promise<string[]> {
+    const evaluated = await this.#evaluateRaw(`(${expression})`).catch(() => null);
+    const objectId = evaluated?.result.objectId;
+    if (!objectId || evaluated?.exceptionDetails) return [];
+    const props = await this.#shell.send("Runtime.getProperties", { objectId, nonIndexedPropertiesOnly: true });
+    const list = props.result as { name: string }[] | undefined;
+    return (list ?? []).map((p) => p.name);
+  }
+
+  async lexicalNames(): Promise<string[]> {
+    const res = await this.#shell.send("Runtime.globalLexicalScopeNames", { executionContextId: this.#contextId });
+    return (res.names as string[] | undefined) ?? [];
+  }
+
+  replyInput(value: string | null): void {
+    this.#child.stdin.write(JSON.stringify({ value }) + "\n");
+  }
+
+  kill(): void {
+    this.#shell.close();
+    this.#control.close();
+    this.#child.kill();
+  }
+}

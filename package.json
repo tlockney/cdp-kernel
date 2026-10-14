@@ -1,0 +1,27 @@
+{
+  "name": "cdp-kernel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jupyter kernel extracted from Deno's, driving any V8 runtime over the Chrome DevTools Protocol",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "cdp-kernel": "src/main.ts"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "e2e": "uv run --with nbclient --with nbformat --with jupyter_client python test/e2e.py"
+  },
+  "dependencies": {
+    "acorn": "^8.15.0",
+    "acorn-walk": "^8.3.4",
+    "esbuild": "^0.25.10"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
+  }
+}
