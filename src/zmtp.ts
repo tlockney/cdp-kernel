@@ -6,6 +6,7 @@
 // frontends; this keeps the same greeting, READY command and framing, and
 // swaps Deno.listen for node:net plus a small buffered reader.
 
+import { Buffer } from "node:buffer";
 import { createServer, type Server, type Socket } from "node:net";
 import { randomBytes } from "node:crypto";
 

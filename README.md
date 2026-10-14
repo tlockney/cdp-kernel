@@ -2,12 +2,14 @@
 
 A Jupyter kernel extracted from Deno's (`deno jupyter`, v2.9.6) that drives
 any V8 runtime over the Chrome DevTools Protocol. The kernel host runs on
-Node; the code you type runs in a separate **target** runtime: Node or Deno
-today, and anything else whose inspector speaks CDP in principle.
+Node or Deno; the code you type runs in a separate **target** runtime:
+Node or Deno today, and anything else whose inspector speaks CDP in
+principle.
 
-This is a spike. It passes a conformance suite derived from Deno's own
-Jupyter integration tests on both targets. It isn't packaged, and it hasn't
-been used for real work. The feasibility study behind it covers the design,
+This is early software. It passes a conformance suite derived from Deno's
+own Jupyter integration tests on both targets, and it's packaged for npm and
+JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet. The
+feasibility study behind it covers the design,
 the other options considered (workerd, Bun, rusty_v8, FFI), and the
 evidence: [`docs/life-after-deno-jupyter.html`](docs/life-after-deno-jupyter.html).
 The scripts that produced its runtime findings are in [`probes/`](probes/).
@@ -33,18 +35,45 @@ So the extraction is:
   (`src/transform.ts`) and Node resolve hooks (`runtime/node-hooks.mjs`).
 - Port `Deno.jupyter` (`40_jupyter.js`) to `runtime/display.mjs`.
 
-## Use
+## Install
+
+Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`, or
+`cdp-node-deno` (Node with the Deno compatibility namespace). Then pick the
+kernel in JupyterLab or VS Code.
+
+**From npm** (host runs on Node 24+; Node 26 is what's been tested):
+
+```sh
+npm install -g @tlockney/cdp-kernel
+cdp-kernel install --runtime node
+cdp-kernel install --runtime deno
+cdp-kernel install --runtime node --deno-compat
+```
+
+The kernelspec records the absolute paths of `node` and the installed
+package. Re-run `install` after upgrading either.
+
+**From JSR** (host runs on Deno):
+
+```sh
+deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno
+```
+
+The kernelspec pins the release it was installed from
+(`jsr:@tlockney/cdp-kernel@<version>/cli`). On first launch the target's
+runtime modules are copied into `~/.cache/cdp-kernel/runtime/`. A Node
+target needs `node` on `PATH`.
+
+**From a checkout**, for working on the kernel itself:
 
 ```sh
 npm ci
-node src/main.ts install --runtime node                 # kernelspec cdp-node
-node src/main.ts install --runtime deno                 # kernelspec cdp-deno
-node src/main.ts install --runtime node --deno-compat   # kernelspec cdp-node-deno
+npm run install:node        # kernelspec cdp-node
+npm run install:deno        # kernelspec cdp-deno
+npm run install:node-deno   # kernelspec cdp-node-deno
 ```
 
-Then pick the kernel in JupyterLab or VS Code. The kernelspec points at this
-checkout, so don't move it after installing. Requires Node 24+; Node 26 is
-what's been tested.
+These kernelspecs point at the checkout, so don't move it after installing.
 
 In a cell:
 
@@ -83,7 +112,8 @@ In a cell:
 ## Tests
 
 ```sh
-npm test       # 112 unit tests (node:test)
+npm run check  # tsc --strict over src/ and test/
+npm test       # unit tests (node:test)
 npm run e2e    # conformance suite via jupyter_client/libzmq, on node, deno, node-deno
 uv run --with nbclient --with nbformat python examples/run_notebook.py   # Deno-style notebook on deno + node-deno
 ```
@@ -91,7 +121,27 @@ uv run --with nbclient --with nbformat python examples/run_notebook.py   # Deno-
 The e2e suite follows Deno's `tests/integration/jupyter_tests.rs` and adds
 the gaps those tests leave: display ordering, TS, imports, `npm:`/`jsr:`,
 completion, and `update_display_data`. Set `CDPK_E2E_OFFLINE=1` to skip the
-registry-dependent checks.
+registry-dependent checks. Set `CDPK_E2E_CLI` to run it through a different
+CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
+
+## Releasing
+
+One version number lives in three places: `package.json`, `deno.jsonc` and
+`src/package.ts`. `test/package.test.ts` fails if they disagree. To release:
+
+1. Bump all three, commit, and merge to `main`.
+2. Tag and push: `git tag v0.1.1 && git push origin v0.1.1`.
+
+The `publish` workflow then:
+
+1. Checks that the tag matches the version.
+2. Runs the type check, the unit tests, and the e2e suite against the packed
+   npm tarball and against a Deno host.
+3. Publishes to JSR (`deno publish`, authenticated by GitHub OIDC).
+4. Publishes to npm (`npm publish`).
+
+Neither registry lets a version be republished, so a failed half needs a new
+patch version.
 
 ## Known gaps
 

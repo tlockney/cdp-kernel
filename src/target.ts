@@ -2,14 +2,15 @@
 // the ops in cli/ops/jupyter.rs. Any runtime whose --inspect speaks CDP and
 // can load runtime/bootstrap.mjs works; Node and Deno are wired up here.
 
+import process from "node:process";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { SHIM } from "./transform.ts";
+import { hostRuntime, runtimeDir } from "./package.ts";
 
 export type RuntimeName = "node" | "deno";
 
-const BOOTSTRAP = fileURLToPath(new URL("../runtime/bootstrap.mjs", import.meta.url));
 const BINDING = "__cdpk_send";
 const MARKER_RE = /\x1b\[cdpk:(\d+)(m?)\]\x1b/;
 const MAX_MARKER_LEN = 24;
@@ -19,7 +20,8 @@ const MAX_MARKER_LEN = 24;
 const INSPECTOR_CHATTER =
   /^(?:\x1b\[[0-9;]*m)*(Debugger listening on |Debugger attached\.|For help, see: |Visit chrome:\/\/inspect|Waiting for the debugger to disconnect|Download(?:\x1b\[[0-9;]*m)* https?:\/\/).*\n/gm;
 
-export function launchCommand(runtime: RuntimeName, executable?: string): { cmd: string; args: string[] } {
+/** `bootstrap` is the local path of runtime/bootstrap.mjs (see runtimeDir). */
+export function launchCommand(runtime: RuntimeName, bootstrap: string, executable?: string): { cmd: string; args: string[] } {
   const inspect = "--inspect=127.0.0.1:0";
   if (runtime === "deno") {
     // Deno discovers config from the main module's location, which would
@@ -29,10 +31,12 @@ export function launchCommand(runtime: RuntimeName, executable?: string): { cmd:
     // into this package.
     return {
       cmd: executable ?? "deno",
-      args: ["run", "--allow-all", "--node-modules-dir=none", "--no-lock", inspect, BOOTSTRAP],
+      args: ["run", "--allow-all", "--node-modules-dir=none", "--no-lock", inspect, bootstrap],
     };
   }
-  return { cmd: executable ?? process.execPath, args: [inspect, BOOTSTRAP] };
+  // Under a Deno host, process.execPath is deno; find node on PATH instead.
+  const node = hostRuntime() === "node" ? process.execPath : "node";
+  return { cmd: executable ?? node, args: [inspect, bootstrap] };
 }
 
 /** Messages the bootstrap sends through the CDP binding. */
@@ -215,8 +219,9 @@ export class Target {
     events: TargetEvents,
     options: { cwd?: string; executable?: string; denoCompat?: boolean } = {},
   ): Promise<Target> {
-    const { cmd, args } = launchCommand(runtime, options.executable);
-    const env: NodeJS.ProcessEnv = { ...process.env, FORCE_COLOR: "1" };
+    const bootstrap = join(await runtimeDir(new URL("../runtime/", import.meta.url).href), "bootstrap.mjs");
+    const { cmd, args } = launchCommand(runtime, bootstrap, options.executable);
+    const env: Record<string, string | undefined> = { ...process.env, FORCE_COLOR: "1" };
     if (options.denoCompat) env.CDPK_DENO_COMPAT = "1";
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });

@@ -1,0 +1,23 @@
+{
+  // cdp-kernel on JSR as @tlockney/cdp-kernel. Deno runs the TypeScript
+  // sources directly; the npm package (package.json) ships compiled dist/.
+  // Keep "version" equal to package.json and src/package.ts — enforced by
+  // test/package.test.ts.
+  "name": "@tlockney/cdp-kernel",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./cli": "./src/main.ts"
+  },
+  "imports": {
+    "acorn": "npm:acorn@^8.15.0",
+    "acorn-walk": "npm:acorn-walk@^8.3.4",
+    "esbuild": "npm:esbuild@^0.25.10"
+  },
+  "publish": {
+    // runtime/*.mjs are loaded by the target runtime, not imported; a JSR
+    // install copies them into a local cache (src/package.ts runtimeDir).
+    "include": ["src/", "runtime/*.mjs", "runtime/*.d.mts", "README.md", "LICENSE"]
+  }
+}

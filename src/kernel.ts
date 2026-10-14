@@ -5,6 +5,8 @@
 // The thirteen op_jupyter_* calls into Deno's REPL isolate are replaced by
 // a Target driven over CDP (src/target.ts).
 
+import { Buffer } from "node:buffer";
+import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { decodeMessage, encodeMessage, type JsonObject, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
 import { PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";

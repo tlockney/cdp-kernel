@@ -107,19 +107,19 @@ test("PipeDemux close flushes held text and releases waiters", async () => {
 });
 
 test("launchCommand for node", () => {
-  const { cmd, args } = launchCommand("node");
+  const { cmd, args } = launchCommand("node", "/x/bootstrap.mjs");
   assert.equal(cmd, process.execPath);
   assert.ok(args.includes("--inspect=127.0.0.1:0"));
   assert.match(args[args.length - 1], /bootstrap\.mjs$/);
-  assert.equal(launchCommand("node", "/opt/node").cmd, "/opt/node");
+  assert.equal(launchCommand("node", "/x/bootstrap.mjs", "/opt/node").cmd, "/opt/node");
 });
 
 test("launchCommand for deno", () => {
-  const { cmd, args } = launchCommand("deno");
+  const { cmd, args } = launchCommand("deno", "/x/bootstrap.mjs");
   assert.equal(cmd, "deno");
   assert.equal(args[0], "run");
   assert.ok(args.includes("--inspect=127.0.0.1:0"));
   assert.ok(args.includes("--node-modules-dir=none"));
   assert.match(args[args.length - 1], /bootstrap\.mjs$/);
-  assert.equal(launchCommand("deno", "/opt/deno").cmd, "/opt/deno");
+  assert.equal(launchCommand("deno", "/x/bootstrap.mjs", "/opt/deno").cmd, "/opt/deno");
 });

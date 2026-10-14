@@ -4,6 +4,7 @@
 // Copyright 2018-2026 the Deno authors, MIT license. The structure is kept;
 // WebCrypto's async HMAC is replaced with node:crypto's synchronous one.
 
+import { Buffer } from "node:buffer";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 const ENC = new TextEncoder();
