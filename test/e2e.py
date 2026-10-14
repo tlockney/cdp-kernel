@@ -244,6 +244,47 @@ def checks(runtime, workdir, offline):
         # Deno.inspect quotes strings with ", util.inspect with '.
         assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "hi NotFound true", out
 
+    def project_import_alias(s):
+        # deno.json maps "@/" to ./lib/; the cell's import goes through the
+        # bootstrap module, which lives outside the project.
+        reply, out = s.run('import { greet } from "@/greet.ts";\ngreet("project")')
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "hello project", out
+
+    def project_jsx_import_source(s):
+        # compilerOptions.jsx = react-jsx with a local jsxImportSource.
+        reply, out = s.run('<b class="x">{"jsx"}</b>')
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == '<b class="x">jsx</b>', out
+
+    def project_node_modules(s):
+        # nodeModulesDir = manual: a package only in the project's node_modules.
+        reply, out = s.run('import local from "local-only-pkg";\nlocal()')
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "from node_modules", out
+
+    def project_import_map_wins(s):
+        # "shadowed-pkg" is both mapped in deno.json and present in
+        # node_modules; Deno's import map takes precedence.
+        reply, out = s.run('import shadow from "shadowed-pkg";\nshadow')
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "from the import map", out
+
+    def broken_project_warns_once(s):
+        reply, out = s.run("1 + 1")
+        assert reply["status"] == "ok", reply
+        assert "running without the project config" in text_of(out), out
+        assert strip_ansi(result_of(out)["text/plain"]) == "2", out
+        _, again = s.run("2 + 2")
+        assert text_of(again) == "", again
+
+    if runtime == "deno-project":
+        return [kernel_info, execute_result, typescript, project_import_alias,
+                project_jsx_import_source, project_node_modules, project_import_map_wins,
+                relative_ts_import, interrupt]
+    if runtime == "deno-broken-project":
+        return [broken_project_warns_once, typescript, relative_ts_import]
+
     tests = [
         kernel_info, stdout_stream, execute_result, typescript, redeclare_const,
         top_level_await, object_literal, thrown_error, syntax_error,
@@ -260,26 +301,85 @@ def checks(runtime, workdir, offline):
     return tests
 
 
+# variant -> (runtime, Deno compatibility shim, start inside a Deno project)
+VARIANTS = {
+    "node": ("node", False, False),
+    "deno": ("deno", False, False),
+    # The Node target with the opt-in Deno compatibility shim.
+    "node-deno": ("node", True, False),
+    # A Deno target whose notebook directory is a Deno project (#13).
+    "deno-project": ("deno", False, True),
+    # ... and one whose deno.json is broken: the kernel runs without it.
+    "deno-broken-project": ("deno", False, "broken"),
+}
+
+
+def write_deno_project(workdir):
+    """A Deno project with an import-map alias, a local JSX runtime reached
+    through jsxImportSource, and a package only in its node_modules."""
+    files = {
+        "deno.json": json.dumps({
+            "nodeModulesDir": "manual",
+            "imports": {
+                "@/": "./lib/",
+                "my-jsx/jsx-runtime": "./my-jsx/jsx-runtime.ts",
+                "shadowed-pkg": "./lib/shadow.ts",
+            },
+            "compilerOptions": {"jsx": "react-jsx", "jsxImportSource": "my-jsx"},
+        }),
+        "package.json": json.dumps(
+            {"private": True, "dependencies": {"local-only-pkg": "1.0.0", "shadowed-pkg": "1.0.0"}}
+        ),
+        "lib/shadow.ts": 'export default "from the import map";\n',
+        "node_modules/shadowed-pkg/package.json": json.dumps(
+            {"name": "shadowed-pkg", "version": "1.0.0", "type": "module", "main": "index.js"}
+        ),
+        "node_modules/shadowed-pkg/index.js": 'export default "from node_modules";\n',
+        "lib/greet.ts": "export const greet = (name: string): string => `hello ${name}`;\n",
+        "my-jsx/jsx-runtime.ts": (
+            "type Props = { children?: unknown; [key: string]: unknown };\n"
+            "export function jsx(type: string, props: Props): string {\n"
+            "  const { children, ...attrs } = props;\n"
+            "  const attrText = Object.entries(attrs).map(([k, v]) => ` ${k}=\"${v}\"`).join(\"\");\n"
+            "  return `<${type}${attrText}>${[children].flat().join(\"\")}</${type}>`;\n"
+            "}\n"
+            "export const jsxs = jsx;\n"
+            "export const Fragment = \"\";\n"
+        ),
+        "node_modules/local-only-pkg/package.json": json.dumps(
+            {"name": "local-only-pkg", "version": "1.0.0", "type": "module", "main": "index.js"}
+        ),
+        "node_modules/local-only-pkg/index.js": 'export default () => "from node_modules";\n',
+    }
+    for rel, text in files.items():
+        path = workdir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+
 def cli_command():
     override = os.environ.get("CDPK_E2E_CLI")
     return shlex.split(override) if override else ["node", str(ROOT / "src/main.ts")]
 
 
 def main():
-    # node-deno: the Node target with the opt-in Deno compatibility shim.
-    runtimes = sys.argv[1:] or ["node", "deno", "node-deno"]
+    runtimes = sys.argv[1:] or list(VARIANTS)
     offline = os.environ.get("CDPK_E2E_OFFLINE") == "1"
     failures = 0
     with tempfile.TemporaryDirectory() as data_dir:
         os.environ["JUPYTER_DATA_DIR"] = data_dir
         for runtime in runtimes:
-            base, _, compat = runtime.partition("-")
+            base, compat, project = VARIANTS[runtime]
             subprocess.run(
                 cli_command() + ["install", "--runtime", base] + (["--deno-compat"] if compat else []),
                 check=True, env={**os.environ, "JUPYTER_DATA_DIR": data_dir}, stdout=subprocess.DEVNULL,
             )
             workdir = Path(tempfile.mkdtemp())
-            km = KernelManager(kernel_name=f"cdp-{runtime}")
+            if project == "broken":
+                (workdir / "deno.json").write_text("{ this is not json")
+            elif project:
+                write_deno_project(workdir)
+            km = KernelManager(kernel_name=f"cdp-{base}{'-deno' if compat else ''}")
             km.start_kernel(cwd=str(workdir))
             kc = km.client()
             kc.start_channels()

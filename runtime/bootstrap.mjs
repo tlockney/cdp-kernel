@@ -79,12 +79,36 @@ if (!isDeno) {
   installNodeResolveHooks({ shimUrl: import.meta.url, replUrl: replUrl.href });
 }
 
+// In a Deno project (#13), Deno's own resolution (import map, npm:, jsr:)
+// goes first, as in `deno jupyter`. A bare package it can't place, because
+// package.json dependencies resolve relative to *this* module rather than
+// the notebook, is retried from the project's node_modules.
+const inDenoProject = isDeno && Deno.env.get("CDPK_DENO_PROJECT") === "1";
+const { resolveFromNodeModules } = inDenoProject ? await import("./node-modules-resolve.mjs") : {};
+
+function isResolutionError(err, specifier) {
+  return err instanceof TypeError && err.message.includes(`"${specifier}"`);
+}
+
+async function denoImport(specifier, options) {
+  const resolved = resolveRelative(specifier);
+  try {
+    return await import(resolved, options);
+  } catch (err) {
+    const fromNodeModules = resolveFromNodeModules && isResolutionError(err, specifier)
+      ? resolveFromNodeModules(specifier, cwd)
+      : null;
+    if (fromNodeModules === null) throw err;
+    return await import(fromNodeModules, options);
+  }
+}
+
 globalThis.__cdpk = {
   // Cell code awaits this first; see PRELUDE in src/transform.ts.
   tick: () => new Promise((resolve) => setTimeout(resolve, 0)),
   // Node: the resolve hook re-parents these imports. Deno would resolve
-  // relative paths against this file, so do it here.
-  import: (specifier, options) => import(isDeno ? resolveRelative(specifier) : specifier, options),
+  // relative paths against this file, so denoImport does it here.
+  import: (specifier, options) => (isDeno ? denoImport(specifier, options) : import(specifier, options)),
   meta: {
     url: replUrl.href,
     dirname: cwd,

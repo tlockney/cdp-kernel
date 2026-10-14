@@ -104,9 +104,22 @@ In a cell:
   or `jsr:@scope/pkg@range`.
   - On Node, `npm:` and `jsr:` install on first use into
     `~/.cache/cdp-kernel/npm`.
-  - On Deno they use Deno's global cache. The target runs with
-    `--node-modules-dir=none --no-lock`, so a project-local `node_modules`
-    isn't used.
+  - On Deno they use Deno's global cache, unless the notebook is in a Deno
+    project (below).
+- **Deno projects.** If a `deno.json` or `deno.jsonc` sits in the notebook's
+  directory or above it, a Deno target uses it, as `deno jupyter` does:
+  - its import map (`"@/": "./lib/"` aliases, mapped packages);
+  - its `nodeModulesDir` setting, with `package.json` dependencies from the
+    project's `node_modules`;
+  - its JSX and decorator `compilerOptions`: `jsx` (`react-jsx`,
+    `react-jsxdev`, `precompile`, `react`), `jsxImportSource`,
+    `jsxFactory`, `jsxFragmentFactory`, `experimentalDecorators`.
+
+  The import map wins over `node_modules`, as in Deno. The kernel never
+  writes to the project's lockfile. A `deno.json` that doesn't parse is
+  reported in the first cell's output, and the kernel runs as in a plain
+  directory. Outside a project, the target runs with
+  `--node-modules-dir=none --no-lock`.
 - `prompt()` and `confirm()` work over the stdin channel. Interrupt keeps
   state.
 
