@@ -38,6 +38,10 @@ jobs:
             echo "@tlockney/cdp-kernel@$version is already on JSR; skipping"
             echo "published=true" >> "$GITHUB_OUTPUT"
           fi
+      # With a package.json present, Deno resolves the npm dependencies from
+      # node_modules, so fill it first (ci.yml gets this from `npm ci`).
+      - if: steps.jsr.outputs.published != 'true'
+        run: deno install
       - if: steps.jsr.outputs.published != 'true'
         run: deno publish
 
