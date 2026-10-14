@@ -7,7 +7,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { join } from "node:path";
 import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { SHIM } from "./transform.ts";
-import { hostRuntime, runtimeDir } from "./package.ts";
+import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
 
 export type RuntimeName = "node" | "deno";
 
@@ -234,7 +234,11 @@ export class Target {
     events: TargetEvents,
     options: { cwd?: string; executable?: string; denoCompat?: boolean; denoConfig?: string } = {},
   ): Promise<Target> {
-    const bootstrap = join(await runtimeDir(new URL("../runtime/", import.meta.url).href), "bootstrap.mjs");
+    const runtimeUrl = new URL("../runtime/", import.meta.url).href;
+    // A Deno target ignores the project's import map for imports made from
+    // under node_modules, so an npm install's runtime files are copied out.
+    const copy = runtime === "deno" && isInsideNodeModules(runtimeUrl);
+    const bootstrap = join(await runtimeDir(runtimeUrl, undefined, undefined, { copy }), "bootstrap.mjs");
     const { cmd, args } = launchCommand(runtime, bootstrap, {
       executable: options.executable,
       denoConfig: options.denoConfig,
