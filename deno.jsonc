@@ -9,6 +9,9 @@
   "exports": {
     ".": "./src/mod.ts",
     "./cli": "./src/main.ts"
+    // No ./globals entries on JSR: JSR rejects global type augmentation, and
+    // Deno already types the same API as Deno.jupyter (which a Deno target
+    // provides). The npm package ships them for Node notebooks.
   },
   "imports": {
     "acorn": "npm:acorn@^8.15.0",
@@ -18,6 +21,7 @@
   "publish": {
     // runtime/*.mjs are loaded by the target runtime, not imported; a JSR
     // install copies them into a local cache (src/package.ts runtimeDir).
-    "include": ["src/", "runtime/*.mjs", "runtime/*.d.mts", "README.md", "LICENSE"]
+    "include": ["src/", "runtime/*.mjs", "runtime/*.d.mts", "README.md", "LICENSE"],
+    "exclude": ["src/globals.ts", "src/globals-deno-compat.ts"]
   }
 }

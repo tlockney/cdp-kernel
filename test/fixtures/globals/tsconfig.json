@@ -1,0 +1,15 @@
+{
+  // Type-checks the globals fixtures in isolation, without the project's
+  // own files, so only the globals entries can make jupyter/Deno resolve.
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "files": ["usage.ts", "misuse.ts"]
+}
