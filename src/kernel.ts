@@ -74,6 +74,8 @@ export class Kernel {
   #parent: JsonObject = {};
   #allowStdin = false;
   #executing = false;
+  // Open comms, for comm_info_request: comm_id -> target_name (#9).
+  readonly #comms = new Map<string, string>();
   #shuttingDown = false;
 
   constructor(conn: ConnectionInfo, runtime: RuntimeName, options: { denoCompat?: boolean } = {}) {
@@ -97,6 +99,62 @@ export class Kernel {
 
   #log(text: string): void {
     process.stderr.write(`[cdp-kernel] ${text}\n`);
+  }
+
+  // --- comms (#9) ------------------------------------------------------------
+
+  #trackComm(msgType: string, content: JsonObject): void {
+    const commId = typeof content.comm_id === "string" ? content.comm_id : null;
+    if (commId === null) return;
+    if (msgType === "comm_open" && typeof content.target_name === "string") this.#comms.set(commId, content.target_name);
+    else if (msgType === "comm_close") this.#comms.delete(commId);
+  }
+
+  #commInfo(content: JsonObject): JsonObject {
+    const filter = typeof content.target_name === "string" ? content.target_name : null;
+    const comms: JsonObject = {};
+    for (const [commId, targetName] of this.#comms) {
+      if (filter === null || filter === targetName) comms[commId] = { target_name: targetName };
+    }
+    return comms;
+  }
+
+  /** A frontend comm message. The busy/idle status around it is the caller's. */
+  async #handleComm(msg: Message): Promise<void> {
+    const type = msg.header.msg_type;
+    const commId = String(msg.content.comm_id ?? "");
+    const target = await this.#ensureTarget();
+    // Kernel messages the handlers send are replies to this message.
+    this.#parent = msg.header;
+    this.#allowStdin = false;
+    this.#executing = true;
+    let handled = false;
+    try {
+      const result = await target.dispatchComm(type, msg.content, msg.metadata, msg.buffers);
+      if ("error" in result) {
+        const { name, message, stack } = result.error;
+        this.#publish("stream", { name: "stderr", text: `Error in ${type} handler: ${stack || `${name}: ${message}`}\n` });
+      } else {
+        handled = result.handled;
+      }
+    } catch (err) {
+      if (!(err instanceof Interrupted)) throw err;
+      this.#publish("stream", { name: "stderr", text: `${type} handler interrupted\n` });
+    } finally {
+      this.#executing = false;
+    }
+    await target.flush().catch(() => {});
+    if (type === "comm_open") {
+      if (handled) {
+        this.#comms.set(commId, String(msg.content.target_name ?? ""));
+      } else {
+        // An unknown target, or a handler that failed: the protocol asks the
+        // kernel to close the comm so the frontend doesn't wait on it.
+        this.#publish("comm_close", { comm_id: commId, data: {} });
+      }
+    } else if (type === "comm_close") {
+      this.#comms.delete(commId);
+    }
   }
 
   // --- target lifecycle -----------------------------------------------------
@@ -129,6 +187,7 @@ export class Kernel {
 
   async #onTargetMessage(msg: TargetMessage): Promise<void> {
     if (msg.kind === "iopub") {
+      this.#trackComm(msg.msg_type, msg.content);
       this.#publish(msg.msg_type, msg.content, {
         metadata: msg.metadata,
         buffers: msg.buffers.map((b) => new Uint8Array(Buffer.from(b, "base64"))),
@@ -251,11 +310,12 @@ export class Kernel {
           this.#reply(this.#shell, peer, msg, "history_reply", { status: "ok", history: [] });
           break;
         case "comm_info_request":
-          this.#reply(this.#shell, peer, msg, "comm_info_reply", { status: "ok", comms: {} });
+          this.#reply(this.#shell, peer, msg, "comm_info_reply", { status: "ok", comms: this.#commInfo(msg.content) });
           break;
         case "comm_open":
-          // No comm targets (widgets) yet: close it straight away, like Deno.
-          this.#publish("comm_close", { comm_id: msg.content.comm_id ?? "", data: {} }, { parent: msg.header });
+        case "comm_msg":
+        case "comm_close":
+          await this.#handleComm(msg);
           break;
       }
     } finally {

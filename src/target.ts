@@ -2,6 +2,7 @@
 // the ops in cli/ops/jupyter.rs. Any runtime whose --inspect speaks CDP and
 // can load runtime/bootstrap.mjs works; Node and Deno are wired up here.
 
+import { Buffer } from "node:buffer";
 import process from "node:process";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { join } from "node:path";
@@ -361,6 +362,46 @@ export class Target {
       { value: executionCount },
       arg,
     ]);
+  }
+
+  /**
+   * Hands a frontend comm message to the target's comms. Resolves to
+   * whether a comm or registered target took it, or to the error a handler
+   * threw. Rejects with Interrupted after interrupt().
+   */
+  async dispatchComm(
+    msgType: string,
+    content: CdpParams,
+    metadata: CdpParams,
+    buffers: Uint8Array[],
+  ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }> {
+    this.#interrupted = false;
+    let res: CdpParams;
+    try {
+      res = await this.#shell.send("Runtime.callFunctionOn", {
+        functionDeclaration: `function (t, c, m, b) { return globalThis.${SHIM}.commDispatch(t, c, m, b); }`,
+        arguments: [
+          { value: msgType },
+          { value: content },
+          { value: metadata },
+          { value: buffers.map((b) => Buffer.from(b).toString("base64")) },
+        ],
+        executionContextId: this.#contextId,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+    } catch (err) {
+      if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Comm handler interrupted");
+      throw err;
+    }
+    const details = res.exceptionDetails as EvaluateResult["exceptionDetails"];
+    if (details) {
+      const error = details.exception
+        ? await this.describeError(details.exception)
+        : { name: "Error", message: details.text, stack: "" };
+      return { error };
+    }
+    return { handled: (res.result as RemoteObject | undefined)?.value === true };
   }
 
   async describeError(exception: RemoteObject): Promise<{ name: string; message: string; stack: string }> {

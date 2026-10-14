@@ -1,3 +1,8 @@
+import type { CommApi, Comms } from "./comm.d.mts";
+import type { Widget, WidgetOptions } from "./widget.d.mts";
+
+export type { CommApi, Widget, WidgetOptions };
+
 export const $display: unique symbol;
 
 export type MediaBundle = { [mediaType: string]: unknown };
@@ -33,6 +38,10 @@ export interface JupyterNamespace {
   svg(strings: TemplateStringsArray, ...values: unknown[]): Displayable;
   image(obj: string | Uint8Array): Displayable;
   $display: typeof $display;
+  /** Jupyter comms: bidirectional channels to the frontend. */
+  comm: CommApi;
+  /** An anywidget-compatible widget; display the result to show it. */
+  widget(options: WidgetOptions): Widget;
 }
 
 export interface Jupyter {
@@ -40,6 +49,8 @@ export interface Jupyter {
   broadcastResult(executionCount: number, result: unknown): Promise<void>;
   confirm(message?: string): boolean;
   prompt(message?: string, defaultValue?: string, options?: { password?: boolean }): string | null;
+  /** Routes a frontend comm message into the kernel's comms. */
+  commDispatch: Comms["dispatch"];
 }
 
 export function escapeHTML(str: string): string;

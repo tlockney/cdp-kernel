@@ -33,6 +33,28 @@ class Session:
         self.km = km
         self.kc = kc
 
+    def send_shell(self, msg_type, content, buffers=None, timeout=TIMEOUT):
+        """Send a frontend shell message (e.g. comm_msg) and collect the iopub
+        messages it causes until the kernel goes idle. Returns full messages,
+        so buffers and parent headers can be checked."""
+        msg = self.kc.session.msg(msg_type, content)
+        self.kc.session.send(self.kc.shell_channel.socket, msg, buffers=buffers or [])
+        msg_id = msg["header"]["msg_id"]
+        collected = []
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                got = self.kc.get_iopub_msg(timeout=0.1)
+            except Exception:
+                continue
+            if got["parent_header"].get("msg_id") != msg_id:
+                continue
+            if got["msg_type"] == "status" and got["content"]["execution_state"] == "idle":
+                return msg_id, collected
+            if got["msg_type"] != "status":
+                collected.append(got)
+        raise TimeoutError(f"no idle after {msg_type}")
+
     def run(self, code, allow_stdin=False, on_input=None, timeout=TIMEOUT):
         """Execute code; return (reply_content, [(msg_type, content), ...])."""
         msg_id = self.kc.execute(code, allow_stdin=allow_stdin)
@@ -244,6 +266,82 @@ def checks(runtime, workdir, offline):
         # Deno.inspect quotes strings with ", util.inspect with '.
         assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "hi NotFound true", out
 
+    def comm_kernel_open_and_info(s):
+        reply, out = s.run('globalThis.c1 = jupyter.comm.open("test.target", { hello: 1 });\nc1.id')
+        assert reply["status"] == "ok", reply
+        opens = [c for t, c in out if t == "comm_open"]
+        assert len(opens) == 1 and opens[0]["target_name"] == "test.target", out
+        assert opens[0]["data"] == {"hello": 1}, opens
+        comm_id = opens[0]["comm_id"]
+        assert comm_id in strip_ansi(result_of(out)["text/plain"]), out
+        s.kc.comm_info()
+        info = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+        assert info["comms"].get(comm_id) == {"target_name": "test.target"}, info
+        s.kc.comm_info(target_name="other.target")
+        assert s.kc.get_shell_msg(timeout=TIMEOUT)["content"]["comms"] == {}
+
+    def comm_frontend_msg_reaches_kernel(s):
+        _, out = s.run("globalThis.got = [];\nc1.onMsg((m) => got.push({ data: m.data, bytes: [...m.buffers[0] ?? []] }));\nc1.id")
+        comm_id = strip_ansi(result_of(out)["text/plain"]).strip("'\"")
+        s.send_shell("comm_msg", {"comm_id": comm_id, "data": {"x": 1}}, buffers=[b"\x05\x06"])
+        _, out = s.run("JSON.stringify(got)")
+        assert '{"data":{"x":1},"bytes":[5,6]}' in result_of(out)["text/plain"], out
+
+    def comm_frontend_open_echoes(s):
+        s.run('jupyter.comm.registerTarget("echo", (comm) => {\n'
+              '  comm.onMsg((m) => comm.send({ echo: m.data }, { buffers: m.buffers }));\n})')
+        _, opened = s.send_shell("comm_open", {"comm_id": "front-1", "target_name": "echo", "data": {}})
+        assert not any(m["msg_type"] == "comm_close" for m in opened), opened
+        msg_id, msgs = s.send_shell("comm_msg", {"comm_id": "front-1", "data": {"v": 2}}, buffers=[b"\x01\x02"])
+        echoes = [m for m in msgs if m["msg_type"] == "comm_msg"]
+        assert len(echoes) == 1, msgs
+        assert echoes[0]["content"] == {"comm_id": "front-1", "data": {"echo": {"v": 2}}}, echoes
+        assert [bytes(b) for b in echoes[0]["buffers"]] == [b"\x01\x02"], echoes
+        # Kernel messages a frontend message causes are replies to it.
+        assert echoes[0]["parent_header"]["msg_id"] == msg_id
+
+    def comm_unknown_target_is_closed(s):
+        _, msgs = s.send_shell("comm_open", {"comm_id": "nobody-1", "target_name": "nobody", "data": {}})
+        closes = [m for m in msgs if m["msg_type"] == "comm_close"]
+        assert len(closes) == 1 and closes[0]["content"]["comm_id"] == "nobody-1", msgs
+
+    def comm_frontend_close(s):
+        _, out = s.run("globalThis.closedWith = null;\nc1.onClose((m) => { closedWith = m.data; });\nc1.id")
+        comm_id = strip_ansi(result_of(out)["text/plain"]).strip("'\"")
+        s.send_shell("comm_close", {"comm_id": comm_id, "data": {"why": "frontend"}})
+        _, out = s.run("JSON.stringify([c1.closed, closedWith])")
+        assert '[true,{"why":"frontend"}]' in result_of(out)["text/plain"], out
+        s.kc.comm_info()
+        assert comm_id not in s.kc.get_shell_msg(timeout=TIMEOUT)["content"]["comms"]
+
+    def widget_roundtrip(s):
+        reply, out = s.run('globalThis.w = jupyter.widget({\n'
+                           '  esm: "export default { render({ model, el }) { el.textContent = model.get(\'count\'); } }",\n'
+                           '  state: { count: 0 },\n});\nw')
+        assert reply["status"] == "ok", reply
+        opens = [c for t, c in out if t == "comm_open"]
+        assert opens and opens[0]["target_name"] == "jupyter.widget", out
+        model_id = opens[0]["comm_id"]
+        assert opens[0]["data"]["state"]["_model_name"] == "AnyModel"
+        view = result_of(out)["application/vnd.jupyter.widget-view+json"]
+        assert view == {"version_major": 2, "version_minor": 1, "model_id": model_id}, view
+        # The frontend changes the model ...
+        s.send_shell("comm_msg", {"comm_id": model_id, "data": {"method": "update", "state": {"count": 5}, "buffer_paths": []}})
+        _, out = s.run('w.get("count")')
+        assert strip_ansi(result_of(out)["text/plain"]) == "5", out
+        # ... and the kernel changes it back.
+        _, out = s.run('w.set("count", 6)')
+        updates = [c for t, c in out if t == "comm_msg"]
+        assert updates == [{"comm_id": model_id, "data": {"method": "update", "state": {"count": 6}, "buffer_paths": []}}], out
+
+    def comm_handler_error_is_reported(s):
+        s.run('jupyter.comm.registerTarget("boom", () => { throw new Error("kaboom"); })')
+        _, msgs = s.send_shell("comm_open", {"comm_id": "boom-1", "target_name": "boom", "data": {}})
+        stderr = "".join(m["content"].get("text", "") for m in msgs if m["msg_type"] == "stream")
+        assert "kaboom" in stderr, msgs
+        _, out = s.run("'still alive'")
+        assert "still alive" in result_of(out)["text/plain"]
+
     tests = [
         kernel_info, stdout_stream, execute_result, typescript, redeclare_const,
         top_level_await, object_literal, thrown_error, syntax_error,
@@ -251,6 +349,8 @@ def checks(runtime, workdir, offline):
         png_bytes, node_builtin_import, relative_ts_import, import_meta,
         prompt_stdin, prompt_without_stdin, interrupt, uncaught_later,
         complete, is_complete,
+        comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
+        comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
     ]
     if not offline:
         tests += [npm_import, jsr_import]

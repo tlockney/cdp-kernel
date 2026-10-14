@@ -93,6 +93,13 @@ globalThis.__cdpk = {
   },
   barrier,
   broadcastResult: jupyter.broadcastResult,
+  // Frontend comm messages (#9), from the host's shell channel. Handlers
+  // run after one macrotask, like cells, so interrupt can reach them.
+  async commDispatch(msgType, content, metadata, buffers64) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const buffers = buffers64.map((b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0)));
+    return await jupyter.commDispatch(msgType, content, metadata, buffers);
+  },
   describeError(value) {
     if (value instanceof Error) {
       return JSON.stringify({ name: value.name, message: value.message, stack: value.stack ?? "" });
