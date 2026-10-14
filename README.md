@@ -11,7 +11,10 @@ own Jupyter integration tests on both targets, and it's packaged for npm and
 JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet. The
 feasibility study behind it covers the design,
 the other options considered (workerd, Bun, rusty_v8, FFI), and the
-evidence: [`docs/life-after-deno-jupyter.html`](docs/life-after-deno-jupyter.html).
+evidence: [read it online](https://claude.ai/artifact/S66TnTmhCzPy2EW7jbeeue)
+(also in the repo as
+[`docs/life-after-deno-jupyter.html`](docs/life-after-deno-jupyter.html)). It
+was written before packaging, so it calls the project a spike.
 The scripts that produced its runtime findings are in [`probes/`](probes/).
 
 ## Why this shape
