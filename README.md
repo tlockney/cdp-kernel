@@ -137,11 +137,17 @@ The `publish` workflow then:
 1. Checks that the tag matches the version.
 2. Runs the type check, the unit tests, and the e2e suite against the packed
    npm tarball and against a Deno host.
-3. Publishes to JSR (`deno publish`, authenticated by GitHub OIDC).
+3. Publishes to JSR (`deno publish`).
 4. Publishes to npm (`npm publish`).
 
-Neither registry lets a version be republished, so a failed half needs a new
-patch version.
+Both registries authenticate the workflow through GitHub OIDC, so no tokens
+are stored:
+- **npm:** a trusted publisher for `tlockney/cdp-kernel` + `publish.yml`.
+- **JSR:** the package is linked to this repo in its JSR settings.
+
+Neither registry lets a version be republished. Each job skips a version
+its registry already has, so re-running a release only fills in the half
+that failed.
 
 ## Known gaps
 

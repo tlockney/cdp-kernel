@@ -29,23 +29,46 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - run: deno publish
+      # JSR rejects republishing a version; skip so a re-run is harmless.
+      - name: skip if already on JSR
+        id: jsr
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if curl -fsS https://jsr.io/@tlockney/cdp-kernel/meta.json | grep -q "\"$version\""; then
+            echo "@tlockney/cdp-kernel@$version is already on JSR; skipping"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.jsr.outputs.published != 'true'
+        run: deno publish
 
   npm:
     needs: [verify, version]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # lets npm trusted publishing replace NPM_TOKEN later
+      id-token: write # npm trusted publishing (configured on npmjs.com)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 26
           registry-url: https://registry.npmjs.org
-      - run: npm ci
+      # npm rejects republishing a version; skip so a re-run is harmless.
+      - name: skip if already on npm
+        id: npm
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "@tlockney/cdp-kernel@$version" version >/dev/null 2>&1; then
+            echo "@tlockney/cdp-kernel@$version is already on npm; skipping"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.npm.outputs.published != 'true'
+        run: npm ci
+      # No token: npm >= 11.5.1 exchanges this job's OIDC token through the
+      # trusted publisher set up for tlockney/cdp-kernel + publish.yml.
       # prepack builds dist/. No --provenance: npm only generates provenance
       # for public source repositories.
-      - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - if: steps.npm.outputs.published != 'true'
+        run: |
+          echo "npm $(npm --version)"
+          npm publish
