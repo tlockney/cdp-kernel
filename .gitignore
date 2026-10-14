@@ -2,3 +2,6 @@ node_modules/
 dist/
 # git worktrees created inside this checkout
 .claude/
+# Dependencies are pinned by package-lock.json; Deno resolves them from
+# node_modules, so a deno.lock would only record stray resolutions.
+deno.lock
