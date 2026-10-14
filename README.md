@@ -64,6 +64,14 @@ The kernelspec pins the release it was installed from
 runtime modules are copied into `~/.cache/cdp-kernel/runtime/`. A Node
 target needs `node` on `PATH`.
 
+Deno 2.9+ refuses package versions less than 24 hours old by default
+([minimum dependency age](https://docs.deno.com/go/minimum-dependency-age)).
+In a release's first day, the install command fails with "blocked by the
+minimum dependency age policy". Wait out the day, or install an earlier
+release. Passing `--min-dep-age=0` gets the install through, but the
+kernelspec doesn't carry the flag, so the kernel still won't launch until
+the release is a day old.
+
 **From a checkout**, for working on the kernel itself:
 
 ```sh
