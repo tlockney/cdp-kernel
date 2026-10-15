@@ -17,6 +17,18 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match package.json $version" >&2
             exit 1
           fi
+      # A JSR kernelspec relaunches with a dependency cutoff two days after
+      # RELEASE_DATE (#12). A stale date would block this very release, so
+      # it must be today's or yesterday's (UTC).
+      - name: release date is current
+        run: |
+          released="$(sed -n 's/^export const RELEASE_DATE = "\(.*\)";$/\1/p' src/package.ts)"
+          today="$(date -u +%F)"
+          yesterday="$(date -u -d yesterday +%F)"
+          if [ "$released" != "$today" ] && [ "$released" != "$yesterday" ]; then
+            echo "src/package.ts RELEASE_DATE is '$released'; set it to $today with the version bump" >&2
+            exit 1
+          fi
 
   jsr:
     needs: [verify, version]
