@@ -151,6 +151,13 @@ In a cell:
 - `prompt()` and `confirm()` work over the stdin channel, except on
   workerd. Interrupt keeps state, except for a busy cell on Bun or workerd
   (below).
+- **Shift-Tab** shows a tooltip for the name at the cursor: its type, a
+  function's signature (and its source at the second press), a preview, and
+  its properties. Nothing is run to get it. On Node and Deno the value is
+  evaluated with V8's side-effect check (`throwOnSideEffect`), which also
+  guards completion. Bun, workerd and celld look the name up by property,
+  without calling getters. Executed cells are kept for `history_request`
+  (tail, range and search).
 
 ## Bun
 
@@ -392,7 +399,10 @@ that failed.
 
 - Widgets are anywidget-style (`jupyter.widget`). The classic ipywidgets
   controls (sliders, dropdowns) are Python classes, so they're not available.
-- No `inspect_request` content and no history. Deno has neither.
+- Inspection tooltips show what's found at runtime (type, signature,
+  preview, properties), not TypeScript types or JSDoc. On Bun, workerd and
+  celld, a getter on the path is reported but not called. History is kept
+  for the current kernel session only.
 - No debugger.
 - `npm:` on Node:
   - one npm alias per `name@range`;

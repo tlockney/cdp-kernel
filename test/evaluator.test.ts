@@ -19,6 +19,7 @@ function harness(evaluate: (code: string) => unknown) {
       return Promise.resolve(msgType === "comm_open");
     },
     barrier: () => ++barrier,
+    inspectPath: (path, detail) => (path === "known" ? `about known, detail ${detail}` : null),
   };
   return { handle: createHandler(shim, evaluate), broadcast, comms };
 }
@@ -107,4 +108,35 @@ test("propertyNames walks the prototype chain and boxes primitives", () => {
   assert.ok(propertyNames("str").includes("padStart"));
   assert.deepEqual(propertyNames(null), []);
   assert.deepEqual(propertyNames(undefined), []);
+});
+
+test("inspect asks the shim to describe a path (#10)", async () => {
+  const { handle } = harness(() => undefined);
+  assert.deepEqual(await handle({ op: "inspect", path: "known", detail: 1 }), { text: "about known, detail 1" });
+  assert.deepEqual(await handle({ op: "inspect", path: "unknown" }), { text: null });
+});
+
+test("props resolves the path through the shim when it can, so getters don't run", async () => {
+  let evaluated = 0;
+  const shim: EvaluatorShim = {
+    broadcastResult() {},
+    describeError: () => "{}",
+    commDispatch: () => Promise.resolve(false),
+    barrier: () => 0,
+    inspectPath: () => null,
+    resolvePath: (path) =>
+      path === "obj"
+        ? { found: true, value: { a: 1 } }
+        : path === "lazy"
+        ? { found: true, accessor: true, name: "lazy" }
+        : { found: false },
+  };
+  const handle = createHandler(shim, () => {
+    evaluated++;
+    return {};
+  });
+  assert.ok(((await handle({ op: "props", expr: "obj" })).names as string[]).includes("a"));
+  assert.deepEqual(await handle({ op: "props", expr: "lazy" }), { names: [] });
+  assert.deepEqual(await handle({ op: "props", expr: "missing" }), { names: [] });
+  assert.equal(evaluated, 0, "nothing was evaluated");
 });
