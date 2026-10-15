@@ -161,7 +161,9 @@ export function createDenoShim({ jupyter }) {
     rename: async((from, to) => fsp.rename(toPath(from), toPath(to))),
     renameSync: sync((from, to) => fs.renameSync(toPath(from), toPath(to))),
     realPath: async((p) => fsp.realpath(toPath(p))),
-    realPathSync: sync((p) => fs.realpathSync(toPath(p))),
+    // The native call, like fsp.realpath above: the JavaScript one leaves
+    // Windows 8.3 names (RUNNER~1) unexpanded, so the two disagreed (#32).
+    realPathSync: sync((p) => fs.realpathSync.native(toPath(p))),
     makeTempDir: async((options) =>
       fsp.mkdtemp(path.join(options?.dir ?? os.tmpdir(), options?.prefix ?? "deno-"))
     ),

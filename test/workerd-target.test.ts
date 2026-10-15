@@ -23,7 +23,9 @@ import { Interrupted, type TargetEvents, type TargetMessage } from "../src/targe
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 const WORKERD = join(REPO, "node_modules", ".bin", "workerd");
-const skip = !existsSync(WORKERD);
+// The workerd target needs a Unix-domain socket, not supported on Windows
+// yet (#32).
+const skip = !existsSync(WORKERD) || process.platform === "win32";
 
 function scratch(t: { after(fn: () => void): void }): string {
   const dir = mkdtempSync(join(tmpdir(), "cdpk-wd-test-"));

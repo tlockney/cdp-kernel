@@ -13,7 +13,8 @@ import { RESTART_NOTE, WorkerdTarget } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
-const skip = !existsSync(join(REPO, "node_modules", "wrangler"));
+// Miniflare hung on Windows (#32), and the workerd target is unsupported there.
+const skip = !existsSync(join(REPO, "node_modules", "wrangler")) || process.platform === "win32";
 
 function scratch(t: { after(fn: () => void): void }): string {
   const dir = mkdtempSync(join(tmpdir(), "cdpk-project-test-"));
