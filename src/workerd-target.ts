@@ -39,9 +39,12 @@ export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", 
 /** See BunTarget: how long an interrupted cell has to show it isn't busy. */
 export const INTERRUPT_GRACE_MS = 500;
 
-export const RESTART_NOTE =
-  "[cdp-kernel] workerd was busy and can't be interrupted in place, so it was stopped; " +
-  "it restarts on the next cell, without the earlier cells' state";
+export function restartNote(runtime: string): string {
+  return `[cdp-kernel] ${runtime} was busy and can't be interrupted in place, so it was stopped; ` +
+    "it restarts on the next cell, without the earlier cells' state";
+}
+
+export const RESTART_NOTE = restartNote("workerd");
 
 // nodejs_compat is on by default from this compatibility date, and workerd
 // warns when it's also listed.
@@ -266,8 +269,11 @@ export class RawWorkerd implements WorkerHost {
 
 type Pending = { resolve: (reply: CdpParams) => void; reject: (err: Error) => void };
 
+/** A runtime that runs the driver Worker: workerd, or celld (src/celld-target.ts). */
+export type WorkersRuntime = "workerd" | "celld";
+
 export class WorkerdTarget implements KernelTarget {
-  readonly runtime = "workerd";
+  readonly runtime: WorkersRuntime;
   readonly versions: { runtime: string; engine: string };
   notice: string | undefined;
   readonly transform = transformCellForEval;
@@ -284,7 +290,8 @@ export class WorkerdTarget implements KernelTarget {
   #stopNote: string | undefined;
   #exitedOnce = false;
 
-  private constructor(host: WorkerHost, cwd: string, events: TargetEvents) {
+  private constructor(host: WorkerHost, cwd: string, events: TargetEvents, runtime: WorkersRuntime) {
+    this.runtime = runtime;
     this.#host = host;
     this.versions = { runtime: host.runtime, engine: "V8" };
     this.#cwd = cwd;
@@ -315,7 +322,21 @@ export class WorkerdTarget implements KernelTarget {
       }
     }
     host ??= await RawWorkerd.start(cwd, options.executable);
-    const target = new WorkerdTarget(host, cwd, events);
+    return await WorkerdTarget.open(host, cwd, events, "workerd", notice);
+  }
+
+  /**
+   * A target over a started host's session. `notice` (a project that
+   * failed to load) is replaced by the bindings when the host has a project.
+   */
+  static async open(
+    host: WorkerHost,
+    cwd: string,
+    events: TargetEvents,
+    runtime: WorkersRuntime,
+    notice?: string,
+  ): Promise<WorkerdTarget> {
+    const target = new WorkerdTarget(host, cwd, events, runtime);
     try {
       const { v8, bindings, worker } = await target.#request("info");
       if (typeof v8 === "string" && v8) target.versions.engine = `V8 ${v8}`;
@@ -415,7 +436,7 @@ export class WorkerdTarget implements KernelTarget {
       }
       return;
     }
-    this.#stopNote = RESTART_NOTE;
+    this.#stopNote = restartNote(this.runtime);
     this.#host.stop(true);
   }
 

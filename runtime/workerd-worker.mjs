@@ -117,7 +117,9 @@ function install(env) {
   // global, without the kernel's own.
   const { UNSAFE, TOKEN, META, ...bindings } = env;
   globalThis.env = bindings;
-  const evaluate = (code) => env.UNSAFE.eval(code, "cell");
+  // workerd forbids eval without its UnsafeEval binding; celld (#25) allows
+  // a plain global eval and has no such binding.
+  const evaluate = env.UNSAFE ? (code) => env.UNSAFE.eval(code, "cell") : (code) => (0, eval)(code);
   handle = createHandler(globalThis.__cdpk, evaluate);
   return evaluate;
 }
@@ -150,7 +152,10 @@ async function answer(req) {
 
 export default {
   async fetch(request, env) {
-    if (request.headers.get("x-cdpk-token") !== env.TOKEN) return new Response("forbidden", { status: 403 });
+    // A header, or the query string for a WebSocket client that can't set
+    // headers (celld's session uses the host's built-in WebSocket).
+    const token = request.headers.get("x-cdpk-token") ?? new URL(request.url).searchParams.get("token");
+    if (token !== env.TOKEN) return new Response("forbidden", { status: 403 });
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected a WebSocket", { status: 426 });
     evaluate ??= install(env);
 

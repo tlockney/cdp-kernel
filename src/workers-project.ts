@@ -131,6 +131,11 @@ function loadTooling(configPath: string): { wrangler: Wrangler; miniflare: Minif
 
 const NODE_BUILTINS = builtinModules.filter((name) => !name.startsWith("_") && !name.startsWith("node:"));
 
+/** Packages import Node builtins by bare name too; workerd and celld want node:. */
+export function builtinAliases(): { [name: string]: string } {
+  return Object.fromEntries(NODE_BUILTINS.map((name) => [name, `node:${name}`]));
+}
+
 /** The project's main module as one ES module; builtins stay imports. */
 export async function bundleProject(main: string, define: { [name: string]: string } = {}): Promise<string> {
   const result = await build({
@@ -142,7 +147,7 @@ export async function bundleProject(main: string, define: { [name: string]: stri
     conditions: ["workerd", "worker", "browser"],
     mainFields: ["browser", "module", "main"],
     // Packages import Node builtins by bare name too; workerd wants node:.
-    alias: Object.fromEntries(NODE_BUILTINS.map((name) => [name, `node:${name}`])),
+    alias: builtinAliases(),
     external: ["node:*", "cloudflare:*", "workerd:*"],
     define,
     target: "esnext",

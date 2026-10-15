@@ -3,9 +3,9 @@
 A Jupyter kernel extracted from Deno's (`deno jupyter`, v2.9.6) that drives
 any V8 runtime over the Chrome DevTools Protocol. The kernel host runs on
 Node or Deno; the code you type runs in a separate **target** runtime:
-Node or Deno over CDP. Bun and workerd evaluate cells in-process instead
-(see [Bun](#bun) and [workerd](#workerd)). In principle, anything else
-whose inspector speaks CDP works too.
+Node or Deno over CDP. Bun, workerd and celld evaluate cells in-process
+instead (see [Bun](#bun), [workerd](#workerd) and [celld](#celld)). In
+principle, anything else whose inspector speaks CDP works too.
 
 This is early software. It passes a conformance suite derived from Deno's
 own Jupyter integration tests on every target, and it's packaged for npm and
@@ -42,8 +42,8 @@ So the extraction is:
 ## Install
 
 Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
-`cdp-node-deno` (Node with the Deno compatibility namespace), `cdp-bun`, or
-`cdp-workerd`. Then pick the kernel in JupyterLab or VS Code.
+`cdp-node-deno` (Node with the Deno compatibility namespace), `cdp-bun`,
+`cdp-workerd`, or `cdp-celld`. Then pick the kernel in JupyterLab or VS Code.
 
 **From npm** (host runs on Node 24+; Node 26 is what's been tested):
 
@@ -54,6 +54,7 @@ cdp-kernel install --runtime deno
 cdp-kernel install --runtime node --deno-compat
 cdp-kernel install --runtime bun
 cdp-kernel install --runtime workerd
+cdp-kernel install --runtime celld
 ```
 
 The kernelspec records the absolute paths of `node` and the installed
@@ -72,7 +73,9 @@ target needs `node` on `PATH`, and a Bun target needs `bun` (1.4 is what's
 been tested). A workerd target uses the `workerd` in the notebook
 directory's `node_modules` (a Workers project has one through wrangler),
 or the one on `PATH` (`npm install -g workerd`; 2026-10-15 is what's been
-tested).
+tested). A celld target uses `~/.local/bin/celld`, where celld's installer
+puts it, or the one on `PATH` (0.6.2 is what's been tested; celld has no
+Windows build).
 
 Deno 2.9+ refuses package versions less than 24 hours old by default
 ([minimum dependency age](https://docs.deno.com/go/minimum-dependency-age)).
@@ -91,6 +94,7 @@ npm run install:deno        # kernelspec cdp-deno
 npm run install:node-deno   # kernelspec cdp-node-deno
 npm run install:bun         # kernelspec cdp-bun
 npm run install:workerd     # kernelspec cdp-workerd
+npm run install:celld       # kernelspec cdp-celld
 ```
 
 These kernelspecs point at the checkout, so don't move it after installing.
@@ -216,6 +220,34 @@ its versions. Miniflare 4 and 5 both work. Miniflare listens on a loopback
 TCP port, so there the per-launch token is what keeps other local processes
 out.
 
+## celld
+
+[celld](https://github.com/denoland/celld) runs Workers and Durable Objects
+on your own storage. Like workerd it has no I/O outside a request, so the
+celld target runs the same driver Worker over the same WebSocket session
+(`src/celld-target.ts`). Cells, output, interrupts and host-bundled imports
+all work as on workerd. The differences:
+
+- **No `UnsafeEval` needed.** celld allows a plain global `eval`, so it runs
+  without workerd's `--experimental`.
+- **One module.** The host bundles the driver, and a project's `main`, into
+  a single module, and gives celld the result with `no_bundle`. celld
+  doesn't need its own esbuild.
+- **Loopback TCP.** celld listens only on TCP, so the session is a loopback
+  WebSocket opened with a per-launch token. The kernel picks a free port
+  and runs `celld dev --no-watch` on a generated config.
+- **Projects.** In a celld project (a `wrangler.jsonc` or `wrangler.json`
+  at or above the notebook), the generated config copies the project's
+  compatibility settings and bindings: vars, KV, D1, R2, Durable Objects,
+  Queues, Workflows, services, Worker Loaders. `env` and `worker` then work
+  as on workerd. The generated config is written to the project's
+  `.celld/cdp-kernel` and removed when the kernel stops. The state stays
+  there across kernels, beside `celld dev`'s own `.celld/dev`. celld rejects `wrangler.toml`; a project
+  that can't load is reported in the first cell, and the driver runs alone.
+- **Stopping.** `celld dev` runs its node in a separate process group and
+  waits for it to stop gracefully, which a busy cell never allows. So an
+  interrupt of a busy cell kills the node, then `celld dev`.
+
 ## Editor types
 
 Cells run untyped, as in `deno jupyter`. Notebook code your editor
@@ -310,7 +342,7 @@ long cell waits for the cell to finish.
 npm run check  # tsc --strict over src/ and test/
 npm test       # unit tests (node:test)
 npm run e2e    # conformance suite via jupyter_client/libzmq, on every target variant
-npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium (node, deno, bun, workerd)
+npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium (node, deno, bun, workerd, celld)
 uv run --with nbclient --with nbformat python examples/run_notebook.py   # Deno-style notebook on deno + node-deno
 ```
 
@@ -383,6 +415,12 @@ that failed.
   - In a Workers project, `main` is bundled with esbuild directly, not with
     wrangler's build. Custom `build` commands, `alias` and module `rules`
     aren't applied.
+- On celld, as on workerd, except:
+  - Only the binding and compatibility keys of a project's config are
+    copied. `assets`, `triggers` and `containers` aren't, and neither is
+    `.dev.vars`. Relative paths inside the copied keys resolve from
+    `.celld/cdp-kernel`, not from the project.
+  - Interrupting a busy cell restarts celld and loses state.
 
 ## Provenance
 

@@ -19,6 +19,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.x
+      # celld isn't on npm; its installer puts it in ~/.local/bin, where the
+      # kernel looks first (#25).
+      - name: celld
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz | gunzip > "$HOME/.local/bin/celld"
+          chmod +x "$HOME/.local/bin/celld"
+          "$HOME/.local/bin/celld" --version
 
       - run: npm ci
       - run: npm run check
@@ -55,6 +63,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.x
+      # celld isn't on npm; its installer puts it in ~/.local/bin, where the
+      # kernel looks first (#25).
+      - name: celld
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz | gunzip > "$HOME/.local/bin/celld"
+          chmod +x "$HOME/.local/bin/celld"
+          "$HOME/.local/bin/celld" --version
       - run: npm ci
       - name: Chromium and its system libraries
         run: uv run --with playwright python -m playwright install --with-deps chromium
