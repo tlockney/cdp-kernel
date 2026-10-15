@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cdp-kernel: TypeScript notebooks on any V8 runtime</title>
+<meta name="description" content="A Jupyter kernel for TypeScript and JavaScript, extracted from Deno's, that runs notebooks on Node, Deno, Bun, workerd and celld.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap nav">
+    <a class="brand" href="./">cdp-kernel</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#runtimes">Runtimes</a>
+      <a href="https://github.com/tlockney/cdp-kernel/tree/main/docs">Docs</a>
+      <a href="https://github.com/tlockney/cdp-kernel">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Jupyter kernel · TypeScript · V8</p>
+    <h1>TypeScript notebooks on any V8 runtime.</h1>
+    <p class="lede">cdp-kernel is Deno's Jupyter kernel, extracted so the code in your cells can run on
+      Node, Deno, Bun, workerd or celld. The kernel speaks the Jupyter protocol; your
+      cells run in the runtime you pick.</p>
+    <div class="install">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="npm">npm</button>
+        <button role="tab" aria-selected="false" data-tab="jsr">JSR</button>
+      </div>
+      <pre data-panel="npm"><code><span class="c"># Node 24+ host</span>
+npm install -g @tlockney/cdp-kernel
+cdp-kernel install --runtime node   <span class="c"># or deno, bun, workerd, celld</span></code></pre>
+      <pre data-panel="jsr" hidden><code><span class="c"># Deno host</span>
+deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/tlockney/cdp-kernel/blob/main/docs/install.md">Install guide</a>
+      <a class="btn" href="https://github.com/tlockney/cdp-kernel">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<section class="example">
+  <div class="wrap two">
+    <div>
+      <h2>Write a cell, pick a runtime</h2>
+      <p>Each install writes a kernelspec (<code>cdp-node</code>, <code>cdp-deno</code>,
+        <code>cdp-bun</code>, …). Choose it in JupyterLab or VS Code and write TypeScript.
+        Imports from npm and JSR install on first use.</p>
+      <p>The display API is Deno's: <code>jupyter.display</code>, <code>md</code>,
+        <code>html</code>, <code>svg</code>, <code>image</code>, and
+        <code>Symbol.for("Jupyter.display")</code> for your own types.</p>
+    </div>
+    <pre class="cell"><code><span class="k">import</span> { format } <span class="k">from</span> <span class="s">"npm:date-fns@4"</span>;
+
+<span class="k">const</span> now: <span class="t">Date</span> = <span class="k">new</span> <span class="t">Date</span>();
+<span class="k">await</span> jupyter.display(
+  jupyter.md<span class="s">`**Today** is ${</span>format(now, <span class="s">"PPPP"</span>)<span class="s">}`</span>,
+);</code></pre>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>Features</h2>
+    <div class="grid">
+      <article>
+        <h3>TypeScript, as in <code>deno jupyter</code></h3>
+        <p>TS, TSX, enums, top-level <code>await</code>, and <code>const</code> redeclaration
+          across cells. Cells run untyped, as in Deno; typed globals are available for your editor.</p>
+      </article>
+      <article>
+        <h3><code>npm:</code> and <code>jsr:</code> imports</h3>
+        <p>Install on first use into a shared cache. An optional
+          <code>cdp-kernel.lock.json</code> pins every resolved version, so a notebook gets the same
+          packages on another machine.</p>
+      </article>
+      <article>
+        <h3>Project-aware</h3>
+        <p>Inside a Deno project, the kernel uses its import map, <code>node_modules</code> and JSX
+          settings. Inside a Workers project, <code>env</code> holds the project's bindings and
+          <code>worker</code> is its default export.</p>
+      </article>
+      <article>
+        <h3>Visual debugger</h3>
+        <p>JupyterLab's debugger works on Node and Deno targets: breakpoints in the cell gutter,
+          stepping, the call stack, scopes and variables, mapped back to your TypeScript.</p>
+      </article>
+      <article>
+        <h3>Widgets and comms</h3>
+        <p>anywidget-style widgets with two-way state sync in JupyterLab, Notebook 7 and VS Code,
+          plus the comm API underneath for other protocols.</p>
+      </article>
+      <article>
+        <h3>Interactive</h3>
+        <p><code>prompt()</code> and <code>confirm()</code> over stdin, interrupt that keeps state,
+          Shift-Tab inspection and completion that never run getters, and cell history.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="runtimes" class="alt">
+  <div class="wrap">
+    <h2>Runtimes</h2>
+    <p class="sub">The kernel host runs on Node or Deno. Cells run in a separate target process.</p>
+    <table class="rt">
+      <thead><tr><th>Target</th><th>How cells run</th><th>Debugger</th></tr></thead>
+      <tbody>
+        <tr><td>Node</td><td>Chrome DevTools Protocol over the inspector. Optional <code>Deno</code> compatibility namespace.</td><td>Yes</td></tr>
+        <tr><td>Deno</td><td>Chrome DevTools Protocol, with the real <code>Deno.jupyter</code> namespace.</td><td>Yes</td></tr>
+        <tr><td>Bun</td><td>In-process, over a private pipe. Bun's inspector speaks WebKit's protocol, not CDP.</td><td>No</td></tr>
+        <tr><td>workerd</td><td>Inside a driver Worker's request, so <code>fetch</code>, timers and bindings work. Runs on Miniflare in a Workers project.</td><td>No</td></tr>
+        <tr><td>celld</td><td>The same driver Worker on celld, with the project's bindings copied in.</td><td>No</td></tr>
+      </tbody>
+    </table>
+    <p class="more"><a href="https://github.com/tlockney/cdp-kernel/blob/main/docs/runtimes.md">How each runtime works</a> ·
+      <a href="https://github.com/tlockney/cdp-kernel/blob/main/docs/known-gaps.md">Known gaps</a></p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap two">
+    <div>
+      <h2>How it works</h2>
+      <p>Deno 2.9's kernel is already two halves: the Jupyter wire protocol in plain JS, and a REPL
+        isolate driven by CDP calls. cdp-kernel ports the protocol half to <code>node:net</code> and
+        <code>node:crypto</code>, and points the CDP half at another runtime's inspector.
+        esbuild and acorn replace what Deno's module loader did.</p>
+      <p><a href="https://github.com/tlockney/cdp-kernel/blob/main/docs/architecture.md">Architecture</a> ·
+        <a href="study.html">Feasibility study</a></p>
+    </div>
+    <div class="note">
+      <h3>Status</h3>
+      <p>Early software. It passes a conformance suite derived from Deno's own Jupyter integration
+        tests on every target, on Linux and macOS, against Node 24 and 26 and Deno 2.9 and later.
+        Windows isn't supported yet.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MIT license. Parts are ports of Deno's Jupyter kernel, © the Deno authors.
+      <a href="https://www.npmjs.com/package/@tlockney/cdp-kernel">npm</a> ·
+      <a href="https://jsr.io/@tlockney/cdp-kernel">JSR</a> ·
+      <a href="https://github.com/tlockney/cdp-kernel">GitHub</a></p>
+  </div>
+</footer>
+
+<script>
+  for (const btn of document.querySelectorAll("[data-tab]")) {
+    btn.addEventListener("click", () => {
+      for (const b of document.querySelectorAll("[data-tab]")) b.setAttribute("aria-selected", String(b === btn));
+      for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== btn.dataset.tab;
+    });
+  }
+</script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 // Result formatting on Node vs Deno targets (#17): the catalogue of where
 // util.inspect and Deno.inspect differ, kept honest by running both on the
-// same values (test/fixtures/formatting). The decision recorded in the
-// README is to keep each runtime's own format; this test fails if a new
-// kind of difference appears, so the decision can be revisited.
+// same values (test/fixtures/formatting). The decision recorded in
+// docs/known-gaps.md is to keep each runtime's own format; this test fails
+// if a new kind of difference appears, so the decision can be revisited.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";

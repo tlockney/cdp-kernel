@@ -292,7 +292,7 @@ def checks(runtime, workdir, offline):
     def interrupt_busy_restarts(s):
         # A busy Bun can't be reached, so interrupt stops it: the cell ends,
         # the user is told, and the next cell runs in a fresh Bun without the
-        # earlier state (README, Known gaps).
+        # earlier state (docs/known-gaps.md).
         s.run("globalThis.kept = 'state'")
         reply, out = interrupt_cell(s, "while (true) {}")
         assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
@@ -813,7 +813,7 @@ def main():
             # import and import.meta check then covers the referrer URL's
             # encoding (#22).
             # Bun 1.4 can't import any module whose path holds "?", however
-            # it's spelled (README, Known gaps), so its directory has the rest.
+            # it's spelled (docs/known-gaps.md), so its directory has the rest.
             workdir = Path(tempfile.mkdtemp(prefix="cdpk e2e #%-" if base == "bun" else "cdpk e2e #%?-"))
             if project == "broken":
                 (workdir / "deno.json").write_text("{ this is not json")
