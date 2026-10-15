@@ -54,6 +54,23 @@ export function exprAtCursor(code: string, cursor: number): string {
   return m ? m[0] : "";
 }
 
+/**
+ * The dotted name an inspect_request means (#10): the one the cursor is in
+ * or just after, or, right after "name(" while typing a call, that callee.
+ * Null when it isn't a plain path; nothing else is evaluated.
+ */
+export function inspectTarget(code: string, cursor: number): string | null {
+  let end = cursor;
+  // Inside a call's parentheses with nothing typed yet: "add(|".
+  const before = code.slice(0, cursor);
+  const call = /([\w$.]+)\(\s*$/.exec(before);
+  if (call) end = cursor - (before.length - before.lastIndexOf("(", cursor));
+  const head = /[\w$.]*$/.exec(code.slice(0, end))?.[0] ?? "";
+  const tail = call ? "" : (/^[\w$]*/.exec(code.slice(end))?.[0] ?? "");
+  const path = (head + tail).replace(/\.$/, "");
+  return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(path) ? path : null;
+}
+
 // Jupyter measures cursor_pos in Unicode codepoints; JS strings index UTF-16
 // code units (denoland/deno#22771).
 export function codePointToUtf16Index(str: string, cpOffset: number): number {

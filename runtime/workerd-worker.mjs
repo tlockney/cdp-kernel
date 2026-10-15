@@ -18,6 +18,7 @@
 import { formatWithOptions, inspect } from "node:util";
 import { createJupyter } from "./display.mjs";
 import { createHandler } from "./evaluator.mjs";
+import { describeValue, inspectPath, resolvePath } from "./introspect.mjs";
 
 const BUILTIN = /^(?:node|cloudflare|workerd):/;
 
@@ -96,6 +97,10 @@ function install(env) {
     import: cellImport,
     meta: { ...meta, resolve: (specifier) => new URL(specifier, meta.url).href },
     requireFor,
+    // inspect_request (#10): by descriptor, so nothing runs.
+    describeForInspect: (value, detail) => describeValue(value, { inspect: (v) => inspect(v, { colors: false, depth: 2 }), detail }),
+    inspectPath: (path, detail) => inspectPath(path, { inspect: (v) => inspect(v, { colors: false, depth: 2 }), detail }),
+    resolvePath,
     barrier: () => 0,
     broadcastResult: jupyter.broadcastResult,
     async commDispatch(msgType, content, metadata, buffers64) {

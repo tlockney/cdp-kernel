@@ -73,6 +73,20 @@ RUN_CELL = """async (index) => {
 
 CELL_OUTPUT = """(index) => window.__nb.content.widgets[index].outputArea.node.innerText.trim()"""
 
+# Puts the cursor at the end of a cell's source in edit mode, ready for a
+# Shift-Tab (#10).
+CURSOR_AT_END = """(index) => {
+  const nb = window.__nb;
+  window.jupyterapp.shell.activateById(nb.id);
+  nb.content.activeCellIndex = index;
+  nb.content.mode = "edit";
+  const editor = nb.content.activeCell.editor;
+  editor.focus();
+  editor.setCursorPosition(editor.getPositionAt(editor.model.sharedModel.getSource().length));
+}"""
+
+TOOLTIP_TEXT = """() => document.querySelector(".jp-Tooltip")?.innerText ?? \"\""""
+
 BUTTON_TEXT = """() => document.querySelector("button.cdpk-counter")?.textContent ?? null"""
 
 
@@ -135,6 +149,8 @@ def check(runtime, port):
         new_code_cell("const counter = jupyter.widget({\n  esm: " + json.dumps(ESM) + ",\n  state: { count: 0 },\n});\ncounter"),
         new_code_cell('counter.get("count")'),
         new_code_cell('counter.set("count", 10)'),
+        new_code_cell("function add(a, b) { return a + b }"),
+        new_code_cell("add("),
     ])
     nb.metadata["kernelspec"] = {"name": kernel_name, "display_name": kernel_name, "language": "typescript"}
     nbformat.write(nb, work / "counter.ipynb")
@@ -195,8 +211,16 @@ def check(runtime, port):
             run_cell(page, 2)
             button_is(page, "count is 10")
             print("after kernel set(10):", page.evaluate(BUTTON_TEXT))
+
+            # Shift-Tab after "add(" shows the inspect_reply as a tooltip.
+            run_cell(page, 3)
+            page.evaluate(CURSOR_AT_END, 4)
+            page.keyboard.press("Shift+Tab")
+            tooltip = wait_until(page, f"() => {{ const t = ({TOOLTIP_TEXT})(); return t.includes('Signature: add(a, b)') ? t : '' }}",
+                                 timeout=20, what="the Shift-Tab tooltip")
+            print("tooltip:", tooltip.splitlines()[:2])
             browser.close()
-        print(f"ok    {runtime}: widget renders and syncs both ways")
+        print(f"ok    {runtime}: widget renders and syncs both ways; Shift-Tab tooltip shows")
     finally:
         stop(lab)
 

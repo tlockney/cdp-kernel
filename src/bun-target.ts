@@ -242,6 +242,12 @@ export class BunTarget implements KernelTarget {
     return Array.isArray(reply?.names) ? reply.names.filter((n): n is string => typeof n === "string") : [];
   }
 
+  /** Resolved by property descriptor in the target, so nothing runs (#10). */
+  async inspect(path: string, detail: number): Promise<string | null> {
+    const reply = await this.#request("inspect", { path, detail }).catch(() => null);
+    return typeof reply?.text === "string" ? reply.text : null;
+  }
+
   /** None: top-level declarations here are properties of globalThis. */
   lexicalNames(): Promise<string[]> {
     return Promise.resolve([]);

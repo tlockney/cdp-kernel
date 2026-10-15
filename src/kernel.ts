@@ -16,7 +16,8 @@ import { WorkerdTarget } from "./workerd-target.ts";
 import { launchCelld } from "./celld-target.ts";
 import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate } from "./transform.ts";
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
-import { checkIsComplete, codePointToUtf16Index, exprAtCursor, utf16ToCodePointIndex } from "./text.ts";
+import { checkIsComplete, codePointToUtf16Index, exprAtCursor, inspectTarget, utf16ToCodePointIndex } from "./text.ts";
+import { type HistoryEntry, queryHistory } from "./history.ts";
 import type { EvaluateResult } from "./cdp.ts";
 import { VERSION } from "./package.ts";
 
@@ -72,6 +73,8 @@ export class Kernel {
   readonly #project: DenoProject | null;
   #projectWarning: string | null = null;
   #noticeShownFor: KernelTarget | null = null;
+  /** Cells run with store_history, for history_request (#10). */
+  readonly #history: HistoryEntry[] = [];
   readonly #session = randomUUID();
   readonly #shell: RouterSocket;
   readonly #control: RouterSocket;
@@ -346,10 +349,10 @@ export class Kernel {
           this.#reply(this.#shell, peer, msg, "is_complete_reply", checkIsComplete(String(msg.content.code ?? "")));
           break;
         case "inspect_request":
-          this.#reply(this.#shell, peer, msg, "inspect_reply", { status: "ok", found: false, data: {}, metadata: {} });
+          this.#reply(this.#shell, peer, msg, "inspect_reply", await this.#inspect(msg));
           break;
         case "history_request":
-          this.#reply(this.#shell, peer, msg, "history_reply", { status: "ok", history: [] });
+          this.#reply(this.#shell, peer, msg, "history_reply", { status: "ok", history: queryHistory(this.#history, msg.content) });
           break;
         case "comm_info_request":
           this.#reply(this.#shell, peer, msg, "comm_info_reply", { status: "ok", comms: this.#commInfo(msg.content) });
@@ -363,6 +366,20 @@ export class Kernel {
     } finally {
       this.#status("idle", msg.header);
     }
+  }
+
+  /** The tooltip (Shift-Tab) for the name at the cursor (#10). */
+  async #inspect(msg: Message): Promise<JsonObject> {
+    const code = String(msg.content.code ?? "");
+    const cursorCp = typeof msg.content.cursor_pos === "number"
+      ? msg.content.cursor_pos
+      : utf16ToCodePointIndex(code, code.length);
+    const path = inspectTarget(code, codePointToUtf16Index(code, cursorCp));
+    const detail = msg.content.detail_level === 1 ? 1 : 0;
+    const text = path === null ? null : await (await this.#ensureTarget()).inspect(path, detail);
+    return text === null
+      ? { status: "ok", found: false, data: {}, metadata: {} }
+      : { status: "ok", found: true, data: { "text/plain": text }, metadata: {} };
   }
 
   async #complete(msg: Message): Promise<JsonObject> {
@@ -430,7 +447,10 @@ export class Kernel {
     const parent = msg.header;
     const code = String(msg.content.code ?? "");
     const silent = msg.content.silent === true;
-    if (!silent && msg.content.store_history !== false) this.#executionCount++;
+    if (!silent && msg.content.store_history !== false) {
+      this.#executionCount++;
+      this.#history.push({ line: this.#executionCount, input: code });
+    }
     const count = this.#executionCount;
     this.#parent = parent;
     this.#allowStdin = msg.content.allow_stdin === true;

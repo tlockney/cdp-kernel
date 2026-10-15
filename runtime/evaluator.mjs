@@ -66,6 +66,12 @@ export function createHandler(shim, evaluate = (code) => (0, eval)(code)) {
           return { error: JSON.parse(shim.describeError(err)) };
         }
       case "props": {
+        // Completion's expression is a dotted path; resolved by descriptor
+        // where the shim can, so completing `obj.` never runs a getter (#10).
+        if (typeof shim.resolvePath === "function") {
+          const resolved = shim.resolvePath(request.expr);
+          return { names: resolved.found && !resolved.accessor ? propertyNames(resolved.value) : [] };
+        }
         let value;
         try {
           value = evaluate(`(${request.expr})`);
@@ -74,6 +80,8 @@ export function createHandler(shim, evaluate = (code) => (0, eval)(code)) {
         }
         return { names: propertyNames(value) };
       }
+      case "inspect":
+        return { text: shim.inspectPath(request.path, request.detail ?? 0) };
       case "barrier":
         return { value: shim.barrier() };
       default:

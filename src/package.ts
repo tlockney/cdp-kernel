@@ -22,6 +22,7 @@ export const RUNTIME_FILES = [
   "bootstrap.mjs",
   "bun-channel.mjs",
   "evaluator.mjs",
+  "introspect.mjs",
   "workerd-worker.mjs",
   "display.mjs",
   "comm.mjs",
