@@ -118,6 +118,13 @@ In a cell:
   or `jsr:@scope/pkg@range`.
   - On Node, `npm:` and `jsr:` install on first use into
     `~/.cache/cdp-kernel/npm`.
+  - **Lockfile.** To pin versions, create a `cdp-kernel.lock.json` in the
+    notebook's directory (or above it) containing `{}`. From then on, each
+    `npm:`/`jsr:` range is recorded with the exact version it resolved to,
+    and installed at that version, so the notebook gets the same packages
+    on another machine. Commit it next to the notebook. Deno targets use
+    Deno's own resolution and lock instead. Installs into the shared cache
+    are serialized, so two kernels installing at once can't corrupt it.
   - On Deno they use Deno's global cache, unless the notebook is in a Deno
     project (below).
   - On Bun they install with `bun add` into `~/.cache/cdp-kernel/bun`. Other
@@ -394,10 +401,12 @@ that failed.
   celld, a getter on the path is reported but not called. History is kept
   for the current kernel session only.
 - No debugger.
-- `npm:` on Node:
-  - one npm alias per `name@range`;
-  - no lockfile;
-  - peer dependencies resolve by real name from the shared cache.
+- `npm:` on Node, Bun, workerd and celld:
+  - one npm alias per `name@range` (or exact version, when locked);
+  - the cache is shared by every notebook, so peer dependencies resolve by
+    real name from it;
+  - a project's own `package.json` doesn't decide an `npm:` import's version
+    (bare imports do use its `node_modules`).
 - No type checking. Deno doesn't type-check REPL cells either.
 - Results are formatted with `util.inspect` on Node, so they look slightly
   different from Deno's `Deno.inspect`.

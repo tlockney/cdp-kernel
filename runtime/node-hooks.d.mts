@@ -14,8 +14,20 @@ export function installCommand(
   name: string,
   range: string,
 ): { cmd: string; args: string[] };
+export type InstallRunner = (cmd: string, args: string[], cwd: string) => { status: number | null; stderr?: string; error?: Error };
 export function ensureInstalled(
   pkg: { name: string; range: string },
   installer?: Installer,
+  options?: { lockFile?: string | null; run?: InstallRunner },
 ): { dir: string; alias: string };
+
+export const LOCK_FILE: string;
+export interface Lock {
+  version: 1;
+  packages: { [nameAtRange: string]: string };
+}
+export function findLockFile(dir: string): string | null;
+export function readLock(path: string): Lock;
+export function writeLock(path: string, lock: Lock): void;
+export function withInstallLock<T>(dir: string, fn: () => T, options?: { timeoutMs?: number }): T;
 export function installNodeResolveHooks(urls: { shimUrl: string; replUrl: string }): void;

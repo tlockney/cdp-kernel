@@ -207,6 +207,19 @@ def checks(runtime, workdir, offline):
         assert reply["status"] == "ok", reply
         assert strip_ansi(result_of(out)["text/plain"]) == "true", out
 
+    def npm_lockfile(s):
+        # An empty cdp-kernel.lock.json opts in: the first resolution of a
+        # range is recorded, so another machine gets the same version (#14).
+        lock = workdir / "cdp-kernel.lock.json"
+        lock.write_text("{}\n")
+        try:
+            reply, out = s.run('import isOdd from "npm:is-odd@^3";\nisOdd(5)', timeout=180)
+            assert reply["status"] == "ok", reply
+            packages = json.loads(lock.read_text())["packages"]
+            assert packages.get("is-odd@^3", "").startswith("3."), packages
+        finally:
+            lock.unlink()
+
     def jsr_import(s):
         reply, out = s.run('import { toCamelCase } from "jsr:@std/text@1";\ntoCamelCase("hello world")', timeout=180)
         assert reply["status"] == "ok", reply
@@ -579,6 +592,9 @@ def checks(runtime, workdir, offline):
     tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if in_process else [interrupt]
     if not offline:
         tests += [npm_import, jsr_import]
+        # Deno targets resolve npm: themselves; the lockfile is the kernel's.
+        if not runtime.startswith("deno"):
+            tests.append(npm_lockfile)
     if runtime in ("deno", "node-deno"):
         tests.append(deno_namespace)
         tests.append(deno_file_apis)
