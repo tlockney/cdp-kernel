@@ -5,7 +5,7 @@ also shows the pure-JS ZMTP implementation interoperates with real ZeroMQ.
 The checklist follows Deno's tests/integration/jupyter_tests.rs, plus the
 gaps those tests leave (display ordering, TS, imports, npm:/jsr:).
 
-    uv run --with jupyter_client --with nbformat python test/e2e.py [node] [deno]
+    uv run --with jupyter_client --with nbformat python test/e2e.py [node] [deno] [bun] ...
 
 Set CDPK_E2E_OFFLINE=1 to skip the npm:/jsr: checks (they hit registries).
 Set CDPK_E2E_CLI to the command that runs the CLI (default: node src/main.ts),
@@ -240,6 +240,54 @@ def checks(runtime, workdir, offline):
         _, out = s.run("kept")
         assert "state" in result_of(out)["text/plain"], out
 
+    def interrupt_cell(s, code):
+        """Run code, interrupt it after a second; return (reply, outputs)."""
+        msg_id = s.kc.execute(code)
+        time.sleep(1.0)
+        s.km.interrupt_kernel()
+        outputs, reply, idle = [], None, False
+        deadline = time.time() + TIMEOUT
+        while not (reply and idle):
+            assert time.time() < deadline, "no reply/idle after interrupt"
+            try:
+                msg = s.kc.get_iopub_msg(timeout=0.1)
+                if msg["parent_header"].get("msg_id") == msg_id:
+                    if msg["msg_type"] == "status" and msg["content"]["execution_state"] == "idle":
+                        idle = True
+                    elif msg["msg_type"] not in ("status", "execute_input"):
+                        outputs.append((msg["msg_type"], msg["content"]))
+            except Exception:
+                pass
+            if reply is None:
+                try:
+                    r = s.kc.get_shell_msg(timeout=0.05)
+                    if r["parent_header"].get("msg_id") == msg_id:
+                        reply = r["content"]
+                except Exception:
+                    pass
+        return reply, outputs
+
+    def interrupt_await_keeps_state(s):
+        # Bun has no terminateExecution, but an awaiting cell leaves its event
+        # loop free, so the cell is abandoned in place.
+        s.run("globalThis.kept = 'state'")
+        reply, _ = interrupt_cell(s, "await new Promise(() => {})")
+        assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
+        _, out = s.run("kept")
+        assert "state" in result_of(out)["text/plain"], out
+
+    def interrupt_busy_restarts(s):
+        # A busy Bun can't be reached, so interrupt stops it: the cell ends,
+        # the user is told, and the next cell runs in a fresh Bun without the
+        # earlier state (README, Known gaps).
+        s.run("globalThis.kept = 'state'")
+        reply, out = interrupt_cell(s, "while (true) {}")
+        assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
+        assert "can't be interrupted in place" in text_of(out), out
+        reply, out = s.run("typeof kept")
+        assert reply["status"] == "ok", reply
+        assert "undefined" in result_of(out)["text/plain"], out
+
     def uncaught_later(s):
         s.run("setTimeout(() => { throw new Error('late') }, 10)")
         time.sleep(0.5)
@@ -398,11 +446,13 @@ def checks(runtime, workdir, offline):
         top_level_await, object_literal, thrown_error, syntax_error,
         display_ordering, display_symbol, markdown_template, update_display,
         png_bytes, node_builtin_import, relative_ts_import, import_meta,
-        prompt_stdin, prompt_without_stdin, interrupt, uncaught_later,
+        prompt_stdin, prompt_without_stdin, uncaught_later,
         complete, is_complete,
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
     ]
+    # Busy-loop interrupt keeps state where the inspector can stop running JS.
+    tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if runtime == "bun" else [interrupt]
     if not offline:
         tests += [npm_import, jsr_import]
     if runtime in ("deno", "node-deno"):
@@ -421,6 +471,8 @@ VARIANTS = {
     "deno-project": ("deno", False, True),
     # ... and one whose deno.json is broken: the kernel runs without it.
     "deno-broken-project": ("deno", False, "broken"),
+    # Bun, evaluating cells in-process rather than over an inspector (#7).
+    "bun": ("bun", False, False),
 }
 
 
@@ -487,7 +539,9 @@ def main():
             # A notebook directory with URL-special characters: every relative
             # import and import.meta check then covers the referrer URL's
             # encoding (#22).
-            workdir = Path(tempfile.mkdtemp(prefix="cdpk e2e #%?-"))
+            # Bun 1.4 can't import any module whose path holds "?", however
+            # it's spelled (README, Known gaps), so its directory has the rest.
+            workdir = Path(tempfile.mkdtemp(prefix="cdpk e2e #%-" if base == "bun" else "cdpk e2e #%?-"))
             if project == "broken":
                 (workdir / "deno.json").write_text("{ this is not json")
             elif project:

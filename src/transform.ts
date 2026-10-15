@@ -16,8 +16,8 @@
 // callback was not specified").
 
 import { type TransformOptions, transformSync } from "esbuild";
-import { parse, type Node } from "acorn";
-import { full } from "acorn-walk";
+import { type Node, parse, type Pattern, type Program, type VariableDeclaration } from "acorn";
+import { full, recursive } from "acorn-walk";
 
 export const SHIM = "__cdpk";
 
@@ -132,11 +132,9 @@ function rewriteImport(code: string, node: ImportDeclarationNode, index: number)
   return `var ${ns} = ${load}; var ${bindings.join(", ")};`;
 }
 
-/** Rewrites module-only syntax in plain JavaScript into script syntax. */
-export function rewriteModuleSyntax(js: string): string {
-  let program: Node;
+function parseCell(js: string): Program {
   try {
-    program = parse(js, {
+    return parse(js, {
       ecmaVersion: "latest",
       sourceType: "module",
       allowAwaitOutsideFunction: true,
@@ -145,6 +143,11 @@ export function rewriteModuleSyntax(js: string): string {
   } catch (err) {
     throw new CellSyntaxError(err instanceof Error ? err.message : String(err));
   }
+}
+
+/** Rewrites module-only syntax in plain JavaScript into script syntax. */
+export function rewriteModuleSyntax(js: string): string {
+  const program = parseCell(js);
 
   const edits: Edit[] = [];
   let importIndex = 0;
@@ -187,14 +190,140 @@ export function rewriteModuleSyntax(js: string): string {
 
   // Nested edits can't occur (imports/exports are top level, import()'s
   // keyword edit doesn't overlap its arguments), so apply back to front.
-  edits.sort((a, b) => b.start - a.start);
+  return applyEdits(js, edits);
+}
+
+function applyEdits(js: string, edits: Edit[]): string {
+  // Back to front; at a shared start, a replacement goes before an insertion.
+  edits.sort((a, b) => b.start - a.start || b.end - a.end);
   let out = js;
   for (const edit of edits) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
   return out;
 }
 
+/** Adds the names a binding pattern declares. */
+function patternNames(pattern: Pattern, names: Set<string>): void {
+  switch (pattern.type) {
+    case "Identifier":
+      names.add(pattern.name);
+      break;
+    case "ObjectPattern":
+      for (const prop of pattern.properties) patternNames(prop.type === "Property" ? prop.value : prop, names);
+      break;
+    case "ArrayPattern":
+      for (const element of pattern.elements) if (element) patternNames(element, names);
+      break;
+    case "RestElement":
+      patternNames(pattern.argument, names);
+      break;
+    case "AssignmentPattern":
+      patternNames(pattern.left, names);
+      break;
+  }
+}
+
+/**
+ * Makes a cell's declarations global without replMode, the tslab/IJavascript
+ * technique: the cell runs inside an async function (for top-level await),
+ * and every name it declares at the top level is declared with `var` in the
+ * surrounding script, which a global-code eval turns into a property of
+ * globalThis. Inside the function the declarations become assignments to
+ * those globals:
+ *   const { a } = o; class K {}  ->  var a, K;
+ *                                    (async () => { ({ a } = o); K = class K {}; })()
+ * So later cells, and closures from this one, all see one binding. A `var`
+ * in a top-level block or loop head is global too, as in a script; block
+ * scoped and function-local declarations stay where they are. Functions
+ * keep their in-cell hoisting and are copied to globalThis on entry.
+ *
+ * A trailing expression statement becomes `return [value]`; the box keeps a
+ * promise from being awaited, so the cell's result is the promise itself, as
+ * in Deno.
+ */
+function hoistForEval(js: string): string {
+  const program = parseCell(js);
+  const names = new Set<string>();
+  const functions: string[] = [];
+  const edits: Edit[] = [];
+  const src = (node: Node) => js.slice(node.start, node.end);
+  const replace = (node: Node, text: string) => edits.push({ start: node.start, end: node.end, text });
+
+  // A declarator without an initializer resets the name, except under var,
+  // where redeclaring keeps the value.
+  const assignments = (decl: VariableDeclaration): string[] =>
+    decl.declarations.flatMap((d) => {
+      patternNames(d.id, names);
+      if (d.init) return [`${src(d.id)} = ${src(d.init)}`];
+      return decl.kind === "var" ? [] : [`${src(d.id)} = undefined`];
+    });
+  const statement = (decl: VariableDeclaration) => {
+    const parts = assignments(decl);
+    replace(decl, parts.length > 0 ? `(${parts.join(", ")});` : ";");
+  };
+  const isVar = (node: Node | null | undefined): node is VariableDeclaration =>
+    node?.type === "VariableDeclaration" && (node as VariableDeclaration).kind === "var";
+  const loopHead = (left: Node) => {
+    if (!isVar(left)) return;
+    const id = left.declarations[0].id;
+    patternNames(id, names);
+    replace(left, src(id));
+  };
+  // Expressions can't hold statements outside a function or class, so only
+  // statement bodies are walked.
+  const nestedVars = (node: Node) =>
+    recursive(node, null, {
+      Function() {},
+      Class() {},
+      VariableDeclaration(decl) {
+        if (decl.kind === "var") statement(decl);
+      },
+      ForStatement(loop, state, walk) {
+        if (isVar(loop.init)) replace(loop.init, assignments(loop.init).join(", "));
+        walk(loop.body, state);
+      },
+      ForInStatement(loop, state, walk) {
+        loopHead(loop.left);
+        walk(loop.body, state);
+      },
+      ForOfStatement(loop, state, walk) {
+        loopHead(loop.left);
+        walk(loop.body, state);
+      },
+    });
+
+  program.body.forEach((stmt, i) => {
+    if (stmt.type === "VariableDeclaration" && (stmt.kind === "var" || stmt.kind === "let" || stmt.kind === "const")) {
+      statement(stmt);
+    } else if (stmt.type === "FunctionDeclaration") {
+      names.add(stmt.id.name);
+      functions.push(stmt.id.name);
+    } else if (stmt.type === "ClassDeclaration") {
+      names.add(stmt.id.name);
+      edits.push({ start: stmt.start, end: stmt.start, text: `${stmt.id.name} = ` });
+      edits.push({ start: stmt.end, end: stmt.end, text: ";" });
+    } else if (stmt.type === "ExpressionStatement" && i === program.body.length - 1) {
+      replace(stmt, `return [${src(stmt.expression)}];`);
+    } else {
+      nestedVars(stmt);
+    }
+  });
+
+  const declare = names.size > 0 ? `var ${[...names].join(", ")};\n` : "";
+  const publish = functions.map((name) => ` globalThis.${name} = ${name};`).join("");
+  return `${declare}(async () => { 'use strict';${publish}\n${applyEdits(js, edits)}\n})()`;
+}
+
 export function transformCell(code: string, options: CellTransformOptions = {}): string {
   return PRELUDE + rewriteModuleSyntax(stripTypes(code, options));
+}
+
+/**
+ * Like transformCell, for a target that evaluates cells itself, as global
+ * code (an indirect eval), instead of through the inspector's replMode: see
+ * hoistForEval. The script's value is a promise of the boxed result.
+ */
+export function transformCellForEval(code: string, options: CellTransformOptions = {}): string {
+  return hoistForEval(rewriteModuleSyntax(stripTypes(code, options)));
 }
 
 /**

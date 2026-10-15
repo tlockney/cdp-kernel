@@ -202,7 +202,7 @@ def check(runtime, port):
 
 
 def main():
-    runtimes = sys.argv[1:] or ["node", "deno"]
+    runtimes = sys.argv[1:] or ["node", "deno", "bun"]
     # Fetch Playwright's Chromium on first use; quick when already present.
     subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True, stdout=subprocess.DEVNULL)
     failures = 0

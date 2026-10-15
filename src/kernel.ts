@@ -10,8 +10,9 @@ import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { decodeMessage, encodeMessage, type JsonObject, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
 import { PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
-import { Interrupted, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
-import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate, transformCell } from "./transform.ts";
+import { Interrupted, type KernelTarget, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
+import { BunTarget } from "./bun-target.ts";
+import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate } from "./transform.ts";
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, utf16ToCodePointIndex } from "./text.ts";
 import type { EvaluateResult } from "./cdp.ts";
@@ -73,8 +74,8 @@ export class Kernel {
   readonly #control: RouterSocket;
   readonly #stdin: RouterSocket;
   readonly #iopub: PubSocket;
-  #target: Target | null = null;
-  #targetStarting: Promise<Target> | null = null;
+  #target: KernelTarget | null = null;
+  #targetStarting: Promise<KernelTarget> | null = null;
   #executionCount = 0;
   #parent: JsonObject = {};
   #allowStdin = false;
@@ -186,12 +187,17 @@ export class Kernel {
 
   // --- target lifecycle -----------------------------------------------------
 
-  #ensureTarget(): Promise<Target> {
-    if (this.#target) return Promise.resolve(this.#target);
-    this.#targetStarting ??= Target.launch(this.#runtime, this.#targetEvents(), {
+  #launchTarget(): Promise<KernelTarget> {
+    if (this.#runtime === "bun") return BunTarget.launch(this.#targetEvents());
+    return Target.launch(this.#runtime, this.#targetEvents(), {
       denoCompat: this.#denoCompat,
       denoConfig: this.#project?.configPath,
-    }).then((target) => {
+    });
+  }
+
+  #ensureTarget(): Promise<KernelTarget> {
+    if (this.#target) return Promise.resolve(this.#target);
+    this.#targetStarting ??= this.#launchTarget().then((target) => {
       this.#target = target;
       this.#targetStarting = null;
       return target;
@@ -206,10 +212,11 @@ export class Kernel {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
       message: (msg) => void this.#onTargetMessage(msg),
-      exit: (code) => {
+      exit: (code, note) => {
         this.#target = null;
         if (!this.#shuttingDown) {
-          this.#publish("stream", { name: "stderr", text: `\n[cdp-kernel] ${this.#runtime} exited (${code}); restarting on next cell\n` });
+          const text = note ?? `[cdp-kernel] ${this.#runtime} exited (${code}); restarting on next cell`;
+          this.#publish("stream", { name: "stderr", text: `\n${text}\n` });
         }
       },
     };
@@ -285,7 +292,7 @@ export class Kernel {
         codemirror_mode: "typescript",
         nbconvert_exporter: "script",
       },
-      banner: `cdp-kernel on ${this.#runtime} ${versions?.runtime ?? ""} (V8 ${versions?.v8 ?? "?"})`,
+      banner: `cdp-kernel on ${this.#runtime} ${versions?.runtime ?? ""} (${versions?.engine || "?"})`,
       help_links: [],
       debugger: false,
     };
@@ -399,19 +406,19 @@ export class Kernel {
     }
   }
 
-  async #evaluateCell(target: Target, code: string): Promise<EvaluateResult> {
+  async #evaluateCell(target: KernelTarget, code: string): Promise<EvaluateResult> {
     // Object-literal wrapping (Deno's evaluate_line_with_object_wrapping):
     // try `({ ... })` first and fall back to the code as written.
     const wrapped = objectLiteralCandidate(code);
     if (wrapped !== null) {
       try {
-        const result = await target.evaluate(transformCell(wrapped, this.#transformOptions()));
+        const result = await target.evaluate(target.transform(wrapped, this.#transformOptions()));
         if (!result.exceptionDetails) return result;
       } catch (err) {
         if (!(err instanceof CellSyntaxError)) throw err;
       }
     }
-    return target.evaluate(transformCell(code, this.#transformOptions()));
+    return target.evaluate(target.transform(code, this.#transformOptions()));
   }
 
   async #execute(msg: Message, peer: string): Promise<void> {
