@@ -548,7 +548,7 @@
     <div class="masthead">
       <div class="title-block">
         <h1>Life after deno jupyter <span class="glyph">§</span></h1>
-        <p class="subtitle">Deno's kernel is two halves joined by thirteen ops, and both halves come apart cleanly. Re-joined over the DevTools Protocol, <b>the same kernel now runs notebooks on Node and on Deno</b>.</p>
+        <p class="subtitle">Deno's kernel is two halves joined by thirteen ops, and both halves come apart cleanly. Re-joined over the DevTools Protocol, <b>the same kernel now runs notebooks on Node and on Deno</b>, and on Bun, workerd and celld through backends of their own.</p>
       </div>
 
       <svg class="loopmark" viewBox="0 0 150 150" role="img" aria-label="Two linked rings: a kernel host and a target runtime joined by one line">
@@ -565,8 +565,8 @@
     <div class="meta">
       <div><div class="k">Subject</div><div class="v">Deno's Jupyter kernel, after Deno winds down</div></div>
       <div><div class="k">Targets weighed</div><div class="v">Node · Deno · workerd · Bun · rusty_v8 · FFI</div></div>
-      <div><div class="k">Evidence</div><div class="v">Working prototype; 28/28 e2e checks on Deno, 26/26 on Node; 112 unit tests</div></div>
-      <div><div class="k">Compiled</div><div class="v">2026-10-14</div></div>
+      <div><div class="k">Evidence</div><div class="v">Released as 0.4.0; 275/275 e2e checks across five runtimes; 310 unit tests; CI on Linux and macOS</div></div>
+      <div><div class="k">Compiled</div><div class="v">2026-10-14 · revised 2026-10-15</div></div>
       <div><div class="k">Verdict</div><div class="v accent">Extract the JS halves; drive any runtime over CDP</div></div>
     </div>
   </div>
@@ -588,6 +588,7 @@
     <a href="#s8"><span class="num">08</span> rusty_v8 &amp; FFI</a>
     <a href="#s9"><span class="num">09</span> Risks &amp; gaps</a>
     <a href="#s10"><span class="num">10</span> Next steps</a>
+    <a href="#s11"><span class="num">11</span> Where it landed</a>
     <a href="#glossary"><span class="num">§</span> Glossary</a>
   </nav>
 
@@ -595,15 +596,20 @@
 
     <section class="bluf reveal" id="bluf">
       <div class="eyebrow">Bottom line up front</div>
-      <p><strong>Extraction is not only possible; it is done, as a spike.</strong> In June 2026 Deno rewrote its kernel (denoland/deno#34083). The Jupyter wire protocol, ZeroMQ included, is now about 600 lines of plain JavaScript. Execution happens in a separate isolate driven by standard <span class="term" tabindex="0" data-term="CDP" data-def="Chrome DevTools Protocol: the JSON-over-WebSocket protocol V8 runtimes expose through --inspect. Runtime.evaluate, Runtime.callFunctionOn and friends let an outside process run code in the runtime and inspect the results.">Chrome DevTools Protocol</span> calls. Node, Deno and workerd all expose CDP through <code>--inspect</code>, so the kernel can be pulled apart and pointed at a different runtime.</p>
-      <p><code>cdp-kernel</code> does that. It is a Node-hosted port of Deno's protocol half, the <code>Deno.jupyter</code> display API, and a replacement for the parts of Deno's module loader that notebooks lean on: TypeScript, <code>npm:</code> and <code>jsr:</code>. It passes a conformance suite derived from Deno's own Jupyter tests on both a <strong>Node 26</strong> target and a <strong>Deno 2.9</strong> target. A notebook written for <code>deno jupyter</code>, with Polars DataFrames, Vega-Lite, SVG and in-place display updates, gives the same outputs on both.</p>
+      <div class="note">
+        <span class="nlabel">Revised 2026-10-15</span>
+        The study was first compiled on 2026-10-14, when cdp-kernel was a spike. It has since been released (<code>@tlockney/cdp-kernel</code> 0.4.0 on npm and JSR), and most of the next steps in §10 are done. The verdict held. Sections 03, 04, 05, 09 and 10 are updated to the project's state at that date, and §11 compares what the study predicted with what was built. The analysis in §01, §02 and §06–§08 is unchanged except where marked.
+      </div>
+      <p><strong>Extraction is not only possible; it is done, and released.</strong> In June 2026 Deno rewrote its kernel (denoland/deno#34083). The Jupyter wire protocol, ZeroMQ included, is now about 600 lines of plain JavaScript. Execution happens in a separate isolate driven by standard <span class="term" tabindex="0" data-term="CDP" data-def="Chrome DevTools Protocol: the JSON-over-WebSocket protocol V8 runtimes expose through --inspect. Runtime.evaluate, Runtime.callFunctionOn and friends let an outside process run code in the runtime and inspect the results.">Chrome DevTools Protocol</span> calls. Node, Deno and workerd all expose CDP through <code>--inspect</code>, so the kernel can be pulled apart and pointed at a different runtime.</p>
+      <p><code>cdp-kernel</code> does that. It is a port of Deno's protocol half, hosted on Node or Deno, plus the <code>Deno.jupyter</code> display API and a replacement for the parts of Deno's module loader that notebooks lean on: TypeScript, <code>npm:</code> and <code>jsr:</code>. It passes a conformance suite derived from Deno's own Jupyter tests on <strong>Node 24 and 26</strong> and <strong>Deno 2.9 and the latest 2.x</strong>, on Linux and macOS. A notebook written for <code>deno jupyter</code>, with Polars DataFrames, Vega-Lite, SVG and in-place display updates, gives the same outputs on both.</p>
       <p>The other routes rank below it:</p>
       <ul>
-        <li><strong>workerd</strong> works only with a hybrid design. Timers and I/O are forbidden outside a request.</li>
-        <li><strong>Bun</strong> needs its own backend, because it speaks WebKit's protocol rather than CDP.</li>
+        <li><strong>workerd</strong> works only with a hybrid design. Timers and I/O are forbidden outside a request. <em>Built:</em> cells run inside one long-lived request (§06).</li>
+        <li><strong>Bun</strong> needs its own backend, because it speaks WebKit's protocol rather than CDP. <em>Built:</em> an in-process evaluator over a pipe (§07).</li>
         <li><strong>rusty_v8 or FFI</strong> buys nothing for an evaluator. FFI cannot reach the host's V8 isolate, and a rusty_v8 host means rebuilding most of deno_core.</li>
       </ul>
       <p>Recommendation: package <code>cdp-kernel</code> as a standalone, runtime-neutral kernel. Treat CDP as the primary backend. Add backends for Bun and workerd only if you need them.</p>
+      <p><em>Outcome:</em> all three were done. The Bun and workerd backends, and a third for celld that reuses the workerd driver, share the host, wire protocol, transformer and display module, as predicted. The CDP targets remain the most faithful; the in-process backends trade some REPL semantics and lose state on a busy-cell interrupt (§09).</p>
     </section>
 
     <!-- ===================== 01 ===================== -->
@@ -617,6 +623,7 @@
         <li><strong>rusty_v8</strong> is the one piece with a stated future: "We will continue supporting rusty_v8 and work toward integrating it into workerd." No timeline is given.</li>
       </ul>
       <p>The joint Cloudflare post, by Dahl and Kenton Varda, frames the goal as making self-hosted workerd a first-class way to run Workers apps, with celld folded back in. Neither post mentions deno_core, notebooks, or Jupyter.</p>
+      <p><em>Revised:</em> celld is usable now. cdp-kernel gained a celld target on celld 0.6.2, alongside workerd (§11).</p>
       <p>On the community side, denoland/deno#36995 collects fork announcements: <em>rjs</em>, <em>dodo</em>, and one maintainer's planned conservative fork. Nobody has claimed the Jupyter kernel. The existing Node kernels are stale: tslab last released in mid-2024, IJavascript in 2021, and both depend on the native <code>zeromq</code> addon.</p>
       <div class="note">
         <span class="nlabel">Sourcing</span>
@@ -636,7 +643,7 @@
       </ul>
 
       <figure class="figure">
-        <svg viewBox="0 0 680 270" class="dg" role="img" aria-label="Deno 2.9 kernel: a kernel isolate and a REPL isolate joined by 13 ops; cdp-kernel: a Node host and a target runtime joined by CDP over WebSocket plus stdio pipes">
+        <svg viewBox="0 0 680 270" class="dg" role="img" aria-label="Deno 2.9 kernel: a kernel isolate and a REPL isolate joined by 13 ops; cdp-kernel: a Node or Deno host and a target runtime joined by CDP over WebSocket plus stdio pipes">
           <text x="16" y="20" class="ey">DENO 2.9 — ONE PROCESS, TWO ISOLATES</text>
           <rect x="16" y="32" width="220" height="80" rx="4" class="box"/>
           <text x="126" y="60" text-anchor="middle" class="lbl">Kernel isolate</text>
@@ -653,7 +660,7 @@
 
           <text x="16" y="152" class="ey">CDP-KERNEL — TWO PROCESSES, ANY CDP RUNTIME</text>
           <rect x="16" y="164" width="220" height="90" rx="4" class="box-verd"/>
-          <text x="126" y="190" text-anchor="middle" class="lbl">Node host</text>
+          <text x="126" y="190" text-anchor="middle" class="lbl">Host (Node or Deno)</text>
           <text x="126" y="210" text-anchor="middle" class="lbl-sm">zmtp.ts · wire.ts · kernel.ts</text>
           <text x="126" y="226" text-anchor="middle" class="lbl-sm">esbuild + acorn cell transform</text>
           <text x="126" y="242" text-anchor="middle" class="lbl-sm">ported from jupyter_kernel.js</text>
@@ -665,7 +672,7 @@
           <text x="341" y="244" text-anchor="middle" class="lbl-sm">stdout/stderr pipes + barrier markers</text>
           <rect x="446" y="164" width="218" height="90" rx="4" class="box-core"/>
           <text x="555" y="190" text-anchor="middle" class="lbl">Target runtime</text>
-          <text x="555" y="210" text-anchor="middle" class="lbl-sm">node · deno (workerd, others)</text>
+          <text x="555" y="210" text-anchor="middle" class="lbl-sm">node · deno (any CDP runtime)</text>
           <text x="555" y="226" text-anchor="middle" class="lbl-sm">bootstrap.mjs · display.mjs</text>
           <text x="555" y="242" text-anchor="middle" class="lbl-sm">resolve hooks for npm:/jsr:</text>
         </svg>
@@ -676,7 +683,7 @@
     <!-- ===================== 03 ===================== -->
     <section class="sec reveal" id="s3">
       <div class="sec-head"><span class="sec-num">03</span><h2>The extraction: cdp-kernel</h2></div>
-      <p>The prototype lives in <code>docs/spikes/cdp-kernel/</code>: about 2,350 lines of TypeScript and plain ESM, plus about 1,500 lines of tests. The host runs on Node 26 with native type stripping and has two runtime dependencies, esbuild and acorn. The kernel host and the target runtime are separate processes:</p>
+      <p>The spike was about 2,350 lines of TypeScript and plain ESM, plus about 1,500 lines of tests. It now lives in its own repository, <code>tlockney/cdp-kernel</code>, at about 6,700 lines plus 5,200 lines of tests, and is published to npm and JSR as <code>@tlockney/cdp-kernel</code>. The host runs on Node 24+ with native type stripping, or on Deno when installed from JSR. Its runtime dependencies are still esbuild and acorn (with <code>acorn-walk</code>). The kernel host and the target runtime are separate processes:</p>
       <ul>
         <li>The host speaks Jupyter to the frontend.</li>
         <li>The target runs your code.</li>
@@ -704,6 +711,17 @@
             <li>crash guards;</li>
             <li>a <code>Deno.jupyter</code> proxy on Deno targets;</li>
             <li>an opt-in <code>Deno</code> compatibility namespace on Node.</li>
+          </ul>
+        </li>
+        <li><strong>Added since the spike</strong> (each has its own issue):
+          <ul>
+            <li>Jupyter comms and anywidget-style widgets, on every target (#9);</li>
+            <li><code>inspect_request</code> tooltips and <code>history_request</code> (#10);</li>
+            <li>typings for the <code>jupyter</code> global (#11);</li>
+            <li>a notebook's <code>deno.json</code> import map, JSX settings and <code>node_modules</code> on Deno targets (#13);</li>
+            <li>an opt-in lockfile and serialized installs for <code>npm:</code>/<code>jsr:</code> (#14);</li>
+            <li>JupyterLab's visual debugger on Node and Deno targets, over CDP's <code>Debugger</code> domain (#18);</li>
+            <li>Bun, workerd and celld targets (#7, #8, #25), and Workers project bindings in <code>env</code> (#26).</li>
           </ul>
         </li>
       </ul>
@@ -746,40 +764,45 @@
     <section class="sec reveal" id="s4">
       <div class="sec-head"><span class="sec-num">04</span><h2>Evidence</h2></div>
       <p>The e2e suite drives the kernel through Python's <code>jupyter_client</code>, which uses pyzmq and therefore real libzmq, so a pass also proves the pure-JS ZMTP interoperates. It follows Deno's <code>tests/integration/jupyter_tests.rs</code> and adds the gaps those tests leave. Kernelspecs go into a temporary <code>JUPYTER_DATA_DIR</code>.</p>
-      <div class="data-cap">Conformance suite · final run, 2026-10-14</div>
+      <p><em>Revised:</em> the suite has grown from 28 checks on two targets to 275 across every target, and CI runs it on Linux and macOS against Node 24 and 26 and Deno 2.9 and the latest 2.x, eight combinations in all. One combination also runs it against the packed npm tarball and against the host running on Deno, the two ways the kernel ships.</p>
+      <div class="data-cap">Conformance suite · CI on main, 2026-10-15 (Ubuntu, Node 26, Deno 2.9)</div>
       <div class="data-wrap">
         <table>
-          <thead><tr><th>Check group</th><th>What it exercises</th><th class="n">node</th><th class="n">deno</th><th class="n">node + compat</th></tr></thead>
+          <thead><tr><th>Kernelspec</th><th>What it adds to the shared checks</th><th class="n">checks</th></tr></thead>
           <tbody>
-            <tr><td>Protocol</td><td>kernel_info, stream, execute_result, shutdown exits the process</td><td class="n good">4/4</td><td class="n good">4/4</td><td class="n good">4/4</td></tr>
-            <tr><td>Language</td><td>TS + enums, const redeclare, top-level await, object-literal cells, thrown and syntax errors</td><td class="n good">6/6</td><td class="n good">6/6</td><td class="n good">6/6</td></tr>
-            <tr><td>Display</td><td>stream/display ordering, display symbol, md template, update_display_data, PNG bytes</td><td class="n good">5/5</td><td class="n good">5/5</td><td class="n good">5/5</td></tr>
-            <tr><td>Modules</td><td><code>node:</code> builtins, relative <code>.ts</code>, <code>import.meta</code>, <code>npm:is-odd</code>, <code>jsr:@std/text</code></td><td class="n good">5/5</td><td class="n good">5/5</td><td class="n good">5/5</td></tr>
-            <tr><td>Interaction</td><td>prompt with and without stdin, interrupt keeps state, late uncaught error survives, completion, is_complete</td><td class="n good">6/6</td><td class="n good">6/6</td><td class="n good">6/6</td></tr>
-            <tr><td>Deno namespace</td><td><code>Deno.jupyter === jupyter</code>, <code>Deno.*</code> file APIs and <code>Deno.errors.NotFound</code></td><td class="n">—</td><td class="n good">2/2</td><td class="n good">2/2</td></tr>
-            <tr><td class="em">Total</td><td></td><td class="n em">26/26</td><td class="n em">28/28</td><td class="n em">28/28</td></tr>
+            <tr><td>node</td><td>Protocol, language, display, modules, prompt, interrupt, completion, inspection, history, comms and widgets, debugger breakpoint, <code>npm:</code>/<code>jsr:</code> and the lockfile</td><td class="n good">39/39</td></tr>
+            <tr><td>deno</td><td>As node, plus <code>Deno.jupyter === jupyter</code> and the <code>Deno.*</code> file APIs; Deno's own lockfile instead of cdp-kernel's</td><td class="n good">40/40</td></tr>
+            <tr><td>node + compat</td><td>As node, plus the <code>Deno</code> namespace shim</td><td class="n good">41/41</td></tr>
+            <tr><td>deno, in a Deno project</td><td>Import map aliases, JSX import source, project <code>node_modules</code>; a broken <code>deno.json</code> warns once</td><td class="n good">14/14</td></tr>
+            <tr><td>bun</td><td>Shared checks without the debugger; interrupt of an awaiting cell keeps state, a busy cell restarts Bun</td><td class="n good">39/39</td></tr>
+            <tr><td>workerd</td><td>Shared checks without the debugger or stdin; request-scoped APIs, <code>fetch</code>, I/O objects that carry over between cells</td><td class="n good">41/41</td></tr>
+            <tr><td>celld</td><td>As workerd</td><td class="n good">41/41</td></tr>
+            <tr><td>workerd and celld, in a Workers project</td><td>Project bindings in <code>env</code>, a Durable Object stub across cells, the project's own <code>worker.fetch</code></td><td class="n good">20/20</td></tr>
+            <tr><td class="em">Total</td><td></td><td class="n em">275/275</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Counts include the shutdown check. Unit tests cover the wire codec, ZMTP framing (including a real loopback ROUTER), the cell transformer, the text helpers, the pipe demultiplexer, the display formatter, the resolve-hook parsers, the connection-file parser, and the compat shim: <strong>112/112 pass</strong>, and <code>tsc --strict</code> is clean with <code>erasableSyntaxOnly</code>. The unit suite caught one real bug, a marker cut inside its own prefix leaking as text, which is now fixed.</p>
+      <p>Counts include the shutdown check. The unit suite has grown from 112 to <strong>310 tests</strong>, covering the original areas plus comms, widgets, the debugger, source maps, introspection, history, the lockfile, Deno project config, and each of the Bun, workerd and celld backends. <code>tsc --strict</code> is clean. A separate CI job drives JupyterLab in Chromium through Playwright to check that widgets render and round-trip in a real frontend on every target, and that the visual debugger works on Node and Deno.</p>
+      <p>The spike's original table, from the first run on 2026-10-14: 26/26 checks on Node, 28/28 on Deno, 28/28 on Node with the compat namespace, and 112/112 unit tests.</p>
 
       <h3>A real Deno-style notebook</h3>
-      <p><code>examples/deno-style.ipynb</code> is written against <code>deno jupyter</code>'s APIs. It uses <code>import pl from "npm:nodejs-polars@0.18.0"</code> DataFrames, which are a native N-API addon, plus a filtered and derived frame, a Vega-Lite v5 chart object, a <code>Deno.jupyter.svg</code> badge, a progress bar updated in place via <code>display_id</code>, a class with <code>Symbol.for("Jupyter.display")</code>, and <code>Deno.makeTempDir</code>/<code>writeTextFile</code>/<code>readDir</code>. Executed by nbclient, it produced the same output types cell for cell on the Deno target ("Running on <strong>Deno 2.9.6</strong>, V8 15.0") and on the Node target with the shim ("Running on <strong>Node 26.8.1</strong>, V8 14.6"). The executed copies sit next to the source notebook.</p>
+      <p><code>examples/deno-style.ipynb</code> is written against <code>deno jupyter</code>'s APIs. It uses <code>import pl from "npm:nodejs-polars@0.18.0"</code> DataFrames, which are a native N-API addon, plus a filtered and derived frame, a Vega-Lite v5 chart object, a <code>Deno.jupyter.svg</code> badge, a progress bar updated in place via <code>display_id</code>, a class with <code>Symbol.for("Jupyter.display")</code>, and <code>Deno.makeTempDir</code>/<code>writeTextFile</code>/<code>readDir</code>. Executed by nbclient, it produced the same output types cell for cell on the Deno target ("Running on <strong>Deno 2.9.6</strong>, V8 15.0") and on the Node target with the shim ("Running on <strong>Node 26.8.1</strong>, V8 14.6"). The executed copies sit next to the source notebook. A second example, <code>examples/moma-collection.ipynb</code>, adds <code>jsr:</code> imports, Observable Plot, widgets and server-rendered HTML, executed on Node and on Deno.</p>
     </section>
 
     <!-- ===================== 05 ===================== -->
     <section class="sec reveal" id="s5">
       <div class="sec-head"><span class="sec-num">05</span><h2>Options compared</h2></div>
-      <p>Seven routes, ranked by how much of the Deno experience they keep for the effort, and by how well they survive Deno going quiet.</p>
+      <p>Seven routes, ranked by how much of the Deno experience they keep for the effort, and by how well they survive Deno going quiet. <em>Revised:</em> the status and effort columns now show what was built; the ranking is unchanged, and celld is added.</p>
       <div class="data-cap">Routes to a post-Deno notebook kernel</div>
       <div class="data-wrap">
         <table>
           <thead><tr><th>Route</th><th>Status</th><th>Fidelity to deno jupyter</th><th>Effort from here</th><th>Durability</th></tr></thead>
           <tbody>
-            <tr><td class="em">cdp-kernel, Node target</td><td class="good">Working spike</td><td>High: TS, npm:/jsr:, display API, interrupt, stdin. No widgets; <code>util.inspect</code> formatting</td><td>Packaging, plus comms if you want widgets</td><td class="good">Node and V8's inspector, both long-lived</td></tr>
-            <tr><td class="em">cdp-kernel, Deno target</td><td class="good">Working spike</td><td>Highest: Deno's own loader, permissions model off, real <code>Deno.*</code></td><td>None beyond the above</td><td class="bad">Rides the frozen runtime; fine while it lasts</td></tr>
-            <tr><td>cdp-kernel, workerd target</td><td>Probed (§06)</td><td>Medium: hybrid needed; no replMode in request scope</td><td>New backend: request-scoped evaluator plus declaration hoisting</td><td class="good">Cloudflare's stated direction</td></tr>
-            <tr><td>Bun backend</td><td>Probed (§07)</td><td>Medium: WebKit protocol lacks replMode, bindings, terminate</td><td>New backend: in-process evaluator with hoisting</td><td>Depends on Bun</td></tr>
+            <tr><td class="em">cdp-kernel, Node target</td><td class="good">Released in 0.1</td><td>High: TS, npm:/jsr:, display API, interrupt, stdin, widgets, debugger. <code>util.inspect</code> formatting</td><td>Maintenance; Windows (#32)</td><td class="good">Node and V8's inspector, both long-lived</td></tr>
+            <tr><td class="em">cdp-kernel, Deno target</td><td class="good">Released in 0.1</td><td>Highest: Deno's own loader and project config, permissions model off, real <code>Deno.*</code></td><td>None beyond the above</td><td class="bad">Rides the frozen runtime; fine while it lasts</td></tr>
+            <tr><td>cdp-kernel, workerd target</td><td class="good">Released in 0.3</td><td>Medium: cells hoisted onto <code>globalThis</code>; a busy-cell interrupt restarts workerd; no debugger or stdin</td><td>Maintenance</td><td class="good">Cloudflare's stated direction</td></tr>
+            <tr><td>cdp-kernel, celld target</td><td class="good">Released in 0.3</td><td>Medium: as workerd, without <code>--experimental</code></td><td>Maintenance; celld is young (0.6.2)</td><td>Depends on celld's future inside workerd</td></tr>
+            <tr><td>Bun backend</td><td class="good">Released in 0.3</td><td>Medium: cells hoisted onto <code>globalThis</code>; a busy-cell interrupt restarts Bun; no debugger or compat namespace</td><td>Maintenance</td><td>Depends on Bun</td></tr>
             <tr><td>rusty_v8 native host</td><td>Assessed (§08)</td><td>Whatever you rebuild</td><td class="bad">Large: event loop, module loader, web APIs, inspector wiring</td><td>rusty_v8 is supported; the rest is yours</td></tr>
             <tr><td>Native FFI shell (runtimed)</td><td>Assessed (§08)</td><td>Transport only</td><td>Medium, and it solves a solved problem</td><td>Good, but unnecessary</td></tr>
             <tr><td>Adopt tslab or IJavascript</td><td>Survey</td><td>Low: no Deno display API, no npm:/jsr:, old TS</td><td>Fork and modernize</td><td class="bad">Stale since 2024 and 2021</td></tr>
@@ -816,6 +839,15 @@
         <li>The inspector is used only for completion.</li>
       </ul>
       <p>That is a new backend behind the same host, not a change to the protocol half. If "rusty_v8 in workerd" eventually lets Rust code reach workerd's inspector or isolate directly, an in-process variant becomes possible. Nothing public yet says that it will.</p>
+      <h3>What was built</h3>
+      <p><em>Revised.</em> The workerd target (#8, #26) kept the probe's core idea, cells evaluated through <code>UnsafeEval</code> inside a request with declarations hoisted onto <code>globalThis</code>, and changed the rest:</p>
+      <ul>
+        <li><strong>One request, not one per cell.</strong> The host opens a single WebSocket to the driver Worker, and every cell runs inside that session's request. I/O objects, Durable Object stubs and pending timers then carry over between cells, which a <code>POST /eval</code> per cell would not allow. The cost is that the request never ends, so Workers' per-request CPU and duration limits don't apply.</li>
+        <li><strong>No inspector.</strong> Output and display messages come back over the session in order. The driver is served on a Unix socket in a private directory, opened with a per-launch token.</li>
+        <li><strong>Interrupt.</strong> A cell waiting on a promise is abandoned in place and state survives. A busy cell can't be reached, so workerd is stopped and restarts on the next cell, losing state.</li>
+        <li><strong>Workers projects.</strong> With a <code>wrangler</code> config at or above the notebook, the driver runs on the project's own Miniflare, with its bindings in <code>env</code> and its <code>main</code> as <code>worker</code>.</li>
+      </ul>
+      <p>celld (#25) runs the same driver Worker over the same session. It allows a plain global <code>eval</code>, so it needs no <code>--experimental</code>, and it listens on loopback TCP rather than a Unix socket.</p>
     </section>
 
     <!-- ===================== 07 ===================== -->
@@ -830,6 +862,7 @@
         <li><code>Runtime.addBinding</code>, <code>globalLexicalScopeNames</code> and <code>terminateExecution</code> do not exist.</li>
       </ul>
       <p>A Bun backend would therefore evaluate in-process: wrap cells in async functions, hoist declarations, report output through a socket back to the host, and interrupt by restarting the process. The host, wire protocol, transformer and display module carry over unchanged.</p>
+      <p><em>Revised.</em> The Bun target (#7) was built this way, with two refinements. Host and target exchange JSON lines over a pipe on fd 3, which only the host holds, so there is no port at all. And interrupt only restarts Bun for a busy cell; a cell waiting on a promise is interrupted in place and keeps its state. The hoisting has visible edges: a top-level <code>const</code> can be reassigned, and declaring a global's name replaces that global instead of shadowing it.</p>
     </section>
 
     <!-- ===================== 08 ===================== -->
@@ -840,34 +873,73 @@
       <p>rusty_v8 as the base of a <em>standalone</em> kernel binary is coherent but expensive. The <code>v8</code> crate has complete inspector bindings. You would still build an event loop, a module loader with TS transpile and <code>npm:</code> resolution, console, timers and fetch, which is most of what deno_core is. deno_core is still shipping releases (0.412 in September, per the sweep), but nobody has committed to its future. The CDP route reaches a richer result by borrowing an existing runtime instead.</p>
       <div class="note">
         <span class="nlabel">Where Rust would earn its keep</span>
-        A single-binary, dependency-free kernel host: ZMTP plus the Jupyter protocol in Rust, driving any CDP target. That's a packaging choice, not a capability gain. It's worth doing only if shipping a Node-based host becomes the obstacle.
+        A single-binary, dependency-free kernel host: ZMTP plus the Jupyter protocol in Rust, driving any CDP target. That's a packaging choice, not a capability gain. It's worth doing only if shipping a Node-based host becomes the obstacle. <em>Revised:</em> the host now also runs on Deno, installed from JSR, and that obstacle hasn't appeared.
       </div>
     </section>
 
     <!-- ===================== 09 ===================== -->
     <section class="sec reveal" id="s9">
       <div class="sec-head"><span class="sec-num">09</span><h2>Risks and gaps</h2></div>
+      <p><em>Revised.</em> The original list, with what happened to each item:</p>
       <ul>
-        <li><strong>No comms, so no ipywidgets.</strong> Deno lacks them too. Adding <code>comm_open</code>/<code>comm_msg</code> routing is the largest missing protocol feature.</li>
-        <li><strong>Formatting differs on Node.</strong> <code>util.inspect</code> is used instead of Deno's <code>inspectArgs</code>, so strings render with <code>'</code> rather than <code>"</code>, among other small differences.</li>
-        <li><strong>Node <code>npm:</code> is simple.</strong> Installs go into a shared cache under per-range aliases, with no lockfile, and peer dependencies resolve by real name. It's good for notebooks and wrong for reproducible environments.</li>
-        <li><strong>Two processes.</strong> Startup is roughly the target's boot plus one WebSocket handshake. The kernel is local-only, with the inspector bound to 127.0.0.1. The host still verifies HMAC on every frontend message.</li>
-        <li><strong>The interrupt recipe relies on observed V8 inspector behaviour</strong>: messages are processed between tasks but not during a dispatch. It holds on Node 26 and Deno 2.9; pin it with the e2e test.</li>
-        <li><strong>Deno targets use <code>--node-modules-dir=none</code>.</strong> Deno discovers config from the main module's location. Without the flag, it put <code>npm:</code> into BYONM mode against the spike's own <code>package.json</code>. A notebook relying on a project-local <code>node_modules</code> under Deno would need that revisited.</li>
-        <li><strong>Not done:</strong> type checking (Deno doesn't type-check cells either), WebGPU display, a debugger, and <code>inspect_request</code> content.</li>
+        <li><strong>No comms, so no ipywidgets.</strong> <em>Resolved (#9):</em> comms work on every target, with anywidget-style widgets through <code>jupyter.widget</code>. The classic ipywidgets controls are Python classes, so they remain unavailable.</li>
+        <li><strong>Formatting differs on Node.</strong> <em>Kept, deliberately (#17):</em> each runtime's users see the format they expect. On a fixture of 30 typical values, 23 format identically on Node and Deno; the rest differ in string quotes and Node's loader frames in stacks. A test fails if a new kind of difference appears.</li>
+        <li><strong>Node <code>npm:</code> is simple.</strong> <em>Partly resolved (#14, #39, #40):</em> an opt-in lockfile pins exact versions, and installs are serialized. The cache is still shared, so peer dependencies resolve by real name, and a project's <code>package.json</code> doesn't decide an <code>npm:</code> import's version.</li>
+        <li><strong>Two processes.</strong> Unchanged. The inspector is now private to the host, and the workerd and celld sessions are opened with a per-launch token.</li>
+        <li><strong>The interrupt recipe relies on observed V8 inspector behaviour.</strong> <em>Pinned:</em> CI checks it on every combination of Node 24/26 and Deno 2.9/latest (#15).</li>
+        <li><strong>Deno targets use <code>--node-modules-dir=none</code>.</strong> <em>Resolved (#13):</em> a Deno target honours the notebook's <code>deno.json</code> and project <code>node_modules</code>.</li>
+        <li><strong>Not done:</strong> type checking and WebGPU display remain undone. <em>Done:</em> the debugger (#18), on Node and Deno only, and <code>inspect_request</code> content (#10), from runtime values rather than TypeScript types.</li>
+      </ul>
+      <p>New since the first compile:</p>
+      <ul>
+        <li><strong>Weakly held inspector promises.</strong> With <code>replMode</code> or <code>awaitPromise</code>, V8's inspector holds the result promise only weakly until its callback runs, so a GC in that window fails the call with "Promise was collected". It broke Deno target startup intermittently (#50, fixed by using plain evaluates there). Cell evaluation, several <code>callFunctionOn</code> helpers, comms and the debugger still use those flags (#55).</li>
+        <li><strong>The in-process backends are less faithful.</strong> On Bun, workerd and celld, a busy-cell interrupt restarts the runtime and loses state, top-level declarations are <code>globalThis</code> properties, and only a trailing expression shows a result.</li>
+        <li><strong>workerd needs <code>--experimental</code></strong> for <code>UnsafeEval</code>, and its cells share one request that never ends, so production limits don't apply. A Workers project's <code>main</code> is bundled with esbuild directly, not with wrangler's build.</li>
+        <li><strong>Windows isn't supported</strong> (#32). Unit tests were made portable, but the workerd target needs Unix sockets, the e2e suite has never run there, <code>npm:</code> installs spawn bare <code>npm</code> (#51), and celld has no Windows build. The Windows CI job was removed until the work is taken up.</li>
+        <li><strong>Little real-world use yet.</strong> The suites are broad, but the kernel is new.</li>
       </ul>
     </section>
 
     <!-- ===================== 10 ===================== -->
     <section class="sec reveal" id="s10">
       <div class="sec-head"><span class="sec-num">10</span><h2>Recommended next steps</h2></div>
+      <p><em>Revised.</em> Four of the five original steps are done:</p>
       <ol>
-        <li><strong>Promote the spike to its own repo</strong>, for example <code>tlockney/cdp-kernel</code>. Publish it to npm and JSR, so <code>npx cdp-kernel install</code> writes a kernelspec that doesn't point into a checkout.</li>
-        <li><strong>Ship typings for the <code>jupyter</code> global.</strong> The <code>.d.mts</code> files written for the tests are most of it already.</li>
-        <li><strong>Add comms</strong>, so ipywidgets and anywidget work. Deno never had this, and it would make the kernel strictly better than the original.</li>
-        <li><strong>Offer it upstream.</strong> No one has claimed the Jupyter kernel in denoland/deno#36995 or the forks. A runtime-neutral kernel is useful to all of them, and it keeps working whichever fork wins.</li>
-        <li><strong>Only then</strong> consider the workerd hybrid backend or a Bun backend, both behind the same host.</li>
+        <li><strong>Promote the spike to its own repo</strong> and publish it to npm and JSR. <em>Done:</em> <code>tlockney/cdp-kernel</code>, released as <code>@tlockney/cdp-kernel</code> 0.1.1 through 0.4.0 with npm provenance.</li>
+        <li><strong>Ship typings for the <code>jupyter</code> global.</strong> <em>Done (#11).</em></li>
+        <li><strong>Add comms</strong>, so ipywidgets and anywidget work. <em>Done for anywidget (#9).</em> The kernel now does something <code>deno jupyter</code> never did.</li>
+        <li><strong>Offer it upstream.</strong> No one has claimed the Jupyter kernel in denoland/deno#36995 or the forks. A runtime-neutral kernel is useful to all of them, and it keeps working whichever fork wins. <em>Open (#16).</em></li>
+        <li><strong>Only then</strong> consider the workerd hybrid backend or a Bun backend. <em>Done, ahead of step 4:</em> Bun, workerd and celld targets (#7, #8, #25).</li>
       </ol>
+      <p>What's next from here:</p>
+      <ol>
+        <li><strong>Offer it upstream</strong>, as above (#16).</li>
+        <li><strong>Close the weak-promise exposure</strong> in cell evaluation, comms and the debugger (#55).</li>
+        <li><strong>Get real notebooks run on it</strong>, and treat what breaks as the next priority list.</li>
+        <li><strong>Windows</strong>, if users ask for it (#32, #51).</li>
+      </ol>
+    </section>
+
+    <!-- ===================== 11 ===================== -->
+    <section class="sec reveal" id="s11">
+      <div class="sec-head"><span class="sec-num">11</span><h2>Where it landed</h2></div>
+      <p>Added 2026-10-15. How the study's predictions held up, one day and 0.4.0 later:</p>
+      <div class="data-wrap">
+        <table>
+          <thead><tr><th>Prediction</th><th>Outcome</th></tr></thead>
+          <tbody>
+            <tr><td>The protocol half and display API port cleanly; CDP is the seam</td><td class="good">Held. Node and Deno targets share one bootstrap, and the host now also runs on Deno.</td></tr>
+            <tr><td>Interrupt via a second CDP session keeps state</td><td class="good">Held on every CI combination of Node 24/26 and Deno 2.9/latest.</td></tr>
+            <tr><td>workerd needs a request-scoped hybrid backend</td><td class="good">Held. Built with one long-lived request instead of one per cell, so I/O carries over between cells.</td></tr>
+            <tr><td>Bun needs an in-process backend; host, transformer and display carry over</td><td class="good">Held, as described in §07.</td></tr>
+            <tr><td>Comms are the largest missing protocol feature</td><td class="good">Built on every target, with anywidget-style widgets checked in JupyterLab.</td></tr>
+            <tr><td>Formatting differences on Node are small</td><td>Measured: 23 of 30 typical values match; kept as is.</td></tr>
+            <tr><td>The remaining risks are known</td><td class="bad">Not quite. V8's weakly held inspector promises (#50, #55) and Windows (#32) weren't foreseen.</td></tr>
+            <tr><td>Bun and workerd backends are optional extras</td><td>They were built anyway, plus celld, which the study mentioned only as part of Cloudflare's plans.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The verdict stands: extract the JS halves and drive the runtime over CDP, with in-process backends where a runtime can't be driven that way.</p>
     </section>
 
     <section class="sec reveal" id="glossary">
@@ -879,7 +951,7 @@
     <footer class="foot">
       <div class="row">
         <span class="cad">§ Life after deno jupyter</span>
-        <span>Compiled 2026-10-14 · denoland/deno v2.9.6 source, live probes of Node 26.8.1, Deno 2.9.6, workerd 2026-09-30, Bun 1.4.0</span>
+        <span>Compiled 2026-10-14 · denoland/deno v2.9.6 source, live probes of Node 26.8.1, Deno 2.9.6, workerd 2026-09-30, Bun 1.4.0 · Revised 2026-10-15 from cdp-kernel 0.4.0 and CI on main</span>
       </div>
     </footer>
 

@@ -12,4 +12,5 @@
 
 The [feasibility study](life-after-deno-jupyter.html) behind the project
 covers the design, the other options considered, and the evidence. It was
-written before packaging, so it calls the project a spike.
+written while the project was a spike and revised after 0.4.0; its last
+section compares what it predicted with what was built.

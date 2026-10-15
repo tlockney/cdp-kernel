@@ -68,7 +68,7 @@ await jupyter.display(jupyter.md`**Today** is ${format(now, "PPPP")}`);
 - [Architecture](https://github.com/tlockney/cdp-kernel/blob/main/docs/architecture.md)
 - [Development: tests and releasing](https://github.com/tlockney/cdp-kernel/blob/main/docs/development.md)
 
-The [feasibility study](https://claude.ai/artifact/S66TnTmhCzPy2EW7jbeeue)
+The [feasibility study](https://tlockney.github.io/cdp-kernel/study.html)
 behind the project covers the design, the alternatives considered (workerd,
 Bun, rusty_v8, FFI), and the evidence.
 
