@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { aliasFor, installCommand, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
+import { aliasFor, installCommand, jsrToNpm, parsePackageSpecifier, spawnCommand } from "../runtime/node-hooks.mjs";
 import { hasBun } from "./bun.ts";
 
 test("parsePackageSpecifier: plain, range, subpath", () => {
@@ -50,6 +50,22 @@ test("installCommand lets npm fetch JSR's tarballs, and only JSR's (#39)", () =>
   assert.deepEqual(installCommand("npm", "cdpk-j", "@jsr/std__fmt", "1").env, { npm_config_allow_remote: "root" });
   assert.equal(installCommand("npm", "cdpk-n", "is-odd", "3").env, undefined, "npm packages keep npm's default");
   assert.equal(installCommand("bun", "cdpk-b", "@jsr/std__fmt", "1").env, undefined);
+});
+
+test("spawnCommand runs npm through cmd.exe on Windows, with each argument quoted (#51)", () => {
+  const { cmd, args } = installCommand("npm", "cdpk-r", "left-pad", ">=1.0.0 <2 || ^3");
+  assert.deepEqual(spawnCommand(cmd, args, "linux"), { cmd, args, shell: false });
+  assert.deepEqual(spawnCommand(cmd, args, "darwin"), { cmd, args, shell: false });
+  assert.deepEqual(spawnCommand(cmd, args, "win32"), {
+    cmd: "npm",
+    args: ['"install"', '"--no-audit"', '"--no-fund"', '"--loglevel=error"', '"--save-exact"', '"cdpk-r@npm:left-pad@>=1.0.0 <2 || ^3"'],
+    shell: true,
+  });
+  // Bun runs as itself, an .exe, so it needs no shell.
+  const bun = installCommand("bun", "cdpk-b", "is-odd", "3");
+  assert.deepEqual(spawnCommand(bun.cmd, bun.args, "win32"), { ...bun, shell: false });
+  assert.throws(() => spawnCommand("npm", ["install", 'x@"1"'], "win32"), /through cmd\.exe/);
+  assert.throws(() => spawnCommand("npm", ["install", "x@%PATH%"], "win32"), /through cmd\.exe/);
 });
 
 test("node-hooks.mjs loads in Bun, which has no module.registerHooks", { skip: !hasBun() }, () => {
