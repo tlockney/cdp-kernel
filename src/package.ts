@@ -18,6 +18,27 @@ import { fileURLToPath } from "node:url";
 /** Kept equal to package.json and deno.jsonc by test/package.test.ts. */
 export const VERSION = "0.3.0";
 
+/**
+ * The UTC day this version was released, set with VERSION. The publish
+ * workflow refuses a tag unless it's today or yesterday, so it can't go
+ * stale: see dependencyCutoff.
+ */
+export const RELEASE_DATE = "2026-10-15";
+
+/**
+ * Deno blocks packages less than 24 hours old (minimum dependency age), so
+ * a kernelspec relaunching a release from JSR would fail on release day. It
+ * relaunches with this cutoff instead (#12): anything published up to two
+ * days after the release is allowed (the release itself included, however
+ * late in the day its tag was pushed), and nothing newer ever is.
+ */
+export function dependencyCutoff(releaseDate: string = RELEASE_DATE): string {
+  const day = new Date(`${releaseDate}T00:00:00Z`);
+  if (Number.isNaN(day.getTime())) throw new Error(`not a date: ${releaseDate}`);
+  day.setUTCDate(day.getUTCDate() + 2);
+  return day.toISOString().slice(0, 10);
+}
+
 export const RUNTIME_FILES = [
   "bootstrap.mjs",
   "bun-channel.mjs",
@@ -67,7 +88,9 @@ export function kernelArgv(host: HostRuntime, execPath: string, origin: Origin, 
   }
   // Deno: a checkout needs its deno.jsonc import map; a JSR package brings
   // its own, so skip whatever config the notebook's directory has.
-  const flags = origin.kind === "jsr" ? ["--no-config", "--no-lock"] : ["--no-lock"];
+  const flags = origin.kind === "jsr"
+    ? ["--no-config", "--no-lock", `--min-dep-age=${dependencyCutoff()}`]
+    : ["--no-lock"];
   const entry = origin.kind === "jsr" ? origin.specifier : origin.path;
   return [execPath, "run", "--allow-all", ...flags, entry, ...args];
 }

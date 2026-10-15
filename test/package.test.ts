@@ -4,7 +4,16 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { isInsideNodeModules, kernelArgv, moduleOrigin, RUNTIME_FILES, runtimeDir, VERSION } from "../src/package.ts";
+import {
+  dependencyCutoff,
+  isInsideNodeModules,
+  kernelArgv,
+  moduleOrigin,
+  RELEASE_DATE,
+  RUNTIME_FILES,
+  runtimeDir,
+  VERSION,
+} from "../src/package.ts";
 
 const root = new URL("../", import.meta.url);
 
@@ -80,8 +89,34 @@ test("kernelArgv: deno host, checkout vs JSR", () => {
   ]);
   assert.deepEqual(
     kernelArgv("deno", "/bin/deno", { kind: "jsr", specifier: "jsr:@tlockney/cdp-kernel@0.1.0/cli" }, ARGS),
-    ["/bin/deno", "run", "--allow-all", "--no-config", "--no-lock", "jsr:@tlockney/cdp-kernel@0.1.0/cli", ...ARGS],
+    [
+      "/bin/deno",
+      "run",
+      "--allow-all",
+      "--no-config",
+      "--no-lock",
+      `--min-dep-age=${dependencyCutoff()}`,
+      "jsr:@tlockney/cdp-kernel@0.1.0/cli",
+      ...ARGS,
+    ],
   );
+});
+
+test("dependencyCutoff is two days after the release, across month and year ends (#12)", () => {
+  assert.equal(dependencyCutoff("2026-10-15"), "2026-10-17");
+  assert.equal(dependencyCutoff("2026-10-31"), "2026-11-02");
+  assert.equal(dependencyCutoff("2026-12-31"), "2027-01-02");
+  assert.equal(dependencyCutoff("2028-02-28"), "2028-03-01", "leap year");
+  assert.throws(() => dependencyCutoff("not-a-date"), /not a date/);
+});
+
+test("RELEASE_DATE is a YYYY-MM-DD day, and the JSR kernelspec carries its cutoff", () => {
+  assert.match(RELEASE_DATE, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(dependencyCutoff(), dependencyCutoff(RELEASE_DATE));
+  const argv = kernelArgv("deno", "/bin/deno", { kind: "jsr", specifier: "jsr:@tlockney/cdp-kernel@9.9.9/cli" }, ARGS);
+  assert.ok(argv.includes(`--min-dep-age=${dependencyCutoff(RELEASE_DATE)}`), argv.join(" "));
+  const checkout = kernelArgv("deno", "/bin/deno", { kind: "file", path: "/p/src/main.ts" }, ARGS);
+  assert.ok(!checkout.some((a) => a.startsWith("--min-dep-age")), "a checkout resolves nothing from JSR");
 });
 
 test("kernelArgv rejects origins it can't relaunch", () => {

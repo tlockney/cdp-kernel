@@ -81,10 +81,17 @@ Windows build).
 Deno 2.9+ refuses package versions less than 24 hours old by default
 ([minimum dependency age](https://docs.deno.com/go/minimum-dependency-age)).
 In a release's first day, the install command fails with "blocked by the
-minimum dependency age policy". Wait out the day, or install an earlier
-release. Passing `--min-dep-age=0` gets the install through, but the
-kernelspec doesn't carry the flag, so the kernel still won't launch until
-the release is a day old.
+minimum dependency age policy". Pass `--min-dep-age=0` to the install
+command to get it through:
+
+```sh
+deno run -A --min-dep-age=0 jsr:@tlockney/cdp-kernel/cli install --runtime deno
+```
+
+The kernelspec it writes works on release day too. It relaunches the kernel
+with a dependency cutoff of two days after the release
+(`--min-dep-age=<date>`), so it never resolves anything published after
+that.
 
 **From a checkout**, for working on the kernel itself:
 
@@ -372,12 +379,15 @@ CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
 One version number lives in three places: `package.json`, `deno.jsonc` and
 `src/package.ts`. `test/package.test.ts` fails if they disagree. To release:
 
-1. Bump all three, commit, and merge to `main`.
+1. Bump all three, and set `RELEASE_DATE` in `src/package.ts` to today
+   (UTC). Commit, and merge to `main`.
 2. Tag and push: `git tag v0.1.1 && git push origin v0.1.1`.
 
 The `publish` workflow then:
 
-1. Checks that the tag matches the version.
+1. Checks that the tag matches the version, and that `RELEASE_DATE` is
+   today or yesterday. A JSR kernelspec's dependency cutoff comes from that
+   date, so a stale one would block the release it ships in.
 2. Runs the type check, the unit tests, and the e2e suite against the packed
    npm tarball and against a Deno host.
 3. Publishes to JSR (`deno publish`).
