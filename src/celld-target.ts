@@ -153,6 +153,9 @@ function killTree(child: ChildProcess): void {
   child.kill("SIGKILL");
 }
 
+/** Starts tried when a port is taken (see CelldHost.start). */
+const PORT_ATTEMPTS = 3;
+
 /** The driver on `celld dev`. */
 class CelldHost implements WorkerHost {
   readonly runtime: string;
@@ -167,7 +170,22 @@ class CelldHost implements WorkerHost {
     this.project = project;
   }
 
+  /**
+   * celld dev, retried when a port is taken: both its --port (from
+   * freePort) and its node's own listener are picked free and bound later,
+   * so another process can take one in between (#54).
+   */
   static async start(cwd: string, projectConfig: string | null, executable?: string): Promise<CelldHost> {
+    for (let attempt = 1;; attempt++) {
+      try {
+        return await CelldHost.#start(cwd, projectConfig, executable);
+      } catch (err) {
+        if (attempt >= PORT_ATTEMPTS || !(err instanceof Error && /Address already in use/.test(err.message))) throw err;
+      }
+    }
+  }
+
+  static async #start(cwd: string, projectConfig: string | null, executable?: string): Promise<CelldHost> {
     const celld = executable ?? findCelld();
     const version = celldVersionOf(execFileSync(celld, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
     const source = await runtimeDir(new URL("../runtime/", import.meta.url).href);
@@ -213,7 +231,8 @@ class CelldHost implements WorkerHost {
     child.stderr?.on("data", log);
     const exited = new Promise<never>((_, reject) => {
       child.once("error", reject);
-      child.once("exit", (code) => reject(new Error(`celld exited (${code}) before it was ready:\n${early}`)));
+      // On close, not exit, so its last output is in the message.
+      child.once("close", (code) => reject(new Error(`celld exited (${code}) before it was ready:\n${early}`)));
     });
     exited.catch(() => {});
 
