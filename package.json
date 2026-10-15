@@ -1,6 +1,6 @@
 {
   "name": "@tlockney/cdp-kernel",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Deno's Jupyter kernel, extracted to run notebooks on any V8 runtime over the Chrome DevTools Protocol",
   "license": "MIT",
   "author": "Thomas Lockney <thomas@lockney.net>",

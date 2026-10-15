@@ -16,6 +16,28 @@ test("VERSION matches package.json and deno.jsonc", () => {
   assert.equal(m?.[1], VERSION);
 });
 
+test("no other source file hardcodes a version", () => {
+  // kernel_info once reported a hardcoded "0.1.0" (#22). Everything should
+  // use VERSION from src/package.ts; these literals are other protocols' or
+  // placeholders, not cdp-kernel's own version.
+  const allowed = new Map([
+    ["runtime/widget.mjs", ["2.1.0"]], // ipywidgets message protocol
+    ["runtime/deno-compat.mjs", ["0.0.0-cdp-kernel"]], // Deno.version.deno placeholder
+  ]);
+  const files = [
+    ...readdirSync(new URL("src/", root)).filter((f) => f.endsWith(".ts")).map((f) => `src/${f}`),
+    ...readdirSync(new URL("runtime/", root)).filter((f) => f.endsWith(".mjs")).map((f) => `runtime/${f}`),
+  ].filter((f) => f !== "src/package.ts");
+  const found: string[] = [];
+  for (const file of files) {
+    const text = readFileSync(new URL(file, root), "utf8");
+    for (const [, literal] of text.matchAll(/["'`](\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)["'`]/g)) {
+      if (!allowed.get(file)?.includes(literal)) found.push(`${file}: "${literal}"`);
+    }
+  }
+  assert.deepEqual(found, []);
+});
+
 test("every runtime file exists and is published", () => {
   const deno = readFileSync(new URL("deno.jsonc", root), "utf8");
   assert.match(deno, /"runtime\/\*\.mjs"/);

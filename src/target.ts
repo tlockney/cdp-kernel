@@ -34,7 +34,11 @@ export function launchCommand(
   bootstrap: string,
   { executable, denoConfig }: LaunchOptions = {},
 ): { cmd: string; args: string[] } {
-  const inspect = "--inspect=127.0.0.1:0";
+  // The CDP WebSocket has no authentication, so its URL must stay private:
+  // by default the inspector lists it at /json/list for any local process
+  // to read. Publishing it only on stderr, which only this host reads,
+  // leaves a random id nobody else can learn (#22).
+  const inspect = ["--inspect=127.0.0.1:0", "--inspect-publish-uid=stderr"];
   if (runtime === "deno") {
     // Deno discovers config from the main module's location, which would
     // put npm: imports in BYONM mode against this package's own
@@ -46,13 +50,13 @@ export function launchCommand(
       // In a project, its config (import map, nodeModulesDir, ...) applies
       // instead; --no-lock still keeps the kernel out of the project's lock.
       args: denoConfig === undefined
-        ? ["run", "--allow-all", "--node-modules-dir=none", "--no-lock", inspect, bootstrap]
-        : ["run", "--allow-all", "--config", denoConfig, "--no-lock", inspect, bootstrap],
+        ? ["run", "--allow-all", "--node-modules-dir=none", "--no-lock", ...inspect, bootstrap]
+        : ["run", "--allow-all", "--config", denoConfig, "--no-lock", ...inspect, bootstrap],
     };
   }
   // Under a Deno host, process.execPath is deno; find node on PATH instead.
   const node = hostRuntime() === "node" ? process.execPath : "node";
-  return { cmd: executable ?? node, args: [inspect, bootstrap] };
+  return { cmd: executable ?? node, args: [...inspect, bootstrap] };
 }
 
 /** Messages the bootstrap sends through the CDP binding. */
