@@ -11,5 +11,7 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  // Fixtures are type-checked by test/globals.test.ts with their own configs.
+  "exclude": ["test/fixtures"]
 }
