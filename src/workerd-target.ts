@@ -1,10 +1,16 @@
-// The workerd target (#8). Cells run inside requests to a driver Worker
+// The workerd target (#8). Cells run inside a driver Worker
 // (runtime/workerd-worker.mjs): outside a request workerd has no IoContext,
-// so timers, fetch and randomness throw. The host generates a workerd config
-// for the driver, serves it on a Unix socket in a private temporary
-// directory, and sends each request as an HTTP POST carrying a per-launch
-// token. Responses stream back console output and iopub messages, then the
-// reply. Cells are transformed as for Bun (transformCellForEval).
+// so timers, fetch and randomness throw. The host opens one WebSocket
+// session to the driver and sends every request over it as a JSON message;
+// all of them run in that session request's IoContext, so I/O objects and
+// pending work carry over between cells (#26). Console output, iopub
+// messages and replies come back the same way. Cells are transformed as for
+// Bun (transformCellForEval).
+//
+// Outside a Workers project the host serves the driver on a workerd of its
+// own, behind a Unix socket in a private temporary directory, with a
+// per-launch token (RawWorkerd). In a project it uses the project's
+// Miniflare instead, for its bindings (src/workers-project.ts).
 //
 // workerd can't load modules at runtime beyond its builtins, so whatever
 // else a cell imports is bundled here with esbuild and sent with the cell.
@@ -14,7 +20,6 @@ import process from "node:process";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { request as httpRequest } from "node:http";
 import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -24,6 +29,8 @@ import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
+import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
+import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
 import { ensureInstalled, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
 
 /** The driver Worker's modules; the first is its main module. */
@@ -160,65 +167,60 @@ export async function bundleModule(specifier: string, cwd: string): Promise<stri
 /** Rejects a request whose reply the host no longer waits for. */
 class Abandoned extends Error {}
 
-export const HUNG_MESSAGE =
-  "workerd canceled this cell: it was waiting on a promise that nothing pending (no timer or I/O) " +
-  "could settle, which workerd treats as a hung request. Earlier cells' state is kept.";
-
-/** workerd itself canceled the request (see HUNG_MESSAGE). */
-class HungRequest extends Error {
-  constructor() {
-    super(HUNG_MESSAGE);
-  }
-}
-
 function isRecord(value: unknown): value is CdpParams {
   return typeof value === "object" && value !== null;
 }
 
-export class WorkerdTarget implements KernelTarget {
-  readonly runtime = "workerd";
-  readonly versions = { runtime: "", engine: "" };
-  readonly transform = transformCellForEval;
-  readonly #child: ChildProcess;
-  readonly #dir: string;
-  readonly #socket: string;
-  readonly #token: string;
-  readonly #cwd: string;
-  readonly #events: TargetEvents;
-  /** Specifiers whose bundle this workerd has been sent. */
-  readonly #sent = new Set<string>();
-  /** Each request's controller, and how to fail it once workerd is gone. */
-  readonly #inFlight = new Map<AbortController, (err: Error) => void>();
-  #interrupted = false;
-  #stopNote: string | undefined;
+/** What import.meta says in a cell: the notebook's directory, not workerd's. */
+export function cellMeta(cwd: string): { url: string; dirname: string; filename: string } {
+  const replUrl = new URL("$cdpk$repl.mjs", pathToFileURL(cwd.endsWith("/") ? cwd : cwd + "/"));
+  return { url: replUrl.href, dirname: cwd, filename: join(cwd, "$cdpk$repl.mjs") };
+}
 
-  private constructor(child: ChildProcess, dir: string, token: string, cwd: string, events: TargetEvents) {
+/**
+ * How the target reaches its driver Worker: a workerd of its own
+ * (RawWorkerd, below), or a Workers project's Miniflare
+ * (src/workers-project.ts), which adds the project's bindings.
+ */
+export interface WorkerHost {
+  /** The runtime's name for the banner: workerd's date, or Miniflare's version. */
+  readonly runtime: string;
+  /** The wrangler config whose bindings the driver has, if any. */
+  readonly project?: string;
+  /** The open session with the driver. */
+  readonly channel: WsChannel;
+  /** Stops the runtime; `now` even while a cell is busy. */
+  stop(now: boolean): void;
+  onExit(listener: (code: number | null) => void): void;
+}
+
+/** The driver on a workerd of its own, behind a Unix socket. */
+export class RawWorkerd implements WorkerHost {
+  readonly runtime: string;
+  readonly channel: WsChannel;
+  readonly #child: ChildProcess;
+
+  private constructor(child: ChildProcess, channel: WsChannel, runtime: string) {
     this.#child = child;
-    this.#dir = dir;
-    this.#socket = join(dir, "sock");
-    this.#token = token;
-    this.#cwd = cwd;
-    this.#events = events;
+    this.channel = channel;
+    this.runtime = runtime;
   }
 
-  static async launch(events: TargetEvents, options: { cwd?: string; executable?: string } = {}): Promise<WorkerdTarget> {
-    const cwd = options.cwd ?? process.cwd();
-    const workerd = options.executable ?? findWorkerd(cwd);
+  static async start(cwd: string, executable?: string): Promise<RawWorkerd> {
+    const workerd = executable ?? findWorkerd(cwd);
     const compatibilityDate = compatibilityDateOf(execFileSync(workerd, ["--version"], { encoding: "utf8" }));
     const source = await runtimeDir(new URL("../runtime/", import.meta.url).href);
     // mkdtemp makes the directory 0700: only this user reaches the socket,
     // and the token stops anything else running as them by accident.
     const dir = mkdtempSync(join(tmpdir(), "cdpk-workerd-"));
+    const socket = join(dir, "sock");
     for (const name of WORKER_MODULES) copyFileSync(join(source, name), join(dir, name));
-    writeFileSync(join(dir, "config.capnp"), workerdConfig({ socket: join(dir, "sock"), compatibilityDate }));
+    writeFileSync(join(dir, "config.capnp"), workerdConfig({ socket, compatibilityDate }));
     const token = randomBytes(32).toString("hex");
-    const cwdUrl = pathToFileURL(cwd.endsWith("/") ? cwd : cwd + "/");
-    const replUrl = new URL("$cdpk$repl.mjs", cwdUrl);
-    const meta = { url: replUrl.href, dirname: cwd, filename: join(cwd, "$cdpk$repl.mjs") };
-    const env: Record<string, string | undefined> = { ...process.env, CDPK_TOKEN: token, CDPK_META: JSON.stringify(meta) };
+    const env: Record<string, string | undefined> = { ...process.env, CDPK_TOKEN: token, CDPK_META: JSON.stringify(cellMeta(cwd)) };
     // --experimental: the UnsafeEval binding.
     const child = spawn(workerd, ["serve", "config.capnp", "--experimental"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });
-    const target = new WorkerdTarget(child, dir, token, cwd, events);
+    child.once("exit", () => rmSync(dir, { recursive: true, force: true }));
 
     // Cell output is captured inside the Worker; what workerd itself prints
     // (its own warnings, errors from background work) goes to the server log.
@@ -234,12 +236,11 @@ export class WorkerdTarget implements KernelTarget {
       child.once("exit", (code) => reject(new Error(`workerd exited (${code}) before it was ready:\n${early}`)));
     });
     exited.catch(() => {});
-    child.once("exit", (code) => target.#exited(code));
 
     const ready = (async () => {
       for (let i = 0;; i++) {
         try {
-          return await target.#get();
+          return await connectUnixWebSocket(socket, { headers: { "x-cdpk-token": token } });
         } catch (err) {
           if (i >= 200) throw err;
           await new Promise((r) => setTimeout(r, 50));
@@ -247,99 +248,135 @@ export class WorkerdTarget implements KernelTarget {
       }
     })();
     try {
-      const { v8 } = await Promise.race([ready, exited]);
-      Object.assign(target.versions, { runtime: compatibilityDate, engine: typeof v8 === "string" && v8 ? `V8 ${v8}` : "V8" });
+      return new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+    } catch (err) {
+      child.kill();
+      throw err;
+    }
+  }
+
+  stop(now: boolean): void {
+    this.#child.kill(now ? "SIGKILL" : "SIGTERM");
+  }
+
+  onExit(listener: (code: number | null) => void): void {
+    this.#child.once("exit", listener);
+  }
+}
+
+type Pending = { resolve: (reply: CdpParams) => void; reject: (err: Error) => void };
+
+export class WorkerdTarget implements KernelTarget {
+  readonly runtime = "workerd";
+  readonly versions: { runtime: string; engine: string };
+  notice: string | undefined;
+  readonly transform = transformCellForEval;
+  readonly #host: WorkerHost;
+  readonly #cwd: string;
+  readonly #events: TargetEvents;
+  /** Specifiers whose bundle this workerd has been sent. */
+  readonly #sent = new Set<string>();
+  readonly #pending = new Map<number, Pending>();
+  /** Requests that interrupt() abandons when the driver can still answer. */
+  readonly #interruptible = new Set<number>();
+  #nextId = 0;
+  #interrupted = false;
+  #stopNote: string | undefined;
+  #exitedOnce = false;
+
+  private constructor(host: WorkerHost, cwd: string, events: TargetEvents) {
+    this.#host = host;
+    this.versions = { runtime: host.runtime, engine: "V8" };
+    this.#cwd = cwd;
+    this.#events = events;
+    host.channel.onMessage((text) => this.#receive(text));
+    host.channel.onClose(() => this.#exited(null));
+    host.onExit((code) => this.#exited(code));
+  }
+
+  /**
+   * In a Workers project (a wrangler config at or above `cwd`), the
+   * project's own Miniflare runs the driver with the project's bindings;
+   * otherwise a workerd of its own does (#26).
+   */
+  static async launch(events: TargetEvents, options: { cwd?: string; executable?: string } = {}): Promise<WorkerdTarget> {
+    const cwd = options.cwd ?? process.cwd();
+    const project = findWranglerConfig(cwd);
+    let host: WorkerHost | null = null;
+    let notice: string | undefined;
+    if (project !== null) {
+      try {
+        host = await startMiniflare(project, cwd);
+      } catch (err) {
+        // Like a broken deno.json (#13): say why in the first cell, and run
+        // without the project.
+        const reason = err instanceof Error ? err.message : String(err);
+        notice = `[cdp-kernel] couldn't load the Workers project at ${project}: ${reason}; running without its bindings`;
+      }
+    }
+    host ??= await RawWorkerd.start(cwd, options.executable);
+    const target = new WorkerdTarget(host, cwd, events);
+    try {
+      const { v8, bindings, worker } = await target.#request("info");
+      if (typeof v8 === "string" && v8) target.versions.engine = `V8 ${v8}`;
+      if (host.project !== undefined) {
+        const names = Array.isArray(bindings) ? bindings.map(String).sort().join(", ") : "";
+        notice = `[cdp-kernel] Workers project ${host.project}: env has ${names || "no bindings"}` +
+          (worker === true ? "; worker is its default export" : "");
+      }
     } catch (err) {
       target.kill();
       throw err;
     }
+    target.notice = notice;
     return target;
   }
 
+  #receive(text: string): void {
+    const msg: unknown = JSON.parse(text);
+    if (isRecord(msg) && msg.kind === "stream") {
+      this.#events.stream(msg.name === "stderr" ? "stderr" : "stdout", String(msg.text));
+    } else if (isTargetMessage(msg)) {
+      this.#events.message(msg);
+    } else if (isRecord(msg) && msg.kind === "reply") {
+      const id = Number(msg.id);
+      const pending = this.#pending.get(id);
+      if (!pending) return; // abandoned
+      this.#pending.delete(id);
+      this.#interruptible.delete(id);
+      if (typeof msg.failure === "string") pending.reject(new Error(msg.failure));
+      else pending.resolve(msg);
+    }
+  }
+
   #exited(code: number | null): void {
-    rmSync(this.#dir, { recursive: true, force: true });
+    if (this.#exitedOnce) return;
+    this.#exitedOnce = true;
     // The exit (and its note) is reported before the requests it cut off
     // fail, so the note lands in the interrupted cell's output.
     this.#events.exit(code, this.#stopNote);
-    for (const fail of this.#inFlight.values()) fail(new Abandoned(`workerd exited (${code})`));
-    this.#inFlight.clear();
+    for (const pending of this.#pending.values()) pending.reject(new Abandoned(`workerd exited (${code})`));
+    this.#pending.clear();
   }
 
-  #get(): Promise<CdpParams> {
+  #request(op: string, params: CdpParams = {}, interruptible = false): Promise<CdpParams> {
+    const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
-      const req = httpRequest({ socketPath: this.#socket, path: "/", method: "GET", headers: { "x-cdpk-token": this.#token } }, (res) => {
-        let body = "";
-        res.setEncoding("utf8");
-        res.on("data", (chunk: string) => (body += chunk));
-        res.on("end", () => {
-          const parsed: unknown = res.statusCode === 200 ? JSON.parse(body) : null;
-          if (isRecord(parsed)) resolve(parsed);
-          else reject(new Error(`workerd answered ${res.statusCode}`));
-        });
-      });
-      req.on("error", reject);
-      req.end();
+      this.#pending.set(id, { resolve, reject });
+      if (interruptible) this.#interruptible.add(id);
+      try {
+        this.#host.channel.send(JSON.stringify({ id, op, ...params }));
+      } catch {
+        this.#pending.delete(id);
+        reject(new Abandoned("the workerd session is closed"));
+      }
     });
   }
 
-  /** POSTs a request; streamed output is delivered as it arrives. */
-  #request(op: string, params: CdpParams = {}): Promise<CdpParams> {
-    const controller = new AbortController();
-    return new Promise<CdpParams>((resolve, reject) => {
-      this.#inFlight.set(controller, reject);
-      // While workerd is being stopped, a broken connection is left for
-      // #exited to report.
-      const fail = (err: Error) => {
-        if (this.#stopNote !== undefined) return;
-        if (controller.signal.aborted) reject(new Abandoned(op));
-        // workerd cancels a request whose code waits on something that can
-        // never settle (no timer or I/O pending).
-        else if (/^(?:aborted|socket hang up)$/.test(err.message)) reject(new HungRequest());
-        else reject(err);
-      };
-      let reply: CdpParams | null = null;
-      const req = httpRequest(
-        {
-          socketPath: this.#socket,
-          path: "/",
-          method: "POST",
-          headers: { "x-cdpk-token": this.#token, "content-type": "application/json" },
-          signal: controller.signal,
-        },
-        (res) => {
-          let buffer = "";
-          res.setEncoding("utf8");
-          res.on("data", (chunk: string) => {
-            buffer += chunk;
-            for (let nl = buffer.indexOf("\n"); nl !== -1; nl = buffer.indexOf("\n")) {
-              const msg: unknown = JSON.parse(buffer.slice(0, nl));
-              buffer = buffer.slice(nl + 1);
-              if (isRecord(msg) && msg.kind === "stream") {
-                this.#events.stream(msg.name === "stderr" ? "stderr" : "stdout", String(msg.text));
-              } else if (isTargetMessage(msg)) {
-                this.#events.message(msg);
-              } else if (isRecord(msg) && msg.kind === "reply") {
-                reply = msg;
-              }
-            }
-          });
-          res.on("end", () => {
-            if (reply === null) fail(new Error("aborted"));
-            else if (typeof reply.failure === "string") reject(new Error(reply.failure));
-            else resolve(reply);
-          });
-          res.on("error", fail);
-        },
-      );
-      req.on("error", fail);
-      req.end(JSON.stringify({ op, ...params }));
-    }).finally(() => this.#inFlight.delete(controller));
-  }
-
-  async #interruptible(op: string, params: CdpParams, what: string): Promise<CdpParams> {
+  async #interruptibly(op: string, params: CdpParams, what: string): Promise<CdpParams> {
     this.#interrupted = false;
     try {
-      return await this.#request(op, params);
+      return await this.#request(op, params, true);
     } catch (err) {
       if (err instanceof Abandoned || this.#interrupted) throw new Interrupted(`${what} interrupted`);
       throw err;
@@ -354,38 +391,35 @@ export class WorkerdTarget implements KernelTarget {
       // A failed bundle is rebuilt next time, after the user fixes it.
       if (!modules[specifier].startsWith("Promise.reject(")) this.#sent.add(specifier);
     }
-    try {
-      return (await this.#interruptible("eval", { code: script, modules }, "Execution")) as unknown as EvaluateResult;
-    } catch (err) {
-      // Reported like any error the cell raised.
-      if (err instanceof HungRequest) {
-        return { result: { type: "undefined" }, exceptionDetails: { text: err.message, lineNumber: 0, columnNumber: 0 } };
-      }
-      throw err;
-    }
+    return (await this.#interruptibly("eval", { code: script, modules }, "Execution")) as unknown as EvaluateResult;
   }
 
   /**
-   * Aborting a request makes workerd cancel what it was waiting on, with
-   * the isolate and its globals intact. A busy cell can't be reached, so
-   * workerd is stopped and restarts on the next cell (see BunTarget).
+   * A cell that's waiting on something leaves the driver free: it answers a
+   * ping, and the cell is abandoned with the session intact (its pending
+   * work still runs, as on Bun). A busy cell can't be reached, so workerd is
+   * stopped and restarts on the next cell.
    */
   async interrupt(): Promise<void> {
     this.#interrupted = true;
-    const running = [...this.#inFlight.keys()];
+    const running = [...this.#interruptible];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), INTERRUPT_GRACE_MS)),
     ]);
     if (answered) {
-      for (const controller of running) controller.abort();
+      for (const id of running) {
+        this.#pending.get(id)?.reject(new Abandoned("interrupted"));
+        this.#pending.delete(id);
+        this.#interruptible.delete(id);
+      }
       return;
     }
     this.#stopNote = RESTART_NOTE;
-    this.#child.kill("SIGKILL");
+    this.#host.stop(true);
   }
 
-  /** Output arrives on each request's own response, before its reply. */
+  /** Output arrives on the session before the reply it precedes. */
   flush(): Promise<void> {
     return Promise.resolve();
   }
@@ -401,7 +435,7 @@ export class WorkerdTarget implements KernelTarget {
     metadata: CdpParams,
     buffers: Uint8Array[],
   ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }> {
-    const reply = await this.#interruptible("comm", {
+    const reply = await this.#interruptibly("comm", {
       msgType,
       content,
       metadata,
@@ -434,6 +468,9 @@ export class WorkerdTarget implements KernelTarget {
   replyInput(): void {}
 
   kill(): void {
-    this.#child.kill();
+    // workerd's graceful shutdown waits for open connections, the session
+    // included, so close it first.
+    this.#host.channel.close();
+    this.#host.stop(false);
   }
 }

@@ -12,7 +12,6 @@ import {
   bundleModule,
   compatibilityDateOf,
   findWorkerd,
-  HUNG_MESSAGE,
   importSpecifiers,
   RESTART_NOTE,
   WORKER_MODULES,
@@ -174,11 +173,24 @@ test("a relative import is bundled by the host", { skip }, async (t) => {
   assert.match((await target.describeError(missing.exceptionDetails.exception)).message, /Cannot import "\.\/nope\.ts"/);
 });
 
-test("a cell waiting on nothing is canceled by workerd and reported", { skip }, async (t) => {
-  const { run } = await launch(t);
+test("I/O objects and pending work carry over between cells: one session", { skip }, async (t) => {
+  const { events, run } = await launch(t);
+  // A Response body is an I/O object, tied to the request that made it.
+  await run("globalThis.res = new Response('body text')");
+  const read = await run("await res.text()");
+  assert.equal(read.exceptionDetails, undefined, "read in a later cell");
+  await run("setTimeout(() => console.log('later'), 100)");
+  await new Promise((r) => setTimeout(r, 400));
+  assert.ok(events.some((e) => "stream" in e && e.text === "later\n"), "a timer outlives its cell");
+});
+
+test("a cell waiting on nothing is interrupted in place", { skip }, async (t) => {
+  const { target, run } = await launch(t);
   await run("globalThis.kept = 1");
-  const { exceptionDetails } = await run("await new Promise(() => {})");
-  assert.equal(exceptionDetails?.text, HUNG_MESSAGE);
+  const pending = run("await new Promise(() => {})");
+  await new Promise((r) => setTimeout(r, 200));
+  await target.interrupt();
+  await assert.rejects(pending, Interrupted);
   assert.equal((await run("kept")).result.type, "number");
 });
 

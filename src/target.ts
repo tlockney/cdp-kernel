@@ -19,6 +19,8 @@ export type RuntimeName = CdpRuntime | "bun" | "workerd";
 export interface KernelTarget {
   readonly runtime: RuntimeName;
   readonly versions: { runtime: string; engine: string };
+  /** Shown once, in the first cell: e.g. which project's bindings loaded. */
+  readonly notice?: string;
   /** Turns a cell into the script evaluate() takes. */
   transform(code: string, options: CellTransformOptions): string;
   /** Runs a transformed cell. Rejects with Interrupted after interrupt(). */
