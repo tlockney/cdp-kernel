@@ -29,6 +29,16 @@ export const SHIM = "__cdpk";
 // other messages, so an interrupt would never be seen.)
 const PRELUDE = `'use strict'; await ${SHIM}.tick();\n`;
 
+/**
+ * Each replMode cell also ends by yielding one macrotask, so the script
+ * settles with no other microtasks queued ahead of the inspector's
+ * then-callback. Until that callback runs, the inspector holds the result
+ * promise only weakly, and a GC in between fails the evaluate with "Promise
+ * was collected" (#55). A declaration has no completion value, so the
+ * cell's value is unchanged; replMode lets `let` be declared again.
+ */
+export const SETTLE = `\n;let ${SHIM}_settled = await ${SHIM}.tick();`;
+
 export class CellSyntaxError extends Error {
   override name = "SyntaxError";
 }
@@ -339,7 +349,7 @@ function hoistForEval(js: string): string {
 }
 
 export function transformCell(code: string, options: CellTransformOptions = {}): string {
-  return PRELUDE + rewriteModuleSyntax(stripTypes(code, options));
+  return PRELUDE + rewriteModuleSyntax(stripTypes(code, options)) + SETTLE;
 }
 
 /**
@@ -349,7 +359,7 @@ export function transformCell(code: string, options: CellTransformOptions = {}):
  */
 export function transformCellWithLines(code: string, options: CellTransformOptions = {}): { script: string; lines: LineMap } {
   const stripped = stripTypesMapped(code, options, true);
-  return { script: PRELUDE + rewriteModuleSyntax(stripped.code), lines: new LineMap(stripped.mappings, newlines(PRELUDE)) };
+  return { script: PRELUDE + rewriteModuleSyntax(stripped.code) + SETTLE, lines: new LineMap(stripped.mappings, newlines(PRELUDE)) };
 }
 
 /**

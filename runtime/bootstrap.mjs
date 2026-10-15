@@ -131,6 +131,20 @@ function bunResolve(specifier) {
   return Bun.resolveSync(specifier, cwd);
 }
 
+// The inspector holds a promise it awaits (callFunctionOn with awaitPromise)
+// only weakly until its then-callback runs, so a GC after the promise
+// settles but before that callback fails the call with "Promise was
+// collected" (#55). hold() keeps the promise until a macrotask after it
+// settles, by which time the inspector's callback has run.
+const held = new Set();
+function hold(value) {
+  const promise = Promise.resolve(value);
+  held.add(promise);
+  const release = () => setTimeout(() => held.delete(promise), 0);
+  promise.then(release, release);
+  return promise;
+}
+
 globalThis.__cdpk = {
   // Cell code awaits this first; see PRELUDE in src/transform.ts.
   tick: () => new Promise((resolve) => setTimeout(resolve, 0)),
@@ -149,6 +163,7 @@ globalThis.__cdpk = {
     resolve: (specifier) => new URL(specifier, replUrl).href,
   },
   barrier,
+  hold,
   // inspect_request (#10). CDP targets find the value with
   // throwOnSideEffect and describe it here; Bun resolves the path here
   // too, by descriptor, so nothing runs.
