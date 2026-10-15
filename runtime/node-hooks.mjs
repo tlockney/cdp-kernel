@@ -59,11 +59,21 @@ function cacheDir(installer) {
 }
 
 /** The command that installs name@range under `alias` with `installer`. */
+//   - Saved exactly (#40): npm records `npm:react@19.0.0` as `^19.0.0` by
+//     default, and every later install into the shared cache re-resolves the
+//     ranges, so pinned packages drifted (react 19.3.1 beside react-dom
+//     19.0.0). With an exact save, a version stays put and a range is frozen
+//     at what it first resolved to. Bun already saves exactly; the flag says so.
+//   - JSR packages come as tarballs from npm.jsr.io, which npm 12 refuses as
+//     "remote" unless allowed (#39). `root` is the narrowest value that works
+//     (`true`, which looks right, is invalid and warns), and only the JSR
+//     install gets it.
 export function installCommand(installer, alias, name, range) {
   const spec = `${alias}@npm:${name}@${range}`;
   // The Bun target runs this inside Bun, so it uses its own binary.
-  if (installer === "bun") return { cmd: process.execPath, args: ["add", "--silent", spec] };
-  return { cmd: "npm", args: ["install", "--no-audit", "--no-fund", "--loglevel=error", spec] };
+  if (installer === "bun") return { cmd: process.execPath, args: ["add", "--silent", "--exact", spec] };
+  const args = ["install", "--no-audit", "--no-fund", "--loglevel=error", "--save-exact", spec];
+  return name.startsWith("@jsr/") ? { cmd: "npm", args, env: { npm_config_allow_remote: "root" } } : { cmd: "npm", args };
 }
 
 // --- Lockfile (#14) -----------------------------------------------------------
@@ -160,8 +170,8 @@ function installedVersion(dir, alias) {
   }
 }
 
-function spawnInstall(cmd, args, cwd) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf8" });
+function spawnInstall(cmd, args, cwd, env = {}) {
+  return spawnSync(cmd, args, { cwd, encoding: "utf8", env: { ...process.env, ...env } });
 }
 
 /**
@@ -179,8 +189,8 @@ export function ensureInstalled({ name, range }, installer = "npm", { lockFile =
     const version = typeof locked === "string" ? locked : range;
     const alias = aliasFor(name, version);
     if (installedVersion(dir, alias) === null) {
-      const { cmd, args } = installCommand(installer, alias, name, version);
-      const result = run(cmd, args, dir);
+      const { cmd, args, env } = installCommand(installer, alias, name, version);
+      const result = run(cmd, args, dir, env);
       if (result.status !== 0) {
         throw new Error(`${installer} install ${name}@${version} failed:\n${result.stderr || result.error}`);
       }

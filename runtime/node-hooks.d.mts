@@ -13,8 +13,14 @@ export function installCommand(
   alias: string,
   name: string,
   range: string,
-): { cmd: string; args: string[] };
-export type InstallRunner = (cmd: string, args: string[], cwd: string) => { status: number | null; stderr?: string; error?: Error };
+): { cmd: string; args: string[]; env?: { [name: string]: string } };
+/** Runs an install; `env` is added to the process environment. */
+export type InstallRunner = (
+  cmd: string,
+  args: string[],
+  cwd: string,
+  env?: { [name: string]: string },
+) => { status: number | null; stderr?: string; error?: Error };
 export function ensureInstalled(
   pkg: { name: string; range: string },
   installer?: Installer,

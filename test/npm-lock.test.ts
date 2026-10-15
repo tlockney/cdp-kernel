@@ -88,6 +88,20 @@ test("with an empty lockfile, the first resolution is recorded", (t) => {
   assert.deepEqual(readLock(lockFile).packages, { "is-odd@^3": "3.0.1" });
 });
 
+test("the install runner gets the JSR environment (#39)", (t) => {
+  const dir = scratch(t);
+  useCache(t, dir);
+  const envs: (Record<string, string> | undefined)[] = [];
+  const fake = fakeInstaller("1.0.10");
+  const run: InstallRunner = (cmd, args, cwd, env) => {
+    envs.push(env);
+    return fake(cmd, args, cwd, env);
+  };
+  ensureInstalled({ name: "@jsr/std__fmt", range: "1" }, "npm", { run });
+  ensureInstalled({ name: "is-odd", range: "3" }, "npm", { run });
+  assert.deepEqual(envs, [{ npm_config_allow_remote: "root" }, undefined]);
+});
+
 test("a locked request installs its exact version: the same on every machine", (t) => {
   const dir = scratch(t);
   useCache(t, dir);
