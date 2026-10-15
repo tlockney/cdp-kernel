@@ -376,6 +376,45 @@ def checks(runtime, workdir, offline):
         reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
         assert "myLocalThing" in reply["matches"], reply
 
+    def inspect_reply(s, code, cursor=None):
+        s.kc.inspect(code, len(code) if cursor is None else cursor)
+        return s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+
+    def inspect_tooltips(s):
+        # Shift-Tab help (#10): a local function, an object, a builtin.
+        s.run("function add(a: number, b = 2) { return a + b }\nconst cfg = { port: 80, host: 'x' }")
+        fn = inspect_reply(s, "add(")
+        assert fn["found"] and "Signature: add(a, b = 2)" in fn["data"]["text/plain"], fn
+        obj = inspect_reply(s, "cfg")
+        assert obj["found"] and "Properties: port, host" in obj["data"]["text/plain"], obj
+        builtin = inspect_reply(s, "Math.max")
+        assert builtin["found"] and "Signature: max(" in builtin["data"]["text/plain"], builtin
+        assert not inspect_reply(s, "noSuchName")["found"]
+        detailed = s.kc.inspect("add", 3, detail_level=1)
+        reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+        assert "Source:" in reply["data"]["text/plain"], reply
+
+    def inspect_runs_nothing(s):
+        # Inspecting a getter must not call it: CDP targets evaluate with
+        # throwOnSideEffect, in-process ones resolve by descriptor (#10).
+        s.run("globalThis.ran = 0;\nconst lazy = { get g() { ran++; return 1 } }")
+        inspect_reply(s, "lazy.g")
+        s.kc.complete("lazy.g.", 7)
+        s.kc.get_shell_msg(timeout=TIMEOUT)
+        _, out = s.run("ran")
+        assert strip_ansi(result_of(out)["text/plain"]) == "0", out
+
+    def history_tail(s):
+        s.run("'first entry'")
+        s.run("'second entry'")
+        s.kc.history(hist_access_type="tail", n=2, raw=True, output=False)
+        reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+        inputs = [item[2] for item in reply["history"]]
+        assert inputs == ["'first entry'", "'second entry'"], reply
+        s.kc.history(hist_access_type="search", pattern="'second*", raw=True, output=False)
+        found = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]["history"]
+        assert [item[2] for item in found] == ["'second entry'"], found
+
     def is_complete(s):
         s.kc.is_complete("function f() {")
         assert s.kc.get_shell_msg(timeout=TIMEOUT)["content"]["status"] == "incomplete"
@@ -525,7 +564,7 @@ def checks(runtime, workdir, offline):
         display_ordering, display_symbol, markdown_template, update_display,
         png_bytes, node_builtin_import, relative_ts_import, import_meta,
         prompt_stdin, prompt_without_stdin, uncaught_later,
-        complete, is_complete,
+        complete, is_complete, inspect_tooltips, inspect_runs_nothing, history_tail,
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
     ]

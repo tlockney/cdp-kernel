@@ -12,6 +12,7 @@
 
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createJupyter } from "./display.mjs";
+import { describeValue, inspectPath, resolvePath } from "./introspect.mjs";
 
 const isDeno = typeof globalThis.Deno?.version?.deno === "string";
 const isBun = typeof globalThis.Bun?.version === "string";
@@ -26,7 +27,7 @@ const cwdUrl = pathToFileURL(cwd.endsWith("/") ? cwd : cwd + "/");
 // Stand-in referrer for cell code, like Deno's ./$deno$jupyter_repl.mts.
 const replUrl = new URL("$cdpk$repl.mjs", cwdUrl);
 
-const { inspect, readFile, writeOut, writeErr, readStdinLine } = await platform();
+const { inspect, inspectPlain, readFile, writeOut, writeErr, readStdinLine } = await platform();
 
 function base64(bytes) {
   let binary = "";
@@ -148,6 +149,12 @@ globalThis.__cdpk = {
     resolve: (specifier) => new URL(specifier, replUrl).href,
   },
   barrier,
+  // inspect_request (#10). CDP targets find the value with
+  // throwOnSideEffect and describe it here; Bun resolves the path here
+  // too, by descriptor, so nothing runs.
+  describeForInspect: (value, detail) => describeValue(value, { inspect: inspectPlain, detail }),
+  inspectPath: (path, detail) => inspectPath(path, { inspect: inspectPlain, detail }),
+  resolvePath,
   broadcastResult: jupyter.broadcastResult,
   // Frontend comm messages (#9), from the host's shell channel. Handlers
   // run after one macrotask, like cells, so interrupt can reach them.
@@ -222,6 +229,7 @@ async function platform() {
     const stdinBuf = new Uint8Array(1);
     return {
       inspect: (v) => Deno.inspect(v, { colors: true, depth: 4 }),
+      inspectPlain: (v) => Deno.inspect(v, { colors: false, depth: 2 }),
       readFile: (p) => Deno.readFileSync(p),
       writeOut: (s) => Deno.stdout.writeSync(ENC.encode(s)),
       writeErr: (s) => Deno.stderr.writeSync(ENC.encode(s)),
@@ -233,6 +241,7 @@ async function platform() {
   const buf = Buffer.alloc(1);
   return {
     inspect: (v) => util.inspect(v, { colors: true, depth: 4 }),
+    inspectPlain: (v) => util.inspect(v, { colors: false, depth: 2 }),
     readFile: (p) => fs.readFileSync(p),
     writeOut: (s) => process.stdout.write(s),
     writeErr: (s) => process.stderr.write(s),

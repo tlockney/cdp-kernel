@@ -34,7 +34,7 @@ import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
 import { ensureInstalled, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
 
 /** The driver Worker's modules; the first is its main module. */
-export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "widget.mjs", "evaluator.mjs"];
+export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "widget.mjs", "evaluator.mjs", "introspect.mjs"];
 
 /** See BunTarget: how long an interrupted cell has to show it isn't busy. */
 export const INTERRUPT_GRACE_MS = 500;
@@ -478,6 +478,12 @@ export class WorkerdTarget implements KernelTarget {
   async propertyNames(expression: string): Promise<string[]> {
     const reply = await this.#request("props", { expr: expression }).catch(() => null);
     return Array.isArray(reply?.names) ? reply.names.filter((n): n is string => typeof n === "string") : [];
+  }
+
+  /** Resolved by property descriptor in the driver, so nothing runs (#10). */
+  async inspect(path: string, detail: number): Promise<string | null> {
+    const reply = await this.#request("inspect", { path, detail }).catch(() => null);
+    return typeof reply?.text === "string" ? reply.text : null;
   }
 
   /** None: top-level declarations here are properties of globalThis. */

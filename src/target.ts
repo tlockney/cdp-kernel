@@ -38,6 +38,8 @@ export interface KernelTarget {
   describeError(exception: RemoteObject): Promise<{ name: string; message: string; stack: string }>;
   propertyNames(expression: string): Promise<string[]>;
   lexicalNames(): Promise<string[]>;
+  /** inspect_request (#10): text describing a dotted path's value, without running anything. */
+  inspect(path: string, detail: number): Promise<string | null>;
   replyInput(value: string | null): void;
   kill(): void;
 }
@@ -470,13 +472,41 @@ export class Target implements KernelTarget {
     return JSON.parse(typeof value === "string" ? value : '{"name":"Error","message":"","stack":""}');
   }
 
+  /**
+   * Evaluates without side effects: V8 throws instead of running anything
+   * that would change state (a call, a getter that writes), so completing
+   * or inspecting `obj.` never runs user code (#10).
+   */
+  #evaluatePure(expression: string): Promise<EvaluateResult | null> {
+    return this.#shell
+      .send("Runtime.evaluate", { expression, contextId: this.#contextId, replMode: true, throwOnSideEffect: true })
+      .then(asEvaluateResult, () => null);
+  }
+
   async propertyNames(expression: string): Promise<string[]> {
-    const evaluated = await this.#evaluateRaw(`(${expression})`).catch(() => null);
+    const evaluated = await this.#evaluatePure(`(${expression})`);
     const objectId = evaluated?.result.objectId;
     if (!objectId || evaluated?.exceptionDetails) return [];
     const props = await this.#shell.send("Runtime.getProperties", { objectId, nonIndexedPropertiesOnly: true });
     const list = props.result as { name: string }[] | undefined;
     return (list ?? []).map((p) => p.name);
+  }
+
+  async inspect(path: string, detail: number): Promise<string | null> {
+    const found = await this.#evaluatePure(path);
+    if (!found || found.exceptionDetails) return null;
+    const value = found.result;
+    const arg = value.objectId
+      ? { objectId: value.objectId }
+      : value.unserializableValue !== undefined
+      ? { unserializableValue: value.unserializableValue }
+      : { value: value.value };
+    const res = await this.callFunctionOn(`function (v, d) { return globalThis.${SHIM}.describeForInspect(v, d); }`, [
+      arg,
+      { value: detail },
+    ]);
+    const text = (res.result as RemoteObject | undefined)?.value;
+    return typeof text === "string" ? text : null;
   }
 
   async lexicalNames(): Promise<string[]> {
