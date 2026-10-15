@@ -71,27 +71,7 @@ jobs:
         if: matrix.shipped
         run: CDPK_E2E_CLI="deno run -A src/main.ts" npm run e2e
 
-  # Windows isn't supported yet; this job shows how far it gets (#15).
-  # Bun, workerd and celld targets need Unix sockets, fd passing or
-  # binaries that don't exist on Windows, so only Node and Deno run here.
-  windows:
-    runs-on: windows-latest
-    # A hang (one held a runner for over three hours) mustn't outlive the job.
-    timeout-minutes: 30
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - uses: astral-sh/setup-uv@v6
-      - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - run: npm run e2e -- node deno
+  # No Windows job: Windows isn't supported yet, and is its own issue (#32).
 
   # Widgets against the real frontend: JupyterLab with the anywidget
   # extension, driven by headless Chromium (test/lab_widgets.py).
