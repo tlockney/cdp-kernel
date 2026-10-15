@@ -4,7 +4,7 @@
   // Keep "version" equal to package.json and src/package.ts — enforced by
   // test/package.test.ts.
   "name": "@tlockney/cdp-kernel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "exports": {
     ".": "./src/mod.ts",
