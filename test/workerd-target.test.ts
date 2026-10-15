@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import {
@@ -20,7 +21,7 @@ import {
 } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
 
-const REPO = new URL("../", import.meta.url).pathname;
+const REPO = fileURLToPath(new URL("../", import.meta.url));
 const WORKERD = join(REPO, "node_modules", ".bin", "workerd");
 const skip = !existsSync(WORKERD);
 
@@ -52,9 +53,11 @@ test("findWorkerd prefers a project's node_modules, then PATH", (t) => {
   const nested = join(dir, "notebooks", "deep");
   mkdirSync(nested, { recursive: true });
   assert.equal(findWorkerd(nested), "workerd");
+  // npm's bin shim on Windows is workerd.cmd (#32).
+  const bin = process.platform === "win32" ? "workerd.cmd" : "workerd";
   mkdirSync(join(dir, "node_modules", ".bin"), { recursive: true });
-  writeFileSync(join(dir, "node_modules", ".bin", "workerd"), "");
-  assert.equal(findWorkerd(nested), join(dir, "node_modules", ".bin", "workerd"));
+  writeFileSync(join(dir, "node_modules", ".bin", bin), "");
+  assert.equal(findWorkerd(nested), join(dir, "node_modules", ".bin", bin));
 });
 
 test("compatibilityDateOf reads workerd --version", () => {

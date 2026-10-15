@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { bundleDriver, celldConfig, celldVersionOf, findCelld, freePort, launchCelld, PROJECT_KEYS } from "../src/celld-target.ts";
 import { restartNote } from "../src/workerd-target.ts";
@@ -14,7 +15,7 @@ import { Interrupted, type TargetEvents, type TargetMessage } from "../src/targe
 
 const CELLD = process.env.CELLD ?? findCelld();
 const skip = spawnSync(CELLD, ["--version"], { stdio: "ignore" }).status !== 0;
-const RUNTIME = new URL("../runtime/", import.meta.url).pathname;
+const RUNTIME = fileURLToPath(new URL("../runtime/", import.meta.url));
 
 function scratch(t: { after(fn: () => void): void }): string {
   const dir = mkdtempSync(join(tmpdir(), "cdpk-celld-test-"));

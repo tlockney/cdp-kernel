@@ -6,12 +6,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { bundleProject, compatibilityFlagsFor, findWranglerConfig, PROJECT_MAIN } from "../src/workers-project.ts";
 import { RESTART_NOTE, WorkerdTarget } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
 
-const REPO = new URL("../", import.meta.url).pathname;
+const REPO = fileURLToPath(new URL("../", import.meta.url));
 const skip = !existsSync(join(REPO, "node_modules", "wrangler"));
 
 function scratch(t: { after(fn: () => void): void }): string {
