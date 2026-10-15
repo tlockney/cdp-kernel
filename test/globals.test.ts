@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,17 +55,20 @@ test("declared jupyter namespace matches the runtime namespace", () => {
 test("the packed npm package exposes the globals to a consumer", (t) => {
   const work = mkdtempSync(join(tmpdir(), "cdpk-types-"));
   t.after(() => rmSync(work, { recursive: true, force: true }));
-  const pack = spawnSync("npm", ["pack", "--silent", "--pack-destination", work], { cwd: root, encoding: "utf8" });
-  assert.equal(pack.status, 0, pack.stderr);
-  const tarball = join(work, pack.stdout.trim().split("\n").pop() ?? "");
+  // npm is npm.cmd on Windows, which only a shell resolves (#32).
+  const shell = process.platform === "win32";
+  const pack = spawnSync("npm", ["pack", "--silent", "--pack-destination", work], { cwd: root, encoding: "utf8", shell });
+  assert.equal(pack.status, 0, String(pack.stderr ?? pack.error));
+  const tarball = join(work, pack.stdout.trim().split(/\r?\n/).pop() ?? "");
   const consumer = join(work, "consumer");
-  spawnSync("mkdir", ["-p", consumer]);
+  mkdirSync(consumer, { recursive: true });
   writeFileSync(join(consumer, "package.json"), '{ "private": true, "type": "module" }\n');
   const install = spawnSync("npm", ["install", "--silent", "--no-audit", "--no-fund", "--ignore-scripts", tarball], {
     cwd: consumer,
     encoding: "utf8",
+    shell,
   });
-  assert.equal(install.status, 0, install.stderr);
+  assert.equal(install.status, 0, String(install.stderr ?? install.error));
   writeFileSync(
     join(consumer, "cell.ts"),
     [

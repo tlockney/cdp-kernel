@@ -57,7 +57,7 @@
     "install:workerd": "node src/main.ts install --runtime workerd",
     "install:celld": "node src/main.ts install --runtime celld",
     "prepack": "npm run build",
-    "test": "node --test test/*.test.ts",
+    "test": "node --test --test-timeout=300000 test/*.test.ts",
     "e2e": "uv run --with nbclient --with nbformat --with jupyter_client python test/e2e.py",
     "test:lab": "uv run --with jupyterlab --with anywidget --with playwright --with nbformat python test/lab_widgets.py"
   },

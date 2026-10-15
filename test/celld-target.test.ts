@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { bundleDriver, celldConfig, celldVersionOf, findCelld, freePort, launchCelld, PROJECT_KEYS } from "../src/celld-target.ts";
 import { restartNote } from "../src/workerd-target.ts";
@@ -14,7 +15,7 @@ import { Interrupted, type TargetEvents, type TargetMessage } from "../src/targe
 
 const CELLD = process.env.CELLD ?? findCelld();
 const skip = spawnSync(CELLD, ["--version"], { stdio: "ignore" }).status !== 0;
-const RUNTIME = new URL("../runtime/", import.meta.url).pathname;
+const RUNTIME = fileURLToPath(new URL("../runtime/", import.meta.url));
 
 function scratch(t: { after(fn: () => void): void }): string {
   const dir = mkdtempSync(join(tmpdir(), "cdpk-celld-test-"));
@@ -168,8 +169,11 @@ test("a project's bindings, its Durable Objects, and state beside celld dev's", 
   assert.equal(await first.value("return await (await worker.fetch(new Request('https://x/'))).text()"), "project");
   assert.equal(await first.value("return Object.keys(env).includes('TOKEN')"), "false");
   first.target.kill();
-  await new Promise((r) => setTimeout(r, 1500));
-  assert.ok(!existsSync(join(dir, ".celld", "cdp-kernel", "wrangler.jsonc")), "the config with the token is removed");
+  // Removed once celld dev exits; a graceful stop can take a few seconds
+  // (a fixed 1.5 s wait was flaky in CI).
+  const config = join(dir, ".celld", "cdp-kernel", "wrangler.jsonc");
+  for (let i = 0; i < 100 && existsSync(config); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.ok(!existsSync(config), "the config with the token is removed");
   const second = await launch(t, dir);
   assert.equal(await second.value("return await env.COUNTER.get(env.COUNTER.idFromName('t')).increment()"), "2");
   assert.ok(existsSync(join(dir, ".celld", "cdp-kernel", ".celld", "dev")));
