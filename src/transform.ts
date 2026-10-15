@@ -15,7 +15,7 @@
 // module referrer, so Node rejects a bare import() ("A dynamic import
 // callback was not specified").
 
-import { transformSync } from "esbuild";
+import { type TransformOptions, transformSync } from "esbuild";
 import { parse, type Node } from "acorn";
 import { full } from "acorn-walk";
 
@@ -32,7 +32,32 @@ export class CellSyntaxError extends Error {
   override name = "SyntaxError";
 }
 
-function stripTypes(code: string): string {
+export type JsxOptions =
+  | { mode: "automatic"; importSource?: string; development: boolean }
+  | { mode: "classic"; factory?: string; fragment?: string };
+
+/**
+ * Compiler options for cells, e.g. from a Deno project's compilerOptions
+ * (see src/deno-config.ts). Without any, JSX compiles to classic
+ * React.createElement calls, Deno's own default.
+ */
+export interface CellTransformOptions {
+  jsx?: JsxOptions;
+  experimentalDecorators?: boolean;
+}
+
+function jsxSettings(jsx: JsxOptions | undefined): TransformOptions {
+  if (jsx?.mode === "automatic") {
+    return { jsx: "automatic", jsxImportSource: jsx.importSource, jsxDev: jsx.development };
+  }
+  return { jsx: "transform", jsxFactory: jsx?.factory, jsxFragment: jsx?.fragment };
+}
+
+function stripTypes(code: string, options: CellTransformOptions): string {
+  const compilerOptions = {
+    verbatimModuleSyntax: true,
+    ...(options.experimentalDecorators ? { experimentalDecorators: true } : {}),
+  };
   // Like Deno: prefer TSX, fall back to TS for `<T>x` assertions.
   let firstError: unknown;
   for (const loader of ["tsx", "ts"] as const) {
@@ -40,8 +65,8 @@ function stripTypes(code: string): string {
       return transformSync(code, {
         loader,
         target: "esnext",
-        jsx: "transform",
-        tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } },
+        ...jsxSettings(options.jsx),
+        tsconfigRaw: { compilerOptions },
         logLevel: "silent",
       }).code;
     } catch (err) {
@@ -168,8 +193,8 @@ export function rewriteModuleSyntax(js: string): string {
   return out;
 }
 
-export function transformCell(code: string): string {
-  return PRELUDE + rewriteModuleSyntax(stripTypes(code));
+export function transformCell(code: string, options: CellTransformOptions = {}): string {
+  return PRELUDE + rewriteModuleSyntax(stripTypes(code, options));
 }
 
 /**
