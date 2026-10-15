@@ -115,6 +115,8 @@ def checks(runtime, workdir, offline):
         assert info["status"] == "ok"
         assert info["language_info"]["name"] == "typescript"
         assert runtime.split("-")[0] in info["banner"], info["banner"]
+        expected = json.loads((ROOT / "package.json").read_text())["version"]
+        assert info["implementation_version"] == expected, info["implementation_version"]
 
     def stdout_stream(s):
         reply, out = s.run('console.log("asdf")')
@@ -189,8 +191,16 @@ def checks(runtime, workdir, offline):
         assert strip_ansi(result_of(out)["text/plain"]) == "42", out
 
     def import_meta(s):
-        _, out = s.run("import.meta.url")
-        assert "file://" in result_of(out)["text/plain"], out
+        # The workdir's name holds "#", "%" and "?": a correctly encoded URL
+        # keeps them in the path, so there's no stray query or fragment, and
+        # its directory decodes back to the notebook's cwd exactly (#22).
+        _, out = s.run(
+            "const u = new URL(import.meta.url);\n"
+            "const cwd = typeof Deno !== 'undefined' ? Deno.cwd() : process.cwd();\n"
+            "[u.protocol, u.search, u.hash, decodeURIComponent(new URL('.', u).pathname) === cwd + '/',\n"
+            " import.meta.filename === cwd + '/$cdpk$repl.mjs', import.meta.dirname === cwd].join('|')"
+        )
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "file:|||true|true|true", out
 
     def npm_import(s):
         reply, out = s.run('import isOdd from "npm:is-odd@3.0.1";\nisOdd(3)', timeout=180)
@@ -474,7 +484,10 @@ def main():
                 cli_command() + ["install", "--runtime", base] + (["--deno-compat"] if compat else []),
                 check=True, env={**os.environ, "JUPYTER_DATA_DIR": data_dir}, stdout=subprocess.DEVNULL,
             )
-            workdir = Path(tempfile.mkdtemp())
+            # A notebook directory with URL-special characters: every relative
+            # import and import.meta check then covers the referrer URL's
+            # encoding (#22).
+            workdir = Path(tempfile.mkdtemp(prefix="cdpk e2e #%?-"))
             if project == "broken":
                 (workdir / "deno.json").write_text("{ this is not json")
             elif project:

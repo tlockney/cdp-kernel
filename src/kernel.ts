@@ -15,6 +15,7 @@ import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate, tra
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, utf16ToCodePointIndex } from "./text.ts";
 import type { EvaluateResult } from "./cdp.ts";
+import { VERSION } from "./package.ts";
 
 export interface ConnectionInfo {
   ip: string;
@@ -274,7 +275,7 @@ export class Kernel {
       status: "ok",
       protocol_version: PROTOCOL_VERSION,
       implementation: "cdp-kernel",
-      implementation_version: "0.1.0",
+      implementation_version: VERSION,
       language_info: {
         name: "typescript",
         version: "5",

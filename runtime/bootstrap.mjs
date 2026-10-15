@@ -8,13 +8,18 @@
 // Plain JavaScript on purpose: the same file must load unmodified in Node
 // and in Deno.
 
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createJupyter } from "./display.mjs";
 
 const isDeno = typeof globalThis.Deno?.version?.deno === "string";
 const ENC = new TextEncoder();
 
 const cwd = isDeno ? Deno.cwd() : process.cwd();
-const cwdUrl = new URL(`file://${cwd.endsWith("/") ? cwd : cwd + "/"}`);
+// pathToFileURL, not string concatenation: a directory name containing
+// "#", "?" or "%" would otherwise cut the path short or turn into a query,
+// breaking relative imports and import.meta (#22). It also handles Windows
+// drive letters.
+const cwdUrl = pathToFileURL(cwd.endsWith("/") ? cwd : cwd + "/");
 // Stand-in referrer for cell code, like Deno's ./$deno$jupyter_repl.mts.
 const replUrl = new URL("$cdpk$repl.mjs", cwdUrl);
 
@@ -112,7 +117,7 @@ globalThis.__cdpk = {
   meta: {
     url: replUrl.href,
     dirname: cwd,
-    filename: replUrl.pathname,
+    filename: fileURLToPath(replUrl),
     resolve: (specifier) => new URL(specifier, replUrl).href,
   },
   barrier,
