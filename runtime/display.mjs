@@ -1,3 +1,4 @@
+// @ts-self-types="./display.d.mts"
 // The Jupyter display API that Deno exposes as `Deno.jupyter`, made
 // runtime-neutral. Runs inside the target runtime (Node or Deno).
 //

@@ -1,3 +1,4 @@
+// @ts-self-types="./deno-compat.d.mts"
 // An opt-in `Deno` namespace for Node targets, so notebooks written for
 // `deno jupyter` keep working: Deno.jupyter plus the file, env and process
 // APIs notebooks commonly reach for, implemented on Node's.

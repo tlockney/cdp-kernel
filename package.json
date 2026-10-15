@@ -20,6 +20,14 @@
     ".": {
       "types": "./dist/mod.d.ts",
       "default": "./dist/mod.js"
+    },
+    "./globals": {
+      "types": "./dist/globals.d.ts",
+      "default": "./dist/globals.js"
+    },
+    "./globals/deno-compat": {
+      "types": "./dist/globals-deno-compat.d.ts",
+      "default": "./dist/globals-deno-compat.js"
     }
   },
   "files": [
