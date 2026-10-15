@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // cdp-kernel CLI.
-//   cdp-kernel install [--runtime node|deno|bun] [--deno-compat] [--name NAME] [--display NAME]
-//   cdp-kernel kernel --runtime node|deno|bun [--deno-compat] --conn CONNECTION_FILE
+//   cdp-kernel install [--runtime node|deno|bun|workerd] [--deno-compat] [--name NAME] [--display NAME]
+//   cdp-kernel kernel --runtime node|deno|bun|workerd [--deno-compat] --conn CONNECTION_FILE
 //   cdp-kernel version
 //
 // --deno-compat (Node only) adds a `Deno` namespace for notebooks written for
@@ -17,7 +17,7 @@ import type { RuntimeName } from "./target.ts";
 import { hostRuntime, kernelArgv, moduleOrigin, VERSION } from "./package.ts";
 
 function isRuntime(value: unknown): value is RuntimeName {
-  return value === "node" || value === "deno" || value === "bun";
+  return value === "node" || value === "deno" || value === "bun" || value === "workerd";
 }
 
 function kernelsDir(): string {
@@ -63,7 +63,7 @@ const { positionals, values } = parseArgs({
 
 const runtime = values.runtime;
 if (!isRuntime(runtime)) {
-  console.error(`unknown runtime ${runtime}; expected node, deno or bun`);
+  console.error(`unknown runtime ${runtime}; expected node, deno, bun or workerd`);
   process.exit(2);
 }
 
@@ -95,7 +95,7 @@ switch (positionals[0]) {
     break;
   default:
     console.error(
-      "usage: cdp-kernel install [--runtime node|deno|bun] [--deno-compat] | kernel --runtime node|deno|bun --conn FILE | version",
+      "usage: cdp-kernel install [--runtime node|deno|bun|workerd] [--deno-compat] | kernel --runtime node|deno|bun|workerd --conn FILE | version",
     );
     process.exit(2);
 }

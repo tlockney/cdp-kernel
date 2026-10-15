@@ -3,9 +3,9 @@
 A Jupyter kernel extracted from Deno's (`deno jupyter`, v2.9.6) that drives
 any V8 runtime over the Chrome DevTools Protocol. The kernel host runs on
 Node or Deno; the code you type runs in a separate **target** runtime:
-Node or Deno over CDP, or Bun, which evaluates cells in-process instead
-(see [Bun](#bun)). In principle, anything else whose inspector speaks CDP
-works too.
+Node or Deno over CDP. Bun and workerd evaluate cells in-process instead
+(see [Bun](#bun) and [workerd](#workerd)). In principle, anything else
+whose inspector speaks CDP works too.
 
 This is early software. It passes a conformance suite derived from Deno's
 own Jupyter integration tests on every target, and it's packaged for npm and
@@ -42,8 +42,8 @@ So the extraction is:
 ## Install
 
 Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
-`cdp-node-deno` (Node with the Deno compatibility namespace), or `cdp-bun`.
-Then pick the kernel in JupyterLab or VS Code.
+`cdp-node-deno` (Node with the Deno compatibility namespace), `cdp-bun`, or
+`cdp-workerd`. Then pick the kernel in JupyterLab or VS Code.
 
 **From npm** (host runs on Node 24+; Node 26 is what's been tested):
 
@@ -53,6 +53,7 @@ cdp-kernel install --runtime node
 cdp-kernel install --runtime deno
 cdp-kernel install --runtime node --deno-compat
 cdp-kernel install --runtime bun
+cdp-kernel install --runtime workerd
 ```
 
 The kernelspec records the absolute paths of `node` and the installed
@@ -68,7 +69,10 @@ The kernelspec pins the release it was installed from
 (`jsr:@tlockney/cdp-kernel@<version>/cli`). On first launch the target's
 runtime modules are copied into `~/.cache/cdp-kernel/runtime/`. A Node
 target needs `node` on `PATH`, and a Bun target needs `bun` (1.4 is what's
-been tested).
+been tested). A workerd target uses the `workerd` in the notebook
+directory's `node_modules` (a Workers project has one through wrangler),
+or the one on `PATH` (`npm install -g workerd`; 2026-10-15 is what's been
+tested).
 
 Deno 2.9+ refuses package versions less than 24 hours old by default
 ([minimum dependency age](https://docs.deno.com/go/minimum-dependency-age)).
@@ -86,6 +90,7 @@ npm run install:node        # kernelspec cdp-node
 npm run install:deno        # kernelspec cdp-deno
 npm run install:node-deno   # kernelspec cdp-node-deno
 npm run install:bun         # kernelspec cdp-bun
+npm run install:workerd     # kernelspec cdp-workerd
 ```
 
 These kernelspecs point at the checkout, so don't move it after installing.
@@ -113,6 +118,10 @@ In a cell:
   - On Bun they install with `bun add` into `~/.cache/cdp-kernel/bun`. Other
     bare imports resolve from the notebook's directory, so without a
     `node_modules` there, Bun auto-installs them.
+  - On workerd, the host bundles every import other than a builtin
+    (`node:`, `cloudflare:`) with esbuild, using Workers' resolution
+    conditions, and sends it with the cell. `npm:` and `jsr:` install into
+    the npm cache first, as on Node.
 - **Deno projects.** If a `deno.json` or `deno.jsonc` sits in the notebook's
   directory or above it, a Deno target uses it, as `deno jupyter` does:
   - its import map (`"@/": "./lib/"` aliases, mapped packages);
@@ -127,8 +136,9 @@ In a cell:
   reported in the first cell's output, and the kernel runs as in a plain
   directory. Outside a project, the target runs with
   `--node-modules-dir=none --no-lock`.
-- `prompt()` and `confirm()` work over the stdin channel. Interrupt keeps
-  state, except for a busy cell on Bun (below).
+- `prompt()` and `confirm()` work over the stdin channel, except on
+  workerd. Interrupt keeps state, except for a busy cell on Bun or workerd
+  (below).
 
 ## Bun
 
@@ -153,6 +163,34 @@ So the Bun target has its own backend (`src/bun-target.ts`,
   output says so.
 
 What differs from the CDP targets is listed under [Known gaps](#known-gaps).
+
+## workerd
+
+workerd's inspector can evaluate code, but outside a request there is no
+I/O context: timers, `fetch` and `crypto.randomUUID()` throw "Disallowed
+operation called within global scope". So the workerd target runs every
+cell inside a request to a driver Worker (`src/workerd-target.ts`,
+`runtime/workerd-worker.mjs`):
+
+- **A private socket.** The host writes a workerd config into a private
+  temporary directory and serves the driver on a Unix socket there. Each
+  request carries a per-launch token. There is no TCP port and no
+  inspector.
+- **Cells run inside requests.** Cells are transformed as for Bun and run
+  by workerd's `UnsafeEval` binding (hence `--experimental`), so cells get
+  Workers' `fetch`, `Request`, `caches`, timers and randomness, and
+  globals persist between cells.
+- **Output streams back.** `console` output and display messages come back
+  on the request's own response as they happen, so they stay in order.
+- **Interrupt.** Aborting a waiting cell's request makes workerd cancel it,
+  keeping state. A busy cell gets the Bun treatment: workerd is stopped and
+  restarts on the next cell.
+- **Hung cells.** workerd itself cancels a cell that waits on a promise
+  nothing pending can settle (`await new Promise(() => {})`), and the cell
+  says so.
+
+What workerd's own process prints, such as its warnings, goes to the Jupyter
+server log, not the notebook.
 
 ## Editor types
 
@@ -248,7 +286,7 @@ long cell waits for the cell to finish.
 npm run check  # tsc --strict over src/ and test/
 npm test       # unit tests (node:test)
 npm run e2e    # conformance suite via jupyter_client/libzmq, on every target variant
-npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium (node, deno, bun)
+npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium (node, deno, bun, workerd)
 uv run --with nbclient --with nbformat python examples/run_notebook.py   # Deno-style notebook on deno + node-deno
 ```
 
@@ -307,8 +345,19 @@ that failed.
     `if (c) { x }` doesn't.
   - Bun 1.4 can't import a module whose path contains `?`.
   - No `--deno-compat` namespace.
-- **workerd** forbids timers and I/O outside a request, so it needs a
-  different backend; see the writeup.
+- On workerd:
+  - Work a cell starts but doesn't await, such as a `setTimeout` callback,
+    is canceled when the cell ends, because its request does. This is the
+    same rule Workers follow in production.
+  - No `prompt()` or `confirm()` answers: they return `null`, as without a
+    stdin channel. `jupyter.image(path)` can't read files; pass the bytes.
+  - Each imported module is bundled with its dependencies. Two imports that
+    share a dependency each get their own copy.
+  - Interrupting a busy cell restarts workerd and loses state.
+  - Top-level declarations and results behave as on Bun: declarations are
+    `globalThis` properties, and only a trailing expression shows a result.
+  - No bindings yet (KV, Durable Objects, D1) and no way to load a Workers
+    project's `wrangler` config (#26).
 
 ## Provenance
 

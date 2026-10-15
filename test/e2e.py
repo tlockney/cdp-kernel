@@ -271,7 +271,9 @@ def checks(runtime, workdir, offline):
         # Bun has no terminateExecution, but an awaiting cell leaves its event
         # loop free, so the cell is abandoned in place.
         s.run("globalThis.kept = 'state'")
-        reply, _ = interrupt_cell(s, "await new Promise(() => {})")
+        # Waiting on a timer: workerd cancels a cell whose promise nothing
+        # pending can settle (hung_cell_reported).
+        reply, _ = interrupt_cell(s, "await new Promise((r) => setTimeout(r, 60_000))")
         assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
         _, out = s.run("kept")
         assert "state" in result_of(out)["text/plain"], out
@@ -287,6 +289,40 @@ def checks(runtime, workdir, offline):
         reply, out = s.run("typeof kept")
         assert reply["status"] == "ok", reply
         assert "undefined" in result_of(out)["text/plain"], out
+
+    def request_scoped_apis(s):
+        # Outside a request, workerd throws "Disallowed operation called
+        # within global scope" for all of these (#8).
+        reply, out = s.run(
+            "await new Promise((r) => setTimeout(r, 10));\n"
+            "[crypto.randomUUID().length, new Request('https://example.com/x').url, typeof caches].join('|')"
+        )
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "36|https://example.com/x|object", out
+
+    def workerd_fetch(s):
+        reply, out = s.run("(await fetch('https://example.com/')).status", timeout=60)
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]) == "200", out
+
+    def import_meta_workerd(s):
+        # workerd has no cwd of its own; import.meta describes the notebook's.
+        _, out = s.run(
+            "const u = new URL(import.meta.url);\n"
+            "[u.protocol, u.search, u.hash, decodeURIComponent(new URL('.', u).pathname), import.meta.dirname].join('|')"
+        )
+        cwd = os.path.realpath(workdir)  # the kernel's cwd, e.g. /private/var on macOS
+        want = f"file:|||{cwd}/|{cwd}"
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == want, out
+
+    def hung_cell_reported(s):
+        # workerd cancels a request waiting on a promise that nothing pending
+        # can settle; the cell says why, and the session survives.
+        s.run("globalThis.kept = 'state'")
+        reply, _ = s.run("await new Promise(() => {})")
+        assert reply["status"] == "error" and "hung request" in reply["evalue"], reply
+        _, out = s.run("kept")
+        assert "state" in result_of(out)["text/plain"], out
 
     def uncaught_later(s):
         s.run("setTimeout(() => { throw new Error('late') }, 10)")
@@ -451,8 +487,15 @@ def checks(runtime, workdir, offline):
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
     ]
+    if runtime == "workerd":
+        # A request can't block on stdin, and workerd has no cwd of its own.
+        tests = [t for t in tests if t not in (prompt_stdin, import_meta)]
+        tests += [request_scoped_apis, import_meta_workerd, hung_cell_reported]
+        if not offline:
+            tests.append(workerd_fetch)
     # Busy-loop interrupt keeps state where the inspector can stop running JS.
-    tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if runtime == "bun" else [interrupt]
+    in_process = runtime in ("bun", "workerd")
+    tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if in_process else [interrupt]
     if not offline:
         tests += [npm_import, jsr_import]
     if runtime in ("deno", "node-deno"):
@@ -473,6 +516,8 @@ VARIANTS = {
     "deno-broken-project": ("deno", False, "broken"),
     # Bun, evaluating cells in-process rather than over an inspector (#7).
     "bun": ("bun", False, False),
+    # workerd, evaluating each cell inside a request to a driver Worker (#8).
+    "workerd": ("workerd", False, False),
 }
 
 

@@ -12,6 +12,7 @@ import { decodeMessage, encodeMessage, type JsonObject, type Message, PROTOCOL_V
 import { PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
 import { Interrupted, type KernelTarget, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
 import { BunTarget } from "./bun-target.ts";
+import { WorkerdTarget } from "./workerd-target.ts";
 import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate } from "./transform.ts";
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, utf16ToCodePointIndex } from "./text.ts";
@@ -189,6 +190,7 @@ export class Kernel {
 
   #launchTarget(): Promise<KernelTarget> {
     if (this.#runtime === "bun") return BunTarget.launch(this.#targetEvents());
+    if (this.#runtime === "workerd") return WorkerdTarget.launch(this.#targetEvents());
     return Target.launch(this.#runtime, this.#targetEvents(), {
       denoCompat: this.#denoCompat,
       denoConfig: this.#project?.configPath,
