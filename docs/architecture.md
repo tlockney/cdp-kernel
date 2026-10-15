@@ -1,6 +1,6 @@
 # Architecture
 
-The design in full, with the alternatives considered, is in the [feasibility study](https://tlockney.github.io/cdp-kernel/study.html) (also [`life-after-deno-jupyter.html`](life-after-deno-jupyter.html) in this directory). The scripts behind its runtime findings are in [`probes/`](../probes/).
+The design in full, with the alternatives considered, is in the [feasibility study](https://cdp-kernel.org/study.html) (also [`life-after-deno-jupyter.html`](life-after-deno-jupyter.html) in this directory). The scripts behind its runtime findings are in [`probes/`](../probes/).
 
 ## Why this shape
 
