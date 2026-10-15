@@ -44,6 +44,7 @@
     "install:node": "node src/main.ts install --runtime node",
     "install:deno": "node src/main.ts install --runtime deno",
     "install:node-deno": "node src/main.ts install --runtime node --deno-compat",
+    "install:bun": "node src/main.ts install --runtime bun",
     "prepack": "npm run build",
     "test": "node --test test/*.test.ts",
     "e2e": "uv run --with nbclient --with nbformat --with jupyter_client python test/e2e.py",

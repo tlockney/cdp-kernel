@@ -3,11 +3,12 @@
 A Jupyter kernel extracted from Deno's (`deno jupyter`, v2.9.6) that drives
 any V8 runtime over the Chrome DevTools Protocol. The kernel host runs on
 Node or Deno; the code you type runs in a separate **target** runtime:
-Node or Deno today, and anything else whose inspector speaks CDP in
-principle.
+Node or Deno over CDP, or Bun, which evaluates cells in-process instead
+(see [Bun](#bun)). In principle, anything else whose inspector speaks CDP
+works too.
 
 This is early software. It passes a conformance suite derived from Deno's
-own Jupyter integration tests on both targets, and it's packaged for npm and
+own Jupyter integration tests on every target, and it's packaged for npm and
 JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet. The
 feasibility study behind it covers the design,
 the other options considered (workerd, Bun, rusty_v8, FFI), and the
@@ -40,9 +41,9 @@ So the extraction is:
 
 ## Install
 
-Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`, or
-`cdp-node-deno` (Node with the Deno compatibility namespace). Then pick the
-kernel in JupyterLab or VS Code.
+Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
+`cdp-node-deno` (Node with the Deno compatibility namespace), or `cdp-bun`.
+Then pick the kernel in JupyterLab or VS Code.
 
 **From npm** (host runs on Node 24+; Node 26 is what's been tested):
 
@@ -51,6 +52,7 @@ npm install -g @tlockney/cdp-kernel
 cdp-kernel install --runtime node
 cdp-kernel install --runtime deno
 cdp-kernel install --runtime node --deno-compat
+cdp-kernel install --runtime bun
 ```
 
 The kernelspec records the absolute paths of `node` and the installed
@@ -65,7 +67,8 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno
 The kernelspec pins the release it was installed from
 (`jsr:@tlockney/cdp-kernel@<version>/cli`). On first launch the target's
 runtime modules are copied into `~/.cache/cdp-kernel/runtime/`. A Node
-target needs `node` on `PATH`.
+target needs `node` on `PATH`, and a Bun target needs `bun` (1.4 is what's
+been tested).
 
 Deno 2.9+ refuses package versions less than 24 hours old by default
 ([minimum dependency age](https://docs.deno.com/go/minimum-dependency-age)).
@@ -82,6 +85,7 @@ npm ci
 npm run install:node        # kernelspec cdp-node
 npm run install:deno        # kernelspec cdp-deno
 npm run install:node-deno   # kernelspec cdp-node-deno
+npm run install:bun         # kernelspec cdp-bun
 ```
 
 These kernelspecs point at the checkout, so don't move it after installing.
@@ -106,6 +110,9 @@ In a cell:
     `~/.cache/cdp-kernel/npm`.
   - On Deno they use Deno's global cache, unless the notebook is in a Deno
     project (below).
+  - On Bun they install with `bun add` into `~/.cache/cdp-kernel/bun`. Other
+    bare imports resolve from the notebook's directory, so without a
+    `node_modules` there, Bun auto-installs them.
 - **Deno projects.** If a `deno.json` or `deno.jsonc` sits in the notebook's
   directory or above it, a Deno target uses it, as `deno jupyter` does:
   - its import map (`"@/": "./lib/"` aliases, mapped packages);
@@ -121,7 +128,31 @@ In a cell:
   directory. Outside a project, the target runs with
   `--node-modules-dir=none --no-lock`.
 - `prompt()` and `confirm()` work over the stdin channel. Interrupt keeps
-  state.
+  state, except for a busy cell on Bun (below).
+
+## Bun
+
+Bun's `--inspect` speaks the WebKit Inspector Protocol, which lacks what the
+CDP backend relies on: `replMode`, `Runtime.addBinding`,
+`Runtime.terminateExecution`, and top-level `await` in `Runtime.evaluate`.
+So the Bun target has its own backend (`src/bun-target.ts`,
+`runtime/bun-channel.mjs`):
+
+- **No inspector.** The host and Bun exchange JSON lines over a pipe on
+  fd 3, which only the host holds, so there is no port to discover.
+- **Cells run in-process.** Each cell becomes global code wrapped in an
+  async function (`transformCellForEval` in `src/transform.ts`). Its
+  top-level declarations become properties of `globalThis`, so later
+  cells, and closures from this one, see them. This is the
+  tslab/IJavascript technique.
+- **Same output ordering.** stdout and stderr stay pipes, ordered against
+  display messages by the same barrier markers as the CDP targets.
+- **Interrupt.** A cell that's waiting on a promise is interrupted in place,
+  keeping state. A busy one (`while (true) {}`) can't be reached, so Bun is
+  stopped and restarts on the next cell without the earlier state. The cell
+  output says so.
+
+What differs from the CDP targets is listed under [Known gaps](#known-gaps).
 
 ## Editor types
 
@@ -216,8 +247,8 @@ long cell waits for the cell to finish.
 ```sh
 npm run check  # tsc --strict over src/ and test/
 npm test       # unit tests (node:test)
-npm run e2e    # conformance suite via jupyter_client/libzmq, on node, deno, node-deno
-npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium (node, deno)
+npm run e2e    # conformance suite via jupyter_client/libzmq, on every target variant
+npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium (node, deno, bun)
 uv run --with nbclient --with nbformat python examples/run_notebook.py   # Deno-style notebook on deno + node-deno
 ```
 
@@ -266,12 +297,18 @@ that failed.
 - Results are formatted with `util.inspect` on Node, so they look slightly
   different from Deno's `Deno.inspect`.
 - WebGPU texture and buffer display is dropped.
-- Targets:
-  - **Bun** speaks the WebKit inspector protocol: no `replMode`, bindings,
-    `terminateExecution`, or top-level await in `Runtime.evaluate`.
-  - **workerd** forbids timers and I/O outside a request.
-
-  Both need a different backend; see the writeup.
+- On Bun:
+  - Interrupting a busy cell restarts Bun and loses state. An awaiting cell
+    keeps it.
+  - Top-level declarations are properties of `globalThis`. A `const` can be
+    reassigned, and declaring a global's name (`const fetch = ...`) replaces
+    that global rather than shadowing it.
+  - Only a trailing expression statement shows a result: `x` does, but
+    `if (c) { x }` doesn't.
+  - Bun 1.4 can't import a module whose path contains `?`.
+  - No `--deno-compat` namespace.
+- **workerd** forbids timers and I/O outside a request, so it needs a
+  different backend; see the writeup.
 
 ## Provenance
 

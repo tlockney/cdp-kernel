@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { launchCommand, type RuntimeName } from "../src/target.ts";
+import { launchCommand, type CdpRuntime } from "../src/target.ts";
 
 const BOOTSTRAP = fileURLToPath(new URL("../runtime/bootstrap.mjs", import.meta.url));
 const hasDeno = spawnSync("deno", ["--version"]).status === 0;
@@ -23,7 +23,7 @@ test("launchCommand publishes the inspector URL only on stderr", () => {
   assert.ok(inProject.args.includes("--inspect-publish-uid=stderr"));
 });
 
-async function listedInspectors(runtime: RuntimeName): Promise<{ wsUrl: string; listing: string }> {
+async function listedInspectors(runtime: CdpRuntime): Promise<{ wsUrl: string; listing: string }> {
   const { cmd, args } = launchCommand(runtime, BOOTSTRAP);
   const child = spawn(cmd, args, { stdio: ["pipe", "ignore", "pipe"] });
   try {

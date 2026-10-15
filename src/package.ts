@@ -20,6 +20,7 @@ export const VERSION = "0.2.0";
 
 export const RUNTIME_FILES = [
   "bootstrap.mjs",
+  "bun-channel.mjs",
   "display.mjs",
   "comm.mjs",
   "widget.mjs",

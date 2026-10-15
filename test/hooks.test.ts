@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aliasFor, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
+import { execFileSync } from "node:child_process";
+import { aliasFor, installCommand, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
+import { hasBun } from "./bun.ts";
 
 test("parsePackageSpecifier: plain, range, subpath", () => {
   assert.deepEqual(parsePackageSpecifier("lodash"), { name: "lodash", range: "*", subpath: "" });
@@ -30,4 +32,21 @@ test("aliasFor is stable and distinct per range", () => {
   assert.notEqual(aliasFor("left-pad", "^1"), aliasFor("left-pad", "^2"));
   assert.notEqual(aliasFor("left-pad", "^1"), aliasFor("right-pad", "^1"));
   assert.match(aliasFor("left-pad", "^1"), /^cdpk-[0-9a-f]{12}$/);
+});
+
+test("installCommand: npm for Node, this runtime's own bun for Bun", () => {
+  assert.deepEqual(installCommand("npm", "cdpk-x", "is-odd", "3.0.1"), {
+    cmd: "npm",
+    args: ["install", "--no-audit", "--no-fund", "--loglevel=error", "cdpk-x@npm:is-odd@3.0.1"],
+  });
+  assert.deepEqual(installCommand("bun", "cdpk-x", "@jsr/std__text", "1"), {
+    cmd: process.execPath,
+    args: ["add", "--silent", "cdpk-x@npm:@jsr/std__text@1"],
+  });
+});
+
+test("node-hooks.mjs loads in Bun, which has no module.registerHooks", { skip: !hasBun() }, () => {
+  const url = new URL("../runtime/node-hooks.mjs", import.meta.url).href;
+  const script = `const m = await import(${JSON.stringify(url)}); console.log(typeof m.ensureInstalled)`;
+  assert.equal(execFileSync("bun", ["-e", script], { encoding: "utf8" }).trim(), "function");
 });

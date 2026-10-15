@@ -11,7 +11,9 @@
 // Uses module.registerHooks (synchronous, in-thread; Node >= 23.5), so the
 // install can run with spawnSync inside resolve.
 
-import { registerHooks } from "node:module";
+// Not a named import: Bun, which loads this file for its npm:/jsr: helpers,
+// has no registerHooks, and a missing named export fails at link time.
+import module from "node:module";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -41,8 +43,12 @@ export function aliasFor(name, range) {
   return `cdpk-${digest}`;
 }
 
-function cacheDir() {
-  const dir = process.env.CDPK_CACHE_DIR ?? join(homedir(), ".cache", "cdp-kernel", "npm");
+// Each installer keeps its own cache, so npm's and Bun's lockfiles never
+// meet; both read the @jsr registry from .npmrc.
+function cacheDir(installer) {
+  const dir = installer === "npm"
+    ? process.env.CDPK_CACHE_DIR ?? join(homedir(), ".cache", "cdp-kernel", "npm")
+    : join(homedir(), ".cache", "cdp-kernel", installer);
   if (!existsSync(join(dir, "package.json"))) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "package.json"), '{ "private": true }\n');
@@ -51,24 +57,30 @@ function cacheDir() {
   return dir;
 }
 
-function ensureInstalled({ name, range }) {
-  const dir = cacheDir();
+/** The command that installs name@range under `alias` with `installer`. */
+export function installCommand(installer, alias, name, range) {
+  const spec = `${alias}@npm:${name}@${range}`;
+  // The Bun target runs this inside Bun, so it uses its own binary.
+  if (installer === "bun") return { cmd: process.execPath, args: ["add", "--silent", spec] };
+  return { cmd: "npm", args: ["install", "--no-audit", "--no-fund", "--loglevel=error", spec] };
+}
+
+/** Installs a package into the installer's cache unless it's there already. */
+export function ensureInstalled({ name, range }, installer = "npm") {
+  const dir = cacheDir(installer);
   const alias = aliasFor(name, range);
   if (!existsSync(join(dir, "node_modules", alias, "package.json"))) {
-    const result = spawnSync(
-      "npm",
-      ["install", "--no-audit", "--no-fund", "--loglevel=error", `${alias}@npm:${name}@${range}`],
-      { cwd: dir, encoding: "utf8" },
-    );
+    const { cmd, args } = installCommand(installer, alias, name, range);
+    const result = spawnSync(cmd, args, { cwd: dir, encoding: "utf8" });
     if (result.status !== 0) {
-      throw new Error(`npm install ${name}@${range} failed:\n${result.stderr || result.error}`);
+      throw new Error(`${installer} install ${name}@${range} failed:\n${result.stderr || result.error}`);
     }
   }
   return { dir, alias };
 }
 
 export function installNodeResolveHooks({ shimUrl, replUrl }) {
-  registerHooks({
+  module.registerHooks({
     resolve(specifier, context, nextResolve) {
       let pkg = null;
       if (specifier.startsWith("npm:")) pkg = parsePackageSpecifier(specifier.slice(4));

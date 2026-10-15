@@ -7,10 +7,38 @@ import process from "node:process";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { join } from "node:path";
 import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
-import { SHIM } from "./transform.ts";
+import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
 
-export type RuntimeName = "node" | "deno";
+/** Targets driven over CDP. */
+export type CdpRuntime = "node" | "deno";
+/** Bun has its own backend; see src/bun-target.ts. */
+export type RuntimeName = CdpRuntime | "bun";
+
+/** What the kernel needs from a target runtime. */
+export interface KernelTarget {
+  readonly runtime: RuntimeName;
+  readonly versions: { runtime: string; engine: string };
+  /** Turns a cell into the script evaluate() takes. */
+  transform(code: string, options: CellTransformOptions): string;
+  /** Runs a transformed cell. Rejects with Interrupted after interrupt(). */
+  evaluate(script: string): Promise<EvaluateResult>;
+  interrupt(): Promise<void>;
+  /** Resolves once all output and messages sent so far have been delivered. */
+  flush(): Promise<void>;
+  broadcastResult(executionCount: number, result: RemoteObject): Promise<void>;
+  dispatchComm(
+    msgType: string,
+    content: CdpParams,
+    metadata: CdpParams,
+    buffers: Uint8Array[],
+  ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }>;
+  describeError(exception: RemoteObject): Promise<{ name: string; message: string; stack: string }>;
+  propertyNames(expression: string): Promise<string[]>;
+  lexicalNames(): Promise<string[]>;
+  replyInput(value: string | null): void;
+  kill(): void;
+}
 
 const BINDING = "__cdpk_send";
 const MARKER_RE = /\x1b\[cdpk:(\d+)(m?)\]\x1b/;
@@ -30,7 +58,7 @@ export interface LaunchOptions {
 
 /** `bootstrap` is the local path of runtime/bootstrap.mjs (see runtimeDir). */
 export function launchCommand(
-  runtime: RuntimeName,
+  runtime: CdpRuntime,
   bootstrap: string,
   { executable, denoConfig }: LaunchOptions = {},
 ): { cmd: string; args: string[] } {
@@ -64,7 +92,7 @@ export type TargetMessage =
   | { kind: "iopub"; msg_type: string; content: CdpParams; metadata: CdpParams; buffers: string[]; barrier: number }
   | { kind: "input_request"; prompt: string; password: boolean; barrier: number };
 
-function isTargetMessage(value: unknown): value is TargetMessage {
+export function isTargetMessage(value: unknown): value is TargetMessage {
   if (typeof value !== "object" || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
   return (kind === "iopub" || kind === "input_request") &&
@@ -165,7 +193,7 @@ export class PipeDemux {
 }
 
 /** Promises keyed by barrier number, resolvable before or after first use. */
-class Gates {
+export class Gates {
   #map = new Map<number, { promise: Promise<void>; resolve: () => void }>();
   #entry(n: number) {
     let entry = this.#map.get(n);
@@ -192,15 +220,17 @@ class Gates {
 export interface TargetEvents {
   stream(name: "stdout" | "stderr", text: string): void;
   message(msg: TargetMessage): void;
-  exit(code: number | null): void;
+  /** `note` says why, when the target was stopped on purpose. */
+  exit(code: number | null, note?: string): void;
 }
 
 export class Interrupted extends Error {
   override name = "Interrupted";
 }
 
-export class Target {
-  readonly runtime: RuntimeName;
+export class Target implements KernelTarget {
+  readonly runtime: CdpRuntime;
+  readonly transform = transformCell;
   #child: ChildProcessWithoutNullStreams;
   #shell: CdpSession;
   #control: CdpSession;
@@ -210,10 +240,10 @@ export class Target {
   #contextId: number;
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
-  readonly versions: { runtime: string; v8: string };
+  readonly versions: { runtime: string; engine: string };
 
   private constructor(
-    runtime: RuntimeName,
+    runtime: CdpRuntime,
     child: ChildProcessWithoutNullStreams,
     shell: CdpSession,
     control: CdpSession,
@@ -221,7 +251,7 @@ export class Target {
     stderr: PipeDemux,
     gates: Gates,
     contextId: number,
-    versions: { runtime: string; v8: string },
+    versions: { runtime: string; engine: string },
   ) {
     this.runtime = runtime;
     this.#child = child;
@@ -235,7 +265,7 @@ export class Target {
   }
 
   static async launch(
-    runtime: RuntimeName,
+    runtime: CdpRuntime,
     events: TargetEvents,
     options: { cwd?: string; executable?: string; denoCompat?: boolean; denoConfig?: string } = {},
   ): Promise<Target> {
@@ -300,7 +330,7 @@ export class Target {
     await shell.send("Runtime.addBinding", { name: BINDING });
     const contextId = await contextReady;
 
-    const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", v8: "" });
+    const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
     shell.on("Runtime.bindingCalled", (params) => {
       if (params.name !== BINDING || typeof params.payload !== "string") return;
       const msg: unknown = JSON.parse(params.payload);
@@ -314,7 +344,7 @@ export class Target {
       await new Promise((r) => setTimeout(r, 25));
     }
     const versions = await target.#evaluateRaw(
-      `JSON.stringify(typeof Deno !== "undefined" ? { runtime: Deno.version.deno, v8: Deno.version.v8 } : { runtime: process.versions.node, v8: process.versions.v8 })`,
+      `JSON.stringify(typeof Deno !== "undefined" ? { runtime: Deno.version.deno, engine: "V8 " + Deno.version.v8 } : { runtime: process.versions.node, engine: "V8 " + process.versions.v8 })`,
     );
     Object.assign(target.versions, JSON.parse(String(versions.result.value)));
     return target;

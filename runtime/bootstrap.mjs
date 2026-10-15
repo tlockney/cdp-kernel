@@ -4,14 +4,17 @@
 // then drives it over CDP. Everything the host needs from inside the
 // runtime lives on globalThis.__cdpk; output to the host goes through the
 // `__cdpk_send` CDP binding (Runtime.addBinding) plus plain stdout/stderr.
+// Bun is launched as `bun runtime/bootstrap.mjs` and driven over a pipe
+// instead; see bun-channel.mjs.
 //
-// Plain JavaScript on purpose: the same file must load unmodified in Node
-// and in Deno.
+// Plain JavaScript on purpose: the same file must load unmodified in Node,
+// Deno and Bun.
 
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createJupyter } from "./display.mjs";
 
 const isDeno = typeof globalThis.Deno?.version?.deno === "string";
+const isBun = typeof globalThis.Bun?.version === "string";
 const ENC = new TextEncoder();
 
 const cwd = isDeno ? Deno.cwd() : process.cwd();
@@ -77,7 +80,7 @@ function resolveRelative(specifier) {
   return /^\.{0,2}\//.test(specifier) ? new URL(specifier, replUrl).href : specifier;
 }
 
-if (!isDeno) {
+if (!isDeno && !isBun) {
   // Deno resolves npm:/jsr: natively; Node gets a resolve hook that adds
   // them and re-parents cell imports to the notebook's directory.
   const { installNodeResolveHooks } = await import("./node-hooks.mjs");
@@ -108,12 +111,36 @@ async function denoImport(specifier, options) {
   }
 }
 
+// Bun has neither npm: nor jsr:, and would resolve a bare name from this
+// file's directory. npm:/jsr: install into a per-user cache as on Node
+// (with `bun add`); anything else bare resolves from the notebook's
+// directory, so its node_modules, or Bun's auto-install, supplies it.
+const packages = isBun ? await import("./node-hooks.mjs") : null;
+
+function bunResolve(specifier) {
+  let pkg = null;
+  if (specifier.startsWith("npm:")) pkg = packages.parsePackageSpecifier(specifier.slice(4));
+  else if (specifier.startsWith("jsr:")) pkg = packages.jsrToNpm(specifier.slice(4));
+  if (pkg) {
+    const { dir, alias } = packages.ensureInstalled(pkg, "bun");
+    return Bun.resolveSync(alias + pkg.subpath, dir);
+  }
+  // Relative, absolute, or a URL scheme such as node:, bun: or file:.
+  if (/^(?:\.{0,2}\/|[a-z][a-z0-9+.-]*:)/i.test(specifier)) return resolveRelative(specifier);
+  return Bun.resolveSync(specifier, cwd);
+}
+
 globalThis.__cdpk = {
   // Cell code awaits this first; see PRELUDE in src/transform.ts.
   tick: () => new Promise((resolve) => setTimeout(resolve, 0)),
   // Node: the resolve hook re-parents these imports. Deno would resolve
   // relative paths against this file, so denoImport does it here.
-  import: (specifier, options) => (isDeno ? denoImport(specifier, options) : import(specifier, options)),
+  import: (specifier, options) =>
+    isDeno
+      ? denoImport(specifier, options)
+      : isBun
+      ? import(bunResolve(specifier), options)
+      : import(specifier, options),
   meta: {
     url: replUrl.href,
     dirname: cwd,
@@ -181,6 +208,13 @@ if (isDeno) {
 
 // Keep the event loop alive between cells.
 setInterval(() => {}, 1 << 30);
+
+if (isBun) {
+  const { createHandler, startChannel } = await import("./bun-channel.mjs");
+  startChannel(createHandler(globalThis.__cdpk), {
+    versions: { runtime: Bun.version, engine: `JavaScriptCore (WebKit ${process.versions.webkit.slice(0, 12)})` },
+  });
+}
 
 async function platform() {
   if (isDeno) {
