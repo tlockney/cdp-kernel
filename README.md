@@ -408,8 +408,18 @@ that failed.
   - a project's own `package.json` doesn't decide an `npm:` import's version
     (bare imports do use its `node_modules`).
 - No type checking. Deno doesn't type-check REPL cells either.
-- Results are formatted with `util.inspect` on Node, so they look slightly
-  different from Deno's `Deno.inspect`.
+- Results are formatted by each runtime's own inspector: `util.inspect` on
+  Node, Bun, workerd and celld, and `Deno.inspect` on Deno. On a fixture of
+  30 typical values, 23 format identically on Node and Deno. The rest
+  differ in two ways:
+  - strings are quoted `'…'` on Node and `"…"` on Deno, wherever they
+    appear;
+  - a displayed `Error`'s stack also lists Node's own module-loader frames.
+
+  That's deliberate: each runtime's users see the format they expect, and
+  Node's inspector has no quote-style option, short of porting Deno's
+  formatter. `test/formatting.test.ts` runs both runtimes on the fixture
+  and fails if a new kind of difference appears (#17).
 - WebGPU texture and buffer display is dropped.
 - On Bun:
   - Interrupting a busy cell restarts Bun and loses state. An awaiting cell
