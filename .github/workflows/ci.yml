@@ -5,8 +5,77 @@ on:
   pull_request:
   workflow_call: # reused by publish.yml before anything is released
 jobs:
+  # Several behaviours the kernel relies on were found by probing rather
+  # than documented (#15): interrupt over a second CDP session, Node
+  # rejecting import() in inspector code, module.registerHooks, Deno's
+  # configurable `Deno` global. So every supported runtime version runs the
+  # whole suite, on Linux and macOS.
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [24, 26]
+        deno: [v2.9.x, v2.x]
+        include:
+          # The runs against what would actually ship (the packed npm
+          # tarball, and the CLI run by Deno: the JSR path) need only one cell.
+          - os: ubuntu-latest
+            node: 26
+            deno: v2.x
+            shipped: true
+    name: test (${{ matrix.os }}, node ${{ matrix.node }}, deno ${{ matrix.deno }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ matrix.deno }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+      # celld isn't on npm; its installer puts it in ~/.local/bin, where the
+      # kernel looks first (#25).
+      - name: celld
+        run: |
+          case "$RUNNER_OS" in
+            Linux) asset=celld-x86_64-unknown-linux-gnu.gz ;;
+            macOS) asset=celld-aarch64-apple-darwin.gz ;;
+          esac
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/denoland/celld/releases/download/v0.6.2/$asset" | gunzip > "$HOME/.local/bin/celld"
+          chmod +x "$HOME/.local/bin/celld"
+          "$HOME/.local/bin/celld" --version
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run e2e
+      - if: matrix.shipped
+        run: deno publish --dry-run
+      - name: e2e (npm package)
+        if: matrix.shipped
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/pkg" && cd "$RUNNER_TEMP/pkg"
+          echo '{"private":true}' > package.json
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/tlockney-cdp-kernel-*.tgz
+          cd "$GITHUB_WORKSPACE"
+          CDPK_E2E_CLI="$RUNNER_TEMP/pkg/node_modules/.bin/cdp-kernel" npm run e2e
+      - name: e2e (Deno host)
+        if: matrix.shipped
+        run: CDPK_E2E_CLI="deno run -A src/main.ts" npm run e2e
+
+  # Windows isn't supported yet; this job shows how far it gets (#15).
+  # Bun, workerd and celld targets need Unix sockets, fd passing or
+  # binaries that don't exist on Windows, so only Node and Deno run here.
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,36 +85,10 @@ jobs:
         with:
           deno-version: v2.x
       - uses: astral-sh/setup-uv@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.x
-      # celld isn't on npm; its installer puts it in ~/.local/bin, where the
-      # kernel looks first (#25).
-      - name: celld
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz | gunzip > "$HOME/.local/bin/celld"
-          chmod +x "$HOME/.local/bin/celld"
-          "$HOME/.local/bin/celld" --version
-
       - run: npm ci
       - run: npm run check
       - run: npm test
-      - run: deno publish --dry-run
-
-      # Conformance suite against what would actually ship: the packed npm
-      # tarball installed outside the checkout, and the CLI run by Deno (the
-      # JSR path). Each covers every target variant in test/e2e.py.
-      - name: e2e (npm package)
-        run: |
-          npm pack --pack-destination "$RUNNER_TEMP"
-          mkdir -p "$RUNNER_TEMP/pkg" && cd "$RUNNER_TEMP/pkg"
-          echo '{"private":true}' > package.json
-          npm install --no-audit --no-fund "$RUNNER_TEMP"/tlockney-cdp-kernel-*.tgz
-          cd "$GITHUB_WORKSPACE"
-          CDPK_E2E_CLI="$RUNNER_TEMP/pkg/node_modules/.bin/cdp-kernel" npm run e2e
-      - name: e2e (Deno host)
-        run: CDPK_E2E_CLI="deno run -A src/main.ts" npm run e2e
+      - run: npm run e2e -- node deno
 
   # Widgets against the real frontend: JupyterLab with the anywidget
   # extension, driven by headless Chromium (test/lab_widgets.py).

@@ -45,7 +45,8 @@ Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
 `cdp-node-deno` (Node with the Deno compatibility namespace), `cdp-bun`,
 `cdp-workerd`, or `cdp-celld`. Then pick the kernel in JupyterLab or VS Code.
 
-**From npm** (host runs on Node 24+; Node 26 is what's been tested):
+**From npm** (host runs on Node 24+). CI tests Node 24 and 26 with Deno 2.9
+and the latest 2.x, on Linux and macOS. Windows isn't supported yet.
 
 ```sh
 npm install -g @tlockney/cdp-kernel
