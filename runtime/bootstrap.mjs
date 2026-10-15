@@ -210,7 +210,8 @@ if (isDeno) {
 setInterval(() => {}, 1 << 30);
 
 if (isBun) {
-  const { createHandler, startChannel } = await import("./bun-channel.mjs");
+  const { startChannel } = await import("./bun-channel.mjs");
+  const { createHandler } = await import("./evaluator.mjs");
   startChannel(createHandler(globalThis.__cdpk), {
     versions: { runtime: Bun.version, engine: `JavaScriptCore (WebKit ${process.versions.webkit.slice(0, 12)})` },
   });

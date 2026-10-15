@@ -1,15 +1,15 @@
-// The Bun target's request handler (runtime/bun-channel.mjs), with a fake
+// The in-process request handler (runtime/evaluator.mjs), with a fake
 // __cdpk and evaluator. Runs under Node; the channel itself is covered by
 // test/bun-target.test.ts against a real Bun.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type ChannelShim, createHandler, propertyNames } from "../runtime/bun-channel.mjs";
+import { createHandler, type EvaluatorShim, propertyNames } from "../runtime/evaluator.mjs";
 
 function harness(evaluate: (code: string) => unknown) {
   const broadcast: { count: number; value: unknown }[] = [];
   const comms: string[] = [];
   let barrier = 0;
-  const shim: ChannelShim = {
+  const shim: EvaluatorShim = {
     broadcastResult: (count, value) => void broadcast.push({ count, value }),
     describeError: (value) =>
       JSON.stringify(value instanceof Error ? { name: value.name, message: value.message, stack: "s" } : { name: "Error", message: String(value), stack: "" }),
