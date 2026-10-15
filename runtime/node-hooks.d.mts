@@ -14,6 +14,12 @@ export function installCommand(
   name: string,
   range: string,
 ): { cmd: string; args: string[]; env?: { [name: string]: string } };
+/** How to spawn an install command; on Windows, npm runs through cmd.exe. */
+export function spawnCommand(
+  cmd: string,
+  args: string[],
+  platform?: string,
+): { cmd: string; args: string[]; shell: boolean };
 /** Runs an install; `env` is added to the process environment. */
 export type InstallRunner = (
   cmd: string,

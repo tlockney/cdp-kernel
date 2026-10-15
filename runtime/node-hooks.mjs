@@ -170,8 +170,23 @@ function installedVersion(dir, alias) {
   }
 }
 
+/**
+ * How to spawn an install command on `platform`. On Windows npm is npm.cmd,
+ * which Node runs only through a shell (#51). cmd.exe reads ^ < > | & as
+ * operators, and semver ranges use them, so each argument is double-quoted,
+ * where cmd.exe leaves them alone. A " or % would still be read, so they're
+ * refused; no package name or valid range contains either.
+ */
+export function spawnCommand(cmd, args, platform = process.platform) {
+  if (platform !== "win32" || cmd !== "npm") return { cmd, args, shell: false };
+  const bad = args.find((arg) => /["%\r\n]/.test(arg));
+  if (bad !== undefined) throw new TypeError(`can't pass ${JSON.stringify(bad)} to npm through cmd.exe`);
+  return { cmd, args: args.map((arg) => `"${arg}"`), shell: true };
+}
+
 function spawnInstall(cmd, args, cwd, env = {}) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+  const spawn = spawnCommand(cmd, args);
+  return spawnSync(spawn.cmd, spawn.args, { cwd, encoding: "utf8", env: { ...process.env, ...env }, shell: spawn.shell });
 }
 
 /**
