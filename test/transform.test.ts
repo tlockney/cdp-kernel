@@ -164,3 +164,25 @@ test("objectLiteralCandidate wraps brace-led cells without a trailing semicolon"
   assert.equal(objectLiteralCandidate("1 + 1"), null);
   assert.equal(objectLiteralCandidate("foo({})"), null);
 });
+
+test("transformCell applies an automatic JSX runtime from the project config", () => {
+  const out = transformCell("<b>hi</b>", { jsx: { mode: "automatic", importSource: "my-jsx", development: false } });
+  // esbuild's runtime import is rewritten like any other static import.
+  assert.match(out, /await __cdpk\.import\("my-jsx\/jsx-runtime"\)/);
+  assert.doesNotMatch(out, /React\.createElement/);
+});
+
+test("transformCell applies classic JSX factories from the project config", () => {
+  const out = transformCell("<><b>hi</b></>", { jsx: { mode: "classic", factory: "h", fragment: "Fragment" } });
+  assert.match(out, /h\(Fragment, null, \/\* @__PURE__ \*\/ h\("b", null, "hi"\)\)/);
+});
+
+test("transformCell keeps the classic React default without project options", () => {
+  assert.match(transformCell("<b>hi</b>"), /React\.createElement\("b"/);
+});
+
+test("transformCell honours experimentalDecorators from the project config", () => {
+  const cell = "function log(t: unknown) {}\nclass A { @log m() {} }";
+  // TS legacy decorators compile to a __decorateClass helper call.
+  assert.match(transformCell(cell, { experimentalDecorators: true }), /__decorateClass/);
+});

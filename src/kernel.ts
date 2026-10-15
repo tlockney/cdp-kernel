@@ -11,7 +11,8 @@ import { randomUUID } from "node:crypto";
 import { decodeMessage, encodeMessage, type JsonObject, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
 import { PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
 import { Interrupted, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
-import { CellSyntaxError, objectLiteralCandidate, transformCell } from "./transform.ts";
+import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate, transformCell } from "./transform.ts";
+import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, utf16ToCodePointIndex } from "./text.ts";
 import type { EvaluateResult } from "./cdp.ts";
 
@@ -63,6 +64,9 @@ export class Kernel {
   readonly #conn: ConnectionInfo;
   readonly #runtime: RuntimeName;
   readonly #denoCompat: boolean;
+  // A Deno target in a Deno project uses its config (#13).
+  readonly #project: DenoProject | null;
+  #projectWarning: string | null = null;
   readonly #session = randomUUID();
   readonly #shell: RouterSocket;
   readonly #control: RouterSocket;
@@ -76,10 +80,15 @@ export class Kernel {
   #executing = false;
   #shuttingDown = false;
 
-  constructor(conn: ConnectionInfo, runtime: RuntimeName, options: { denoCompat?: boolean } = {}) {
+  constructor(
+    conn: ConnectionInfo,
+    runtime: RuntimeName,
+    options: { denoCompat?: boolean; /** Defaults to the process cwd, which Jupyter sets. */ notebookDir?: string } = {},
+  ) {
     this.#conn = conn;
     this.#runtime = runtime;
     this.#denoCompat = options.denoCompat ?? false;
+    this.#project = runtime === "deno" ? this.#loadProject(options.notebookDir ?? process.cwd()) : null;
     startHeartbeat(conn.hb_port, conn.ip);
     this.#shell = new RouterSocket(conn.shell_port, conn.ip);
     this.#control = new RouterSocket(conn.control_port, conn.ip);
@@ -99,11 +108,31 @@ export class Kernel {
     process.stderr.write(`[cdp-kernel] ${text}\n`);
   }
 
+  #loadProject(notebookDir: string): DenoProject | null {
+    try {
+      return loadDenoProject(notebookDir);
+    } catch (err) {
+      // A broken deno.json mustn't stop the kernel: run as in a plain
+      // directory and say why in the first cell.
+      const reason = err instanceof Error ? err.message : String(err);
+      this.#projectWarning = `${reason}; running without the project config`;
+      this.#log(this.#projectWarning);
+      return null;
+    }
+  }
+
+  #transformOptions(): CellTransformOptions {
+    return this.#project?.transform ?? {};
+  }
+
   // --- target lifecycle -----------------------------------------------------
 
   #ensureTarget(): Promise<Target> {
     if (this.#target) return Promise.resolve(this.#target);
-    this.#targetStarting ??= Target.launch(this.#runtime, this.#targetEvents(), { denoCompat: this.#denoCompat }).then((target) => {
+    this.#targetStarting ??= Target.launch(this.#runtime, this.#targetEvents(), {
+      denoCompat: this.#denoCompat,
+      denoConfig: this.#project?.configPath,
+    }).then((target) => {
       this.#target = target;
       this.#targetStarting = null;
       return target;
@@ -315,13 +344,13 @@ export class Kernel {
     const wrapped = objectLiteralCandidate(code);
     if (wrapped !== null) {
       try {
-        const result = await target.evaluate(transformCell(wrapped));
+        const result = await target.evaluate(transformCell(wrapped, this.#transformOptions()));
         if (!result.exceptionDetails) return result;
       } catch (err) {
         if (!(err instanceof CellSyntaxError)) throw err;
       }
     }
-    return target.evaluate(transformCell(code));
+    return target.evaluate(transformCell(code, this.#transformOptions()));
   }
 
   async #execute(msg: Message, peer: string): Promise<void> {
@@ -334,6 +363,11 @@ export class Kernel {
     this.#allowStdin = msg.content.allow_stdin === true;
     this.#status("busy", parent);
     this.#publish("execute_input", { code, execution_count: count });
+    if (this.#projectWarning !== null) {
+      // Shown once, in the first cell, where the user will see it.
+      this.#publish("stream", { name: "stderr", text: `[cdp-kernel] ${this.#projectWarning}\n` });
+      this.#projectWarning = null;
+    }
 
     let error: ErrorContent | null = null;
     this.#executing = true;

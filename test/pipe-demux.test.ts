@@ -111,7 +111,7 @@ test("launchCommand for node", () => {
   assert.equal(cmd, process.execPath);
   assert.ok(args.includes("--inspect=127.0.0.1:0"));
   assert.match(args[args.length - 1], /bootstrap\.mjs$/);
-  assert.equal(launchCommand("node", "/x/bootstrap.mjs", "/opt/node").cmd, "/opt/node");
+  assert.equal(launchCommand("node", "/x/bootstrap.mjs", { executable: "/opt/node" }).cmd, "/opt/node");
 });
 
 test("launchCommand for deno", () => {
@@ -121,5 +121,21 @@ test("launchCommand for deno", () => {
   assert.ok(args.includes("--inspect=127.0.0.1:0"));
   assert.ok(args.includes("--node-modules-dir=none"));
   assert.match(args[args.length - 1], /bootstrap\.mjs$/);
-  assert.equal(launchCommand("deno", "/x/bootstrap.mjs", "/opt/deno").cmd, "/opt/deno");
+  assert.equal(launchCommand("deno", "/x/bootstrap.mjs", { executable: "/opt/deno" }).cmd, "/opt/deno");
+});
+
+test("launchCommand for deno inside a project uses its config", () => {
+  const { args } = launchCommand("deno", "/x/bootstrap.mjs", { denoConfig: "/proj/deno.json" });
+  const at = args.indexOf("--config");
+  assert.deepEqual(args.slice(at, at + 2), ["--config", "/proj/deno.json"]);
+  // The project's own nodeModulesDir setting applies instead.
+  assert.ok(!args.includes("--node-modules-dir=none"));
+  // Never write into the project's lockfile.
+  assert.ok(args.includes("--no-lock"));
+  assert.match(args[args.length - 1], /bootstrap\.mjs$/);
+});
+
+test("launchCommand ignores a deno config for node targets", () => {
+  const { args } = launchCommand("node", "/x/bootstrap.mjs", { denoConfig: "/proj/deno.json" });
+  assert.ok(!args.includes("--config"));
 });

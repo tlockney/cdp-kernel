@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { kernelArgv, moduleOrigin, RUNTIME_FILES, runtimeDir, VERSION } from "../src/package.ts";
+import { isInsideNodeModules, kernelArgv, moduleOrigin, RUNTIME_FILES, runtimeDir, VERSION } from "../src/package.ts";
 
 const root = new URL("../", import.meta.url);
 
@@ -72,6 +72,28 @@ test("runtimeDir uses a file: directory in place", async () => {
     throw new Error("must not fetch");
   });
   assert.equal(dir, "/opt/cdpk/runtime/");
+});
+
+test("isInsideNodeModules spots an npm-installed runtime directory", () => {
+  assert.equal(isInsideNodeModules(pathToFileURL("/p/node_modules/@tlockney/cdp-kernel/runtime/").href), true);
+  assert.equal(isInsideNodeModules(pathToFileURL("/src/cdp-kernel/runtime/").href), false);
+  assert.equal(isInsideNodeModules("https://jsr.io/@tlockney/cdp-kernel/0.1.1/runtime/"), false);
+});
+
+test("runtimeDir copies a file: directory when asked (npm install, Deno target)", async (t) => {
+  // Deno resolves imports from modules under node_modules as npm-package
+  // imports, without the project's import map, so a Deno target must not
+  // load its bootstrap from there.
+  const work = mkdtempSync(join(tmpdir(), "cdpk-copy-"));
+  t.after(() => rmSync(work, { recursive: true, force: true }));
+  const installed = join(work, "node_modules", "@tlockney", "cdp-kernel", "runtime");
+  mkdirSync(installed, { recursive: true });
+  for (const name of RUNTIME_FILES) writeFileSync(join(installed, name), `// ${name}\n`);
+  const cache = join(work, "cache");
+
+  const dir = await runtimeDir(pathToFileURL(installed + "/").href, cache, undefined, { copy: true });
+  assert.ok(dir.startsWith(join(cache, "runtime", `${VERSION}-`)), dir);
+  for (const name of RUNTIME_FILES) assert.equal(readFileSync(join(dir, name), "utf8"), `// ${name}\n`);
 });
 
 test("runtimeDir copies remote files once into a versioned cache", async (t) => {

@@ -9,16 +9,22 @@
 //     files into a local cache first.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 /** Kept equal to package.json and deno.jsonc by test/package.test.ts. */
 export const VERSION = "0.1.1";
 
-export const RUNTIME_FILES = ["bootstrap.mjs", "display.mjs", "node-hooks.mjs", "deno-compat.mjs"] as const;
+export const RUNTIME_FILES = [
+  "bootstrap.mjs",
+  "display.mjs",
+  "node-hooks.mjs",
+  "deno-compat.mjs",
+  "node-modules-resolve.mjs",
+] as const;
 
 export type HostRuntime = "node" | "deno";
 
@@ -73,14 +79,34 @@ async function fetchText(url: string): Promise<string> {
   return await res.text();
 }
 
+/** True when a file: URL points inside a node_modules directory (an npm install). */
+export function isInsideNodeModules(url: string): boolean {
+  return url.startsWith("file:") && fileURLToPath(url).split(sep).includes("node_modules");
+}
+
+function readLocal(url: string): Promise<string> {
+  return Promise.resolve(readFileSync(fileURLToPath(url), "utf8"));
+}
+
 /**
  * A local directory holding runtime/*.mjs. `baseUrl` is the runtime/
  * directory's URL relative to the calling module. A file: URL is used in
- * place; anything else is copied once into a cache keyed by version and
- * URL.
+ * place unless `copy` is set; anything else is copied once into a cache
+ * keyed by version and URL.
+ *
+ * `copy` exists for Deno targets of an npm install: Deno resolves imports
+ * made by a module under node_modules as npm-package imports, without the
+ * notebook project's import map, so the bootstrap must load from outside it.
  */
-export async function runtimeDir(baseUrl: string, cache: string = cacheRoot(), get: FetchText = fetchText): Promise<string> {
-  if (baseUrl.startsWith("file:")) return fileURLToPath(baseUrl);
+export async function runtimeDir(
+  baseUrl: string,
+  cache: string = cacheRoot(),
+  get: FetchText = fetchText,
+  { copy = false }: { copy?: boolean } = {},
+): Promise<string> {
+  const local = baseUrl.startsWith("file:");
+  if (local && !copy) return fileURLToPath(baseUrl);
+  if (local) get = readLocal;
   const key = createHash("sha256").update(baseUrl).digest("hex").slice(0, 12);
   const dir = join(cache, "runtime", `${VERSION}-${key}`);
   if (RUNTIME_FILES.every((name) => existsSync(join(dir, name)))) return dir;
