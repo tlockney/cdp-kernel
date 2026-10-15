@@ -169,8 +169,11 @@ test("a project's bindings, its Durable Objects, and state beside celld dev's", 
   assert.equal(await first.value("return await (await worker.fetch(new Request('https://x/'))).text()"), "project");
   assert.equal(await first.value("return Object.keys(env).includes('TOKEN')"), "false");
   first.target.kill();
-  await new Promise((r) => setTimeout(r, 1500));
-  assert.ok(!existsSync(join(dir, ".celld", "cdp-kernel", "wrangler.jsonc")), "the config with the token is removed");
+  // Removed once celld dev exits; a graceful stop can take a few seconds
+  // (a fixed 1.5 s wait was flaky in CI).
+  const config = join(dir, ".celld", "cdp-kernel", "wrangler.jsonc");
+  for (let i = 0; i < 100 && existsSync(config); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.ok(!existsSync(config), "the config with the token is removed");
   const second = await launch(t, dir);
   assert.equal(await second.value("return await env.COUNTER.get(env.COUNTER.idFromName('t')).increment()"), "2");
   assert.ok(existsSync(join(dir, ".celld", "cdp-kernel", ".celld", "dev")));
