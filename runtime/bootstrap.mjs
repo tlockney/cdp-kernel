@@ -156,6 +156,12 @@ globalThis.__cdpk = {
   inspectPath: (path, detail) => inspectPath(path, { inspect: inspectPlain, detail }),
   resolvePath,
   broadcastResult: jupyter.broadcastResult,
+  // The debugger's rich variable viewer (#18), synchronously: it runs while
+  // the target is paused. A value whose $display is async shows as text.
+  richBundle(value) {
+    const bundle = jupyter.formatNow(value);
+    return JSON.stringify(typeof bundle?.then === "function" ? { "text/plain": inspectPlain(value) } : bundle);
+  },
   // Frontend comm messages (#9), from the host's shell channel. Handlers
   // run after one macrotask, like cells, so interrupt can reach them.
   async commDispatch(msgType, content, metadata, buffers64) {

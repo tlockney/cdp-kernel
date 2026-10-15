@@ -47,6 +47,8 @@ export interface JupyterNamespace {
 export interface Jupyter {
   namespace: JupyterNamespace;
   broadcastResult(executionCount: number, result: unknown): Promise<void>;
+  /** format without awaiting; a $display method's promise is returned as is. */
+  formatNow(obj: unknown): unknown;
   confirm(message?: string): boolean;
   prompt(message?: string, defaultValue?: string, options?: { password?: boolean }): string | null;
   /** Routes a frontend comm message into the kernel's comms. */

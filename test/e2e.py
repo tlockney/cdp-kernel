@@ -428,6 +428,92 @@ def checks(runtime, workdir, offline):
         found = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]["history"]
         assert [item[2] for item in found] == ["'second entry'"], found
 
+    def debug_request(s, command, arguments=None, seq=[0]):
+        seq[0] += 1
+        msg = s.kc.session.msg("debug_request", {"type": "request", "seq": seq[0], "command": command,
+                                                 "arguments": arguments or {}})
+        s.kc.control_channel.send(msg)
+        msg_id = msg["header"]["msg_id"]
+        deadline = time.time() + TIMEOUT
+        content = None
+        while content is None and time.time() < deadline:
+            reply = s.kc.control_channel.get_msg(timeout=TIMEOUT)
+            if reply["parent_header"].get("msg_id") == msg_id:
+                content = reply["content"]
+        assert content is not None, f"no debug_reply to {command}"
+        # JupyterLab only counts a debug request as done once the kernel
+        # reports idle for it (a missing idle left its debugger disabled).
+        while True:
+            assert time.time() < deadline, f"no idle status for debug_request {command}"
+            try:
+                status = s.kc.get_iopub_msg(timeout=0.2)
+            except Exception:
+                continue
+            if (status["msg_type"] == "status" and status["parent_header"].get("msg_id") == msg_id
+                    and status["content"]["execution_state"] == "idle"):
+                return content
+
+    def debug_event(s, event, timeout=TIMEOUT):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                msg = s.kc.get_iopub_msg(timeout=0.2)
+            except Exception:
+                continue
+            if msg["msg_type"] == "debug_event" and msg["content"].get("event") == event:
+                return msg["content"]
+        raise TimeoutError(f"no debug_event {event}")
+
+    def kernelspec_debugger(s):
+        # JupyterLab enables its debugger from the kernelspec (#18).
+        spec = json.loads((Path(os.environ["JUPYTER_DATA_DIR"]) / "kernels" / s.km.kernel_name / "kernel.json").read_text())
+        expected = runtime.split("-")[0] in ("node", "deno")
+        assert spec["metadata"]["debugger"] is expected, spec["metadata"]
+        s.kc.kernel_info()
+        info = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+        assert info["debugger"] is expected, info
+        if not expected:
+            assert debug_request(s, "debugInfo")["success"] is False
+
+    def debugger_breakpoint(s):
+        # JupyterLab's sequence (#18): debugInfo, initialize, attach, dumpCell,
+        # setBreakpoints; run the cell; on stopped, stackTrace, scopes,
+        # variables; continue; disconnect.
+        info = debug_request(s, "debugInfo")["body"]
+        assert info["hashMethod"] == "Murmur2", info
+        assert debug_request(s, "initialize", {"clientID": "jupyterlab", "linesStartAt1": True})["success"]
+        assert debug_request(s, "attach")["success"]
+        code = "const first: number = 20;\nconst second = first + 1;\nsecond * 2"
+        path = debug_request(s, "dumpCell", {"code": code})["body"]["sourcePath"]
+        assert path.startswith(info["tmpFilePrefix"]) and path.endswith(info["tmpFileSuffix"]), path
+        set_ = debug_request(s, "setBreakpoints", {"source": {"path": path}, "breakpoints": [{"line": 2}]})
+        assert set_["body"]["breakpoints"][0]["verified"], set_
+        msg_id = s.kc.execute(code)
+        stopped = debug_event(s, "stopped")
+        assert stopped["body"]["reason"] == "breakpoint", stopped
+        frames = debug_request(s, "stackTrace", {"threadId": 1})["body"]["stackFrames"]
+        assert frames[0]["line"] == 2 and frames[0]["source"]["path"] == path, frames
+        scopes = debug_request(s, "scopes", {"frameId": frames[0]["id"]})["body"]["scopes"]
+        values = {}
+        for scope in scopes:
+            if scope["name"] != "Globals":
+                for v in debug_request(s, "variables", {"variablesReference": scope["variablesReference"]})["body"]["variables"]:
+                    values[v["name"]] = v["value"]
+        assert values.get("first") == "20", values
+        assert debug_request(s, "continue", {"threadId": 1})["success"]
+        deadline = time.time() + TIMEOUT
+        while True:
+            assert time.time() < deadline, "no execute_reply after continue"
+            r = s.kc.get_shell_msg(timeout=TIMEOUT)
+            if r["parent_header"].get("msg_id") == msg_id:
+                break
+        assert r["content"]["status"] == "ok", r["content"]
+        variables = debug_request(s, "inspectVariables")["body"]["variables"]
+        assert {"first", "second"} <= {v["name"] for v in variables}, variables
+        assert debug_request(s, "disconnect", {"restart": False, "terminateDebuggee": False})["success"]
+        _, out = s.run(code)
+        assert strip_ansi(result_of(out)["text/plain"]) == "42", "runs without stopping after disconnect"
+
     def is_complete(s):
         s.kc.is_complete("function f() {")
         assert s.kc.get_shell_msg(timeout=TIMEOUT)["content"]["status"] == "incomplete"
@@ -577,7 +663,7 @@ def checks(runtime, workdir, offline):
         display_ordering, display_symbol, markdown_template, update_display,
         png_bytes, node_builtin_import, relative_ts_import, import_meta,
         prompt_stdin, prompt_without_stdin, uncaught_later,
-        complete, is_complete, inspect_tooltips, inspect_runs_nothing, history_tail,
+        complete, is_complete, inspect_tooltips, inspect_runs_nothing, history_tail, kernelspec_debugger,
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
     ]
@@ -588,6 +674,8 @@ def checks(runtime, workdir, offline):
         if not offline:
             tests.append(workerd_fetch)
     # Busy-loop interrupt keeps state where the inspector can stop running JS.
+    if not runtime.startswith(("bun", "workerd", "celld")):
+        tests.append(debugger_breakpoint)
     in_process = runtime in ("bun", "workerd", "celld")
     tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if in_process else [interrupt]
     if not offline:

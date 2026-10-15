@@ -18,6 +18,7 @@
 import { type TransformOptions, transformSync } from "esbuild";
 import { type Node, parse, type Pattern, type Program, type VariableDeclaration } from "acorn";
 import { full, recursive } from "acorn-walk";
+import { LineMap } from "./sourcemap.ts";
 
 export const SHIM = "__cdpk";
 
@@ -53,7 +54,8 @@ function jsxSettings(jsx: JsxOptions | undefined): TransformOptions {
   return { jsx: "transform", jsxFactory: jsx?.factory, jsxFragment: jsx?.fragment };
 }
 
-function stripTypes(code: string, options: CellTransformOptions): string {
+/** esbuild's output, with its source map's `mappings` when asked for. */
+function stripTypesMapped(code: string, options: CellTransformOptions, sourcemap: boolean): { code: string; mappings: string } {
   const compilerOptions = {
     verbatimModuleSyntax: true,
     ...(options.experimentalDecorators ? { experimentalDecorators: true } : {}),
@@ -62,19 +64,29 @@ function stripTypes(code: string, options: CellTransformOptions): string {
   let firstError: unknown;
   for (const loader of ["tsx", "ts"] as const) {
     try {
-      return transformSync(code, {
+      const result = transformSync(code, {
         loader,
         target: "esnext",
         ...jsxSettings(options.jsx),
         tsconfigRaw: { compilerOptions },
         logLevel: "silent",
-      }).code;
+        ...(sourcemap ? { sourcemap: "external" as const } : {}),
+      });
+      const map: unknown = sourcemap ? JSON.parse(result.map) : null;
+      const mappings = typeof (map as { mappings?: unknown } | null)?.mappings === "string"
+        ? (map as { mappings: string }).mappings
+        : "";
+      return { code: result.code, mappings };
     } catch (err) {
       firstError ??= err;
     }
   }
   const message = firstError instanceof Error ? firstError.message : String(firstError);
   throw new CellSyntaxError(message.replace(/^Transform failed with \d+ errors?:\n/, ""));
+}
+
+function stripTypes(code: string, options: CellTransformOptions): string {
+  return stripTypesMapped(code, options, false).code;
 }
 
 interface Edit {
@@ -193,11 +205,24 @@ export function rewriteModuleSyntax(js: string): string {
   return applyEdits(js, edits);
 }
 
+function newlines(text: string): number {
+  let count = 0;
+  for (const char of text) if (char === "\n") count++;
+  return count;
+}
+
 function applyEdits(js: string, edits: Edit[]): string {
   // Back to front; at a shared start, a replacement goes before an insertion.
   edits.sort((a, b) => b.start - a.start || b.end - a.end);
   let out = js;
-  for (const edit of edits) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+  for (const edit of edits) {
+    // Keep every later line where it was, so a cell's lines still map to
+    // esbuild's (the debugger relies on it, #18): a multi-line import
+    // rewritten to one line is padded with the newlines it replaced.
+    const lost = newlines(js.slice(edit.start, edit.end)) - newlines(edit.text);
+    const text = lost > 0 ? edit.text + "\n".repeat(lost) : edit.text;
+    out = out.slice(0, edit.start) + text + out.slice(edit.end);
+  }
   return out;
 }
 
@@ -315,6 +340,16 @@ function hoistForEval(js: string): string {
 
 export function transformCell(code: string, options: CellTransformOptions = {}): string {
   return PRELUDE + rewriteModuleSyntax(stripTypes(code, options));
+}
+
+/**
+ * transformCell, plus the map between the cell's lines and the script's,
+ * for the debugger (#18). The rewrite keeps lines (see applyEdits), so the
+ * script's lines are esbuild's, after the prelude's one.
+ */
+export function transformCellWithLines(code: string, options: CellTransformOptions = {}): { script: string; lines: LineMap } {
+  const stripped = stripTypesMapped(code, options, true);
+  return { script: PRELUDE + rewriteModuleSyntax(stripped.code), lines: new LineMap(stripped.mappings, newlines(PRELUDE)) };
 }
 
 /**
