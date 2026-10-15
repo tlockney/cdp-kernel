@@ -21,8 +21,14 @@ ROOT = HERE.parent
 
 
 def main():
-    variants = sys.argv[1:] or ["deno", "node-deno"]
-    source = nbformat.read(HERE / "deno-style.ipynb", as_version=4)
+    args = sys.argv[1:]
+    source_name = "deno-style"
+    if "--nb" in args:
+        i = args.index("--nb")
+        source_name = args[i + 1]
+        del args[i:i + 2]
+    variants = args or ["deno", "node-deno"]
+    source = nbformat.read(HERE / f"{source_name}.ipynb", as_version=4)
     with tempfile.TemporaryDirectory() as data_dir:
         os.environ["JUPYTER_DATA_DIR"] = data_dir
         for variant in variants:
@@ -35,7 +41,7 @@ def main():
             name = f"cdp-{variant}"
             nb.metadata["kernelspec"] = {"name": name, "display_name": name, "language": "typescript"}
             NotebookClient(nb, kernel_name=name, timeout=300, resources={"metadata": {"path": tempfile.mkdtemp()}}).execute()
-            out = HERE / f"deno-style.{variant}.ipynb"
+            out = HERE / f"{source_name}.{variant}.ipynb"
             nbformat.write(nb, out)
             print(f"== {variant}: executed {len(nb.cells)} cells -> {out.name}")
             for i, cell in enumerate(nb.cells):

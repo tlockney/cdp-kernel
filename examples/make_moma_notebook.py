@@ -1,0 +1,600 @@
+"""Builds examples/moma-collection.ipynb: MoMA's open collection, end to end.
+
+An original example (inspired by Trevor Manz's Deno blog post "Exploring Art
+with TypeScript, Jupyter, Polars, and Observable Plot"; no code or prose from
+it) that exercises npm:/jsr: installs, native modules (nodejs-polars),
+Observable Plot over linkedom, polars DataFrame display, jupyter.md, the
+jupyter.widget comm protocol, and a React SSR display object. Data is MoMA's
+open collection dataset (CC0).
+
+    uv run --with nbformat python examples/make_moma_notebook.py
+"""
+
+from pathlib import Path
+
+import nbformat as nbf
+
+HERE = Path(__file__).resolve().parent
+
+nb = nbf.v4.new_notebook(metadata={
+    "kernelspec": {
+        "display_name": "TypeScript (cdp-kernel, node)",
+        "language": "typescript",
+        "name": "cdp-node",
+    },
+    "language_info": {"name": "typescript"},
+})
+
+md = nbf.v4.new_markdown_cell
+code = nbf.v4.new_code_cell
+
+cells = []
+cells.append(md(
+    "# A museum's shopping history — MoMA's collection through `cdp-kernel`\n"
+    "\n"
+    "Every museum is a record of buying decisions. The Museum of Modern Art publishes\n"
+    "its **entire cataloged collection** — 160k+ works and their artists — as open data,\n"
+    "including the date each work was *acquired*. That turns the museum itself into a\n"
+    "dataset: what was bought when, how long after it was made, from whom, and in what.\n"
+    "\n"
+    "This notebook reads like a visit: we load and clean the data with\n"
+    "[Polars](https://github.com/pola-rs/nodejs-polars), chart it with\n"
+    "[Observable Plot](https://observablehq.com/plot), build a small interactive\n"
+    "widget on cdp-kernel's comm protocol, and end with a one-work-per-decade tour\n"
+    "rendered as museum wall labels.\n"
+    "\n"
+    "It runs on **cdp-kernel** with a **Node** target: the kernel host speaks the\n"
+    "Jupyter wire protocol while every cell executes over CDP in a separate Node\n"
+    "process — TypeScript and TSX are transformed on the way in."))
+
+cells.append(md(
+    "## Sources and inspiration\n"
+    "\n"
+    "The analysis approach here is **inspired by Trevor Manz's post [_Exploring Art\n"
+    "with TypeScript, Jupyter, Polars, and Observable Plot_](https://deno.com/blog/exploring-art-with-typescript-and-jupyter)**\n"
+    "([notebook source](https://github.com/manzt/deno-jupyter-blog)), which explores\n"
+    "the National Gallery of Art's open data under Deno's Jupyter kernel. The structure\n"
+    "of that piece — tidy data, static plots, an anywidget-style table, a custom SSR\n"
+    "component — is a lovely template for what a notebook-driven runtime should be\n"
+    "able to do, so this notebook deliberately exercises the same breadth.\n"
+    "\n"
+    "All code and prose here are original, the dataset is different, and the questions\n"
+    "asked are different (the inspiration focuses on *when art was made*; we mostly ask\n"
+    "*when the museum acquired it*). No code or text is copied from the original.\n"
+    "\n"
+    "**Data** — [MuseumofModernArt/collection](https://github.com/MuseumofModernArt/collection)\n"
+    "on GitHub, released into the public domain (**CC0**). Per that repository, images\n"
+    "are *not* part of the dataset, and much of the metadata is \"as is\" research data,\n"
+    "not curator-approved. Links in this notebook go to the museum's own collection\n"
+    "pages.\n"
+    "\n"
+    "Specifiers below pin what needs pinning (react and react-dom ranges must agree —\n"
+    "React enforces version parity between the pair)."))
+
+cells.append(md("## Load"))
+cells.append(code(
+    'import * as pl from "npm:nodejs-polars@0.18.0";\n'
+    '\n'
+    'const baseUrl = "https://github.com/MuseumofModernArt/collection/raw/refs/heads/main/";\n'
+    '\n'
+    '// MoMA ships CSVs with a UTF-8 BOM; strip it so the first column name is clean.\n'
+    'const stripBom = (s: string) => s.replace(/^\\uFEFF/, "");\n'
+    '\n'
+    'let artists: pl.DataFrame = pl.readCSV(\n'
+    '  stripBom(await (await fetch(baseUrl + "Artists.csv")).text()),\n'
+    '  { quoteChar: \'"\' },\n'
+    ')\n'
+    '  .select(\n'
+    '    pl.col("ConstituentID").alias("artistId"),\n'
+    '    pl.col("DisplayName").alias("artist"),\n'
+    '    pl.col("Nationality").alias("nationality"),\n'
+    '    pl.col("Gender").str.toLowerCase().alias("gender"),\n'
+    '  );\n'
+    '\n'
+    'artists.head();'))
+
+cells.append(code(
+    'let works: pl.DataFrame = pl.readCSV(\n'
+    '  stripBom(await (await fetch(baseUrl + "Artworks.csv")).text()),\n'
+    '  { quoteChar: \'"\' },\n'
+    ')\n'
+    '  .select(\n'
+    '    pl.col("ObjectID"),\n'
+    '    pl.col("Title"),\n'
+    '    pl.col("Artist"),\n'
+    '    pl.col("ConstituentID"),\n'
+    '    pl.col("Date").alias("dateText"),\n'
+    '    pl.col("Medium"),\n'
+    '    pl.col("Classification"),\n'
+    '    pl.col("Department"),\n'
+    '    pl.col("DateAcquired"),\n'
+    '    pl.col("CreditLine"),\n'
+    '    pl.col("AccessionNumber"),\n'
+    '    pl.col("URL"),\n'
+    '    pl.col("Height (cm)").alias("heightCm"),\n'
+    '    pl.col("Width (cm)").alias("widthCm"),\n'
+    '    pl.col("Duration (sec.)").alias("durationSec"),\n'
+    '  );\n'
+    '\n'
+    '`${works.shape.height.toLocaleString()} works, ${artists.shape.height.toLocaleString()} artists`'))
+
+cells.append(md(
+    "## Clean\n"
+    "\n"
+    "Two messy columns do most of the damage. `DateAcquired` is a clean ISO date when\n"
+    "present; the work's `Date` is free text (`c. 1910`, `1935-42`, `Published 1929`…),\n"
+    "so we take the first plausible four-digit year as an approximate work year."))
+
+cells.append(code(
+    'works = works.withColumns(\n'
+    '  pl.col("DateAcquired").str.slice(0, 4).cast(pl.Int32, false).alias("acquiredYear"),\n'
+    '  pl.col("dateText").str.extract("(1[5-9][0-9][0-9]|20[0-9][0-9])", 1).cast(pl.Int32, false).alias("workYear"),\n'
+    ');\n'
+    '\n'
+    'const knownAcquired = works.filter(pl.col("acquiredYear").isNotNull()).shape.height;\n'
+    'const knownWorkYear = works.filter(pl.col("workYear").isNotNull()).shape.height;\n'
+    '`acquisition year known for ${knownAcquired.toLocaleString()} / ${works.shape.height.toLocaleString()} works; '
+    'approximate work year for ${knownWorkYear.toLocaleString()}`'))
+
+cells.append(code(
+    '// Collaborations: some works list several constituent IDs. The first one is the\n'
+    '// primary artist (the Artist string lists names in the same order).\n'
+    'const collaborations = works.filter(pl.col("ConstituentID").str.contains(",")).shape.height;\n'
+    '\n'
+    'works = works.withColumns(\n'
+    '  pl.col("ConstituentID").str.extract("([0-9]+)", 1).cast(pl.Int64, false).alias("primaryArtistId"),\n'
+    '  pl.col("acquiredYear").sub(pl.col("acquiredYear").rem(10)).alias("acquiredDecade"),\n'
+    ');\n'
+    '\n'
+    'works = works.join(artists, {\n'
+    '  leftOn: "primaryArtistId",\n'
+    '  rightOn: "artistId",\n'
+    '  how: "left",\n'
+    '});\n'
+    '\n'
+    '`join done — ${collaborations.toLocaleString()} works credit multiple artists; primary artist joined for `\n'
+    '  + `${works.filter(pl.col("artist").isNotNull()).shape.height.toLocaleString()} works`'))
+
+cells.append(md("## When the museum buys\n"))
+cells.append(code(
+    'import * as Plot from "npm:@observablehq/plot";\n'
+    'import { parseHTML } from "npm:linkedom@0.18.9";\n'
+    '\n'
+    '// Observable Plot wants a DOM; on a Node target we hand it linkedom\n'
+    '// (the same trick most SSR renderers use).\n'
+    'const document = parseHTML("<html></html>").document;\n'
+    '\n'
+    'const acquisitions = works\n'
+    '  .filter(pl.col("acquiredYear").isNotNull())\n'
+    '  .withColumns(pl.col("Department").fillNull("Unspecified"))\n'
+    '  .toRecords();\n'
+    '\n'
+    'Plot.plot({\n'
+    '  width: 940,\n'
+    '  height: 300,\n'
+    '  y: { grid: true, label: "works acquired" },\n'
+    '  x: { type: "time", domain: [new Date(1925, 0, 1), new Date(2027, 0, 1)] },\n'
+    '  marks: [\n'
+    '    Plot.rectY(\n'
+    '      acquisitions,\n'
+    '      Plot.binX(\n'
+    '        { y: "count", filter: null },\n'
+    '        {\n'
+    '          x: (d) => new Date(d.acquiredYear, 0, 1),\n'
+    '          thresholds: 102,\n'
+    '          fill: "Department",\n'
+    '          fillOpacity: 0.9,\n'
+    '        },\n'
+    '      ),\n'
+    '    ),\n'
+    '  ],\n'
+    '  color: { legend: true },\n'
+    '  document,\n'
+    '});'))
+
+cells.append(code(
+    'const busiest = works\n'
+    '  .filter(pl.col("acquiredYear").isNotNull())\n'
+    '  .groupBy("acquiredYear").len()\n'
+    '  .sort("acquiredYear_count", true)\n'
+    '  .head(10);\n'
+    '\n'
+    'jupyter.md`## The ten busiest acquisition years\n\n${busiest.toRecords()\n'
+    '  .map((r) => `| ${r.acquiredYear} | ${Number(r.acquiredYear_count).toLocaleString()} |`)\n'
+    '  .join("\\n")}\n\n(year | works acquired)`'))
+
+cells.append(code(
+    '// What did the museum buy in its biggest year?\n'
+    'const busiestYear = busiest.toRecords()[0].acquiredYear as number;\n'
+    '\n'
+    'const biggestYear = works\n'
+    '  .filter(pl.col("acquiredYear").eq(pl.lit(busiestYear)))\n'
+    '  .groupBy("Classification").len()\n'
+    '  .sort("Classification_count", true)\n'
+    '  .head(6);\n'
+    '\n'
+    'biggestYear'))
+
+cells.append(code(
+    'const samples = works\n'
+    '  .filter(pl.col("acquiredYear").eq(pl.lit(busiestYear)))\n'
+    '  .sort("Title").head(12)\n'
+    '  .select("Title", "Artist", "Classification", "CreditLine");\n'
+    '\n'
+    'samples'))
+
+cells.append(md(
+    "## The 1968 spike, explained\n"
+    "\n"
+    "Nearly two-thirds of the museum's biggest year — **13,622 of 20,528 works** — are\n"
+    "classified **Mies van der Rohe Archive**. That's not a buying spree; it's a life's work\n"
+    "arriving. Mies van der Rohe wanted his entire \u00f6uvre to go to MoMA, and the museum's\n"
+    "trustees established the archive in 1968; the architect died in 1969. What the histogram\n"
+    "records as a single-year spike is mostly **one architect handing over ~19,000 drawings\n"
+    "and prints** — about a thousand of them by his longtime collaborator [Lilly\n"
+    "Reich](https://en.wikipedia.org/wiki/Ludwig_Mies_van_der_Rohe#Archives). The runner-up\n"
+    "year, 1964, doesn't have one clean story like that — it's a broad elevation across\n"
+    "photographs and prints.\n"
+    "\n"
+    "The interactive scrubber below lets you slice this yourself."))
+
+cells.append(md(
+    "## How long does art wait?\n"
+    "\n"
+    "The lag between a work's creation and its acquisition is a quiet census of taste:\n"
+    "how quickly a museum decides a medium matters."))
+
+cells.append(code(
+    'const lagByClass = works\n'
+    '  .filter(pl.col("acquiredYear").isNotNull())\n'
+    '  .withColumns(pl.col("acquiredYear").minus(pl.col("workYear")).alias("lagYears"))\n'
+    '  .filter(pl.col("lagYears").gtEq(pl.lit(0)).and(pl.col("lagYears").lt(pl.lit(100))))\n'
+    '  .groupBy("Classification")\n'
+    '  .agg(pl.col("lagYears").count().alias("n"), pl.col("lagYears").median().alias("medianLag"))\n'
+    '  .filter(pl.col("n").gt(pl.lit(500)))\n'
+    '  .sort("medianLag", true);\n'
+    '\n'
+    '// the extremes of the distribution, as numbers:\n'
+    'await jupyter.display(lagByClass.head(4));\n'
+    'await jupyter.display(lagByClass.tail(3));\n'
+    '\n'
+    'Plot.plot({\n'
+    '  width: 940,\n'
+    '  marginLeft: 130,\n'
+    '  height: 300,\n'
+    '  x: { grid: true, label: "median years from creation to acquisition" },\n'
+    '  y: { label: null },\n'
+    '  marks: [\n'
+    '    Plot.barX(lagByClass.toRecords(), {\n'
+    '      x: "medianLag",\n'
+    '      y: "Classification",\n'
+    '      sort: { y: "-x" },\n'
+    '      fill: "#5b8db8",\n'
+    '    }),\n'
+    '  ],\n'
+    '  document,\n'
+    '});'))
+
+cells.append(md(
+    "## Who gets collected\n"
+    "\n"
+    "MoMA's artist records include a gender field (as recorded by museum staff —\n"
+    "imperfect and historical, but the museum publishes it and its gaps are themselves\n"
+    "part of the story). The share of acquisitions credited to women, per acquisition\n"
+    "year, is a slow-moving number worth staring at."))
+
+cells.append(code(
+    'const genderShare = works\n'
+    '  .filter(pl.col("acquiredYear").isNotNull())\n'
+    '  .filter(pl.col("gender").eq(pl.lit("female")).or(pl.col("gender").eq(pl.lit("male"))))\n'
+    '  .withColumns(pl.col("gender").eq(pl.lit("female")).cast(pl.Int32).alias("isFemale"))\n'
+    '  .groupBy("acquiredYear")\n'
+    '  .agg(pl.col("isFemale").mean().alias("femaleShare"), pl.len().alias("n"))\n'
+    '  .filter(pl.col("n").gt(pl.lit(20)))\n'
+    '  .sort("acquiredYear");\n'
+    '\n'
+    'await jupyter.display(genderShare.head(2));\n'
+    'await jupyter.display(genderShare.tail(2));\n'
+    '\n'
+    'Plot.plot({\n'
+    '  width: 940,\n'
+    '  height: 300,\n'
+    '  y: { grid: true, domain: [0, 0.6], percent: true, label: "share of acquisitions by women" },\n'
+    '  x: { type: "time", label: null },\n'
+    '  marks: [\n'
+    '    Plot.areaY(genderShare.toRecords(), {\n'
+    '      x: (d) => new Date(d.acquiredYear, 0, 1),\n'
+    '      y: "femaleShare",\n'
+    ''
+    '      fillOpacity: 0.15,\n'
+    '    }),\n'
+    '    Plot.lineY(genderShare.toRecords(), {\n'
+    '      x: (d) => new Date(d.acquiredYear, 0, 1),\n'
+    '      y: "femaleShare",\n'
+    ''
+    '      stroke: "#b3589f",\n'
+    '    }),\n'
+    '    Plot.ruleY([0.5], { stroke: "#999", strokeDasharray: "3,3" }),\n'
+    '  ],\n'
+    '  document,\n'
+    '});'))
+
+cells.append(md(
+    "## The chemical century\n"
+    "\n"
+    "Photography arrived as chemistry and left as software. The `Medium` column lets us\n"
+    "watch the processes rise and fall — silver gelatin giving way to chromogenic\n"
+    "prints, then inkjet."))
+
+cells.append(code(
+    'const photoWorks = works\n'
+    '  .filter(pl.col("workYear").isNotNull())\n'
+    '  .withColumns(\n'
+    '    pl.when(pl.col("Medium").str.contains("(?i)gelatin silver"))\n'
+    '      .then(pl.lit("gelatin silver")).otherwise(pl.lit(null)).alias("process"),\n'
+    '  )\n'
+    '  .withColumns(\n'
+    '    pl.when(pl.col("Medium").str.contains("(?i)chromogenic"))\n'
+    '      .then(pl.lit("chromogenic")).otherwise(pl.col("process")).alias("process"),\n'
+    '  )\n'
+    '.withColumns(\n'
+    '    pl.when(pl.col("Medium").str.contains("(?i)inkjet|pigment print"))\n'
+    '      .then(pl.lit("digital inkjet")).otherwise(pl.col("process")).alias("process"),\n'
+    '  )\n'
+    '  .filter(pl.col("process").isNotNull());\n'
+    '\n'
+    'await jupyter.display(\n'
+    '  photoWorks.groupBy("process").agg(\n'
+    '    pl.col("workYear").min().alias("firstWork"),\n'
+    '    pl.col("workYear").max().alias("lastWork"),\n'
+    '    pl.col("workYear").count().alias("works")));\n'
+    '\n'
+    'Plot.plot({\n'
+    '  width: 940,\n'
+    '  height: 300,\n'
+    '  y: { grid: true, label: "works (binned)" },\n'
+    '  x: { type: "time", domain: [new Date(1890, 0, 1), new Date(2025, 0, 1)] },\n'
+    '  color: { legend: true },\n'
+    '  marks: [\n'
+    '    Plot.rectY(\n'
+    '      photoWorks.toRecords(),\n'
+    '      Plot.binX(\n'
+    '        { y: "count", filter: null },\n'
+    '        {\n'
+    '          x: (d) => new Date(d.workYear, 0, 1),\n'
+    '          thresholds: 68,\n'
+    '          fill: "process",\n'
+    '          fillOpacity: 0.85,\n'
+    '        },\n'
+    '      ),\n'
+    '    ),\n'
+    '  ],\n'
+    '  document,\n'
+    '});'))
+
+cells.append(md(
+    "## The longest works in the collection\n"
+    "\n"
+    "MoMA collects time-based media, and the dataset records runtimes. A nice excuse\n"
+    "to pull in a package from JSR — `@std/fmt`'s duration formatter."))
+
+cells.append(code(
+    'import { format as formatDuration } from "jsr:@std/fmt@1.0.10/duration";\n'
+    '\n'
+    'const longest = works\n'
+    '  .filter(pl.col("durationSec").isNotNull())\n'
+    '  .sort("durationSec", true)\n'
+    '  .head(5)\n'
+    '  .withColumns(pl.col("durationSec").cast(pl.Float64))\n'
+    '  .select("Title", "Artist", "durationSec", "URL")\n'
+    '  .toRecords();\n'
+    '\n'
+    'const rows = longest.map((w) =>\n'
+    '  `| ${(w.Title as string).slice(0, 60)} | ${w.Artist ?? "Unknown"} | ${formatDuration((w.durationSec as number) * 1000, { ignoreZero: true })} |`)\n'
+    '  .join("\\n");\n'
+    '\n'
+    'jupyter.md`## The five longest works in the collection\n\n| Work | Artist | Runtime |\n| --- | --- | --- |\n${rows}`'))
+
+cells.append(md(
+    "## An interactive acquisition scrubber\n"
+    "\n"
+    "Widgets are where cdp-kernel differs most from `deno jupyter`: the kernel side\n"
+    "speaks the ipywidgets model protocol directly through `jupyter.widget`. The\n"
+    "`esm` string below is the frontend — plain vanilla JS, no CDN, no bundler —\n"
+    "and it talks back: dragging the sliders updates the model, the kernel listens\n"
+    "for the change and pushes a fresh summary down."))
+
+cells.append(code(
+    'const yearCounts = works\n'
+    '  .filter(pl.col("acquiredYear").isNotNull())\n'
+    '  .groupBy("acquiredYear").len()\n'
+    '  .sort("acquiredYear")\n'
+    '  .toRecords()\n'
+    '  .map((r) => [r.acquiredYear as number, Number(r.acquiredYear_count)] as const);\n'
+    '\n'
+    'const totalAcquired = yearCounts.reduce((sum, [, n]) => sum + n, 0);\n'
+    '\n'
+    'const summarize = (start: number, end: number) => {\n'
+    '  const inRange = yearCounts.filter(([y]) => y >= start && y <= end);\n'
+    '  const count = inRange.reduce((s, [, n]) => s + n, 0);\n'
+    '  return `${count.toLocaleString()} works (${(100 * count / totalAcquired).toFixed(1)}% of the collection) entered MoMA between ${start} and ${end}`;\n'
+    '};\n'
+    '\n'
+    'const scrubber = jupyter.widget({\n'
+    '  state: {\n'
+    '    start: 1929,\n'
+    '    end: 2026,\n'
+    '    counts: yearCounts,\n'
+    '    summary: summarize(1929, 2026),\n'
+    '  },\n'
+    '  esm: `\n'
+    'export default ({ model, el }) => {\n'
+    '  el.style.font = "12px system-ui, sans-serif";\n'
+    '  const canvas = document.createElement("canvas");\n'
+    '  const draw = () => {\n'
+    '    const counts = model.get("counts") || [];\n'
+    '    const start = model.get("start"), end = model.get("end");\n'
+    '    const W = 640, H = 120, max = Math.max(...counts.map(([, n]) => n), 1);\n'
+    '    canvas.width = W * 2; canvas.height = H * 2;\n'
+    '    canvas.style.width = W + "px"; canvas.style.height = H + "px";\n'
+    '    const ctx = canvas.getContext("2d");\n'
+    '    ctx.scale(2, 2);\n'
+    '    const y0 = counts[0] ? counts[0][0] : 1929, y1 = counts.length ? counts[counts.length - 1][0] : 2026;\n'
+    '    for (const [year, n] of counts) {\n'
+    '      const x = ((year - y0) / (y1 - y0)) * W;\n'
+    '      const h = (n / max) * (H - 24);\n'
+    '      ctx.fillStyle = year >= start && year <= end ? "#5b8db8" : "#d8d8d8";\n'
+    '      ctx.fillRect(x, H - h, Math.max(1, W / (y1 - y0)), h);\n'
+    '    }\n'
+    '    ctx.fillStyle = "#555";\n'
+    '    ctx.fillText(y0, 2, H - 4); ctx.fillText(y1, W - 28, H - 4);\n'
+    '  };\n'
+    '  const row = document.createElement("div");\n'
+    '  row.style.display = "flex"; row.style.gap = "8px"; row.style.alignItems = "center";\n'
+    '  const mk = (key) => {\n'
+    '    const s = document.createElement("input");\n'
+    '    s.type = "range"; s.min = 1929; s.max = 2026;\n'
+    '    s.oninput = () => model.set({ [key]: +s.value });\n'
+    '    s.value = model.get(key);\n'
+    '    model.on("change:" + key, () => { s.value = model.get(key); });\n'
+    '    return s;\n'
+    '  };\n'
+    '  const start = mk("start"), end = mk("end");\n'
+    '  const label = document.createElement("span");\n'
+    '  const sync = () => {\n'
+    '    label.textContent = model.get("start") + " \\u2013 " + model.get("end");\n'
+    '    draw();\n'
+    '  };\n'
+    '  const summary = document.createElement("p");\n'
+    '  summary.style.minHeight = "1.2em";\n'
+    '  model.on("change:summary", () => { summary.textContent = model.get("summary"); });\n'
+    '  summary.textContent = model.get("summary");\n'
+    '  el.append(canvas, row, summary);\n'
+    '  row.append(start, label, end);\n'
+    '  model.on("change:start", sync);\n'
+    '  model.on("change:end", sync);\n'
+    '  sync();\n'
+    '};\n'
+    '  `,\n'
+    '});\n'
+    '\n'
+    '// The kernel half of the loop: frontend slider changes arrive as comm updates;\n'
+    '// we recompute and push the summary back.\n'
+    'for (const key of ["start", "end"]) {\n'
+    '  scrubber.on("change:" + key, (value: number) =>\n'
+    '    scrubber.set({ summary: summarize(scrubber.get("start"), scrubber.get("end")) }));\n'
+    '}\n'
+    '\n'
+    '// exercise the round trip from the kernel side:\n'
+    'scrubber.set({ start: 1964, end: 1980 });\n'
+    'console.log(`after kernel-side set(): ${scrubber.get("summary")}`);\n'
+    '\n'
+    'scrubber'))
+
+cells.append(md(
+    "## One work per decade — a wall-label tour\n"
+    "\n"
+    "Custom display objects are just `[Symbol.for(\"Jupyter.display\")]` methods, so any\n"
+    "renderer works. Here React SSRs a set of museum wall labels: the earliest-acquired\n"
+    "work from each decade of the museum's life, ten works you could walk past in\n"
+    "ninety years of buying."))
+
+cells.append(code(
+    'import * as React from "npm:react@19";\n'
+    'import * as ReactDOMServer from "npm:react-dom@19/server";\n'
+    '\n'
+    'const render = (node: React.ReactNode) => ({\n'
+    '  [Symbol.for("Jupyter.display")]() {\n'
+    '    return { "text/html": ReactDOMServer.renderToString(node) };\n'
+    '  },\n'
+    '});\n'
+    '\n'
+    'const tour = works\n'
+    '  .filter(pl.col("acquiredYear").isNotNull().and(pl.col("URL").str.lengths().gt(pl.lit(0))))\n'
+    '  .sort("DateAcquired")\n'
+    '  .groupBy("acquiredDecade").first()\n'
+    '  .sort("acquiredDecade")\n'
+    '  .select("acquiredDecade", "Title", "artist", "dateText", "Medium", "CreditLine", "AccessionNumber", "URL");\n'
+    '\n'
+    'function WallLabel(props: { work: Record<string, string> }) {\n'
+    '  const { work } = props;\n'
+    '  return (\n'
+    '    <div style={{\n'
+    '      border: "1px solid #ddd",\n'
+    '      borderRadius: "6px",\n'
+    '      padding: "14px 16px",\n'
+    '      background: "#faf9f7",\n'
+    '      fontFamily: "Georgia, serif",\n'
+    '    }}>\n'
+    '      <div style={{ fontSize: "11px", fontFamily: "system-ui, sans-serif", color: "#999", marginBottom: "6px" }}>\n'
+    '        acquired {(work.acquiredDecade ?? 0) as number}–{((work.acquiredDecade ?? 0) as number) + 9} · first purchase of the decade\n'
+    '      </div>\n'
+    '      <div style={{ fontStyle: "italic", fontSize: "15px", marginBottom: "4px" }}>\n'
+    '        {work.Title}\n'
+    '      </div>\n'
+    '      <div>{work.artist ?? "Unknown artist"}, {work.dateText}</div>\n'
+    '      <div style={{ color: "#555", fontSize: "12px", marginTop: "4px" }}>{work.Medium}</div>\n'
+    '      <div style={{ color: "#777", fontSize: "11px", marginTop: "6px" }}>\n'
+    '        {work.CreditLine}. {work.AccessionNumber} · {" "}\n'
+    '        <a href={work.URL} style={{ color: "#5b8db8" }}>moma.org</a>\n'
+    '      </div>\n'
+    '    </div>\n'
+    '  );\n'
+    '}\n'
+    '\n'
+    'render((\n'
+    '  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "10px", maxWidth: 940 }}>\n'
+    '    {tour.toRecords().map((work) => (\n'
+    '      <WallLabel key={String(work.AccessionNumber)} work={work} />\n'
+    '    ))}\n'
+    '  </div>\n'
+    '));'))
+
+cells.append(md(
+    "## What we found\n"
+    "\n"
+    "### What we found\n"
+    "\n"
+    "- **A museum is its bequests.** Two years tower over a century of buying:\n"
+    "  **1968 (20,528 works)** and **1964 (12,997)** — and 1968 is not curatorial appetite:\n"
+    "  13,622 of those works are the Mies van der Rohe Archive, one architect handing over\n"
+    "  his life's work. The scrubber shows the scale: **1964\u20131980 alone accounts for\n"
+    "  56,552 works, over a third of the collection**.\n"
+    "- **Prints are bought hot; photographs arrive cold.** Median lag from creation to\n"
+    "  acquisition: **6 years for prints** (n=32,207) against **41 years for photographs**\n"
+    "  (n=31,446). Notebooks and periodicals wait longest (54\u201366 years) \u2014 research\n"
+    "  material ages in drawers before anyone thinks to collect it.\n"
+    "- **The gender line moves at glacial speed.** Among acquisitions whose primary\n"
+    "  artist's gender is recorded, the share credited to women goes from **0% in 1933**\n"
+    "  to **about 38% in 2025\u201326**. Two-thirds of a century to reach a little more\n"
+    "  than a third.\n"
+    "- **The chemical century, then the digital one.** Gelatin silver dominates the\n"
+    "  photographic record (21,942 works), chromogenic color runs through the collection's\n"
+    "  middle age (2,684), and digital inkjet arrives last (1,643) \u2014 the relay baton-pass\n"
+    "  is visible in the chart above.\n"
+    "- **Even the longest works are short.** The longest cataloged runtimes here are about\n"
+    "  17 minutes \u2014 VALIE EXPORT leads the list \u2014 because MoMA's feature-film\n"
+    "  holdings live in a separate film database, not in this artworks dataset.\n"
+    "- **The decade tour ends where the museum began.** Its earliest label is *Anna Peter*\n"
+    "  by George Grosz, accession number **4.1929** \u2014 the fourth work the museum ever\n"
+    "  acquired, in its founding year.\n"
+    "\n"
+    "### Caveats, honestly stated\n"
+    "\n"
+    "- MoMA publishes this data as \"research in progress\": it is not curator-approved,\n"
+    "  and fields like `Gender` (as recorded by museum staff) and free-text `Date` are\n"
+    "  approximations. The work year, in particular, is a regex, not scholarship.\n"
+    "- Images are not part of the dataset; every link above goes to the museum's own\n"
+    "  collection page.\n"
+    "\n"
+    "### Licenses\n"
+    "\n"
+    "- Data: MoMA collection dataset, **CC0** (public domain) — see the\n"
+    "  [source repository](https://github.com/MuseumofModernArt/collection).\n"
+    "- This notebook: part of cdp-kernel, MIT, same as the rest of the repository.\n"
+    "- Analysis approach inspired by Trevor Manz's Deno post linked at the top;\n"
+    "  no code or text is reproduced from it."))
+
+nb.cells = cells
+nbf.write(nb, HERE / "moma-collection.ipynb")
+print("written", len(cells), "cells,", sum(1 for c in cells if c.cell_type == "code"), "code")
