@@ -513,7 +513,7 @@ def checks(runtime, workdir, offline):
                 relative_ts_import, interrupt]
     if runtime == "deno-broken-project":
         return [broken_project_warns_once, typescript, relative_ts_import]
-    if runtime == "workerd-project":
+    if runtime in ("workerd-project", "celld-project"):
         # The busy interrupt restarts workerd, so it goes last.
         return [project_notice_once, kernel_info, project_bindings, durable_object_stub_across_cells,
                 project_worker_fetch, session_carries_over, relative_ts_import,
@@ -529,14 +529,14 @@ def checks(runtime, workdir, offline):
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
     ]
-    if runtime == "workerd":
+    if runtime in ("workerd", "celld"):
         # A request can't block on stdin, and workerd has no cwd of its own.
         tests = [t for t in tests if t not in (prompt_stdin, import_meta)]
         tests += [request_scoped_apis, import_meta_workerd, session_carries_over]
         if not offline:
             tests.append(workerd_fetch)
     # Busy-loop interrupt keeps state where the inspector can stop running JS.
-    in_process = runtime in ("bun", "workerd")
+    in_process = runtime in ("bun", "workerd", "celld")
     tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if in_process else [interrupt]
     if not offline:
         tests += [npm_import, jsr_import]
@@ -562,6 +562,9 @@ VARIANTS = {
     "workerd": ("workerd", False, False),
     # ... in a Workers project, with its bindings through its Miniflare (#26).
     "workerd-project": ("workerd", False, "workers"),
+    # celld, running the same driver Worker (#25), alone and in a project.
+    "celld": ("celld", False, False),
+    "celld-project": ("celld", False, "workers"),
 }
 
 

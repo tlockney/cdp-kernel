@@ -13,7 +13,7 @@ import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
 /** Targets driven over CDP. */
 export type CdpRuntime = "node" | "deno";
 /** Bun and workerd have their own backends: src/bun-target.ts, src/workerd-target.ts. */
-export type RuntimeName = CdpRuntime | "bun" | "workerd";
+export type RuntimeName = CdpRuntime | "bun" | "workerd" | "celld";
 
 /** What the kernel needs from a target runtime. */
 export interface KernelTarget {
