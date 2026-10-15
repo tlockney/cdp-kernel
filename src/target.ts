@@ -477,9 +477,26 @@ export class Target implements KernelTarget {
     this.#shell.abandonPending();
   }
 
+  /**
+   * For synchronous functions. With awaitPromise the inspector would wrap
+   * even a plain return value in a promise it holds only weakly (#55).
+   */
   callFunctionOn(functionDeclaration: string, args: CdpParams[]): Promise<CdpParams> {
     return this.#shell.send("Runtime.callFunctionOn", {
       functionDeclaration,
+      arguments: args,
+      executionContextId: this.#contextId,
+      returnByValue: true,
+    });
+  }
+
+  /**
+   * For functions that return a promise. The target holds it until after
+   * the inspector's then-callback has run, so a GC can't collect it first.
+   */
+  #callAsyncFunctionOn(functionDeclaration: string, args: CdpParams[]): Promise<CdpParams> {
+    return this.#shell.send("Runtime.callFunctionOn", {
+      functionDeclaration: `function (...args) { return globalThis.${SHIM}.hold((${functionDeclaration}).apply(this, args)); }`,
       arguments: args,
       executionContextId: this.#contextId,
       awaitPromise: true,
@@ -494,7 +511,7 @@ export class Target implements KernelTarget {
       : result.unserializableValue !== undefined
       ? { unserializableValue: result.unserializableValue }
       : { value: result.value };
-    await this.callFunctionOn(`function (n, r) { return globalThis.${SHIM}.broadcastResult(n, r); }`, [
+    await this.#callAsyncFunctionOn(`function (n, r) { return globalThis.${SHIM}.broadcastResult(n, r); }`, [
       { value: executionCount },
       arg,
     ]);
@@ -514,18 +531,15 @@ export class Target implements KernelTarget {
     this.#interrupted = false;
     let res: CdpParams;
     try {
-      res = await this.#shell.send("Runtime.callFunctionOn", {
-        functionDeclaration: `function (t, c, m, b) { return globalThis.${SHIM}.commDispatch(t, c, m, b); }`,
-        arguments: [
+      res = await this.#callAsyncFunctionOn(
+        `function (t, c, m, b) { return globalThis.${SHIM}.commDispatch(t, c, m, b); }`,
+        [
           { value: msgType },
           { value: content },
           { value: metadata },
           { value: buffers.map((b) => Buffer.from(b).toString("base64")) },
         ],
-        executionContextId: this.#contextId,
-        awaitPromise: true,
-        returnByValue: true,
-      });
+      );
     } catch (err) {
       if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Comm handler interrupted");
       throw err;
@@ -550,11 +564,13 @@ export class Target implements KernelTarget {
   /**
    * Evaluates without side effects: V8 throws instead of running anything
    * that would change state (a call, a getter that writes), so completing
-   * or inspecting `obj.` never runs user code (#10).
+   * or inspecting `obj.` never runs user code (#10). Not replMode, which
+   * returns a promise the inspector holds only weakly (#55); a plain
+   * evaluate sees the cells' let and const too.
    */
   #evaluatePure(expression: string): Promise<EvaluateResult | null> {
     return this.#shell
-      .send("Runtime.evaluate", { expression, contextId: this.#contextId, replMode: true, throwOnSideEffect: true })
+      .send("Runtime.evaluate", { expression, contextId: this.#contextId, throwOnSideEffect: true })
       .then(asEvaluateResult, () => null);
   }
 

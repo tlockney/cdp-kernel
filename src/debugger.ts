@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import type { CdpParams, RemoteObject } from "./cdp.ts";
 import { murmur2 } from "./murmur2.ts";
 import type { LineMap } from "./sourcemap.ts";
-import { type CellTransformOptions, transformCellWithLines } from "./transform.ts";
+import { type CellTransformOptions, SETTLE, transformCellWithLines } from "./transform.ts";
 
 /** What the debugger needs from a CDP target: its session, with the Debugger domain. */
 export interface DebugChannel {
@@ -477,7 +477,6 @@ export class Debugger {
       const res = await this.#unlessPaused(channel.send("Runtime.evaluate", {
         expression: name,
         contextId: channel.contextId,
-        replMode: true,
         throwOnSideEffect: true,
       }));
       if (res === null) return [];
@@ -492,9 +491,14 @@ export class Debugger {
     if (!channel) throw new Error("no target to debug");
     // While paused, only a frame can evaluate: use the top one if none was named.
     const frame = typeof frameId === "number" ? this.#frames[frameId] : this.#stopped ? this.#frames[0] : undefined;
+    // replMode (for the console's `await`) returns a promise the inspector
+    // holds only weakly: SETTLE closes that window, as for cells (#55). A
+    // side-effect-free lookup can't await, so it uses a plain evaluate.
     const res = frame
       ? await channel.send("Debugger.evaluateOnCallFrame", { callFrameId: frame.callFrameId, expression, throwOnSideEffect: pure })
-      : await channel.send("Runtime.evaluate", { expression, contextId: channel.contextId, replMode: true, throwOnSideEffect: pure });
+      : pure
+      ? await channel.send("Runtime.evaluate", { expression, contextId: channel.contextId, throwOnSideEffect: true })
+      : await channel.send("Runtime.evaluate", { expression: expression + SETTLE, contextId: channel.contextId, replMode: true });
     if (isRecord(res.exceptionDetails)) {
       const exception = res.exceptionDetails.exception as RemoteObject | undefined;
       throw new Error(exception ? describeRemote(exception) : String(res.exceptionDetails.text ?? "evaluation failed"));
