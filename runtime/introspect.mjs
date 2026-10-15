@@ -77,7 +77,10 @@ function safeSource(fn) {
 function propertyNames(value) {
   if ((typeof value !== "object" && typeof value !== "function") || value === null) return [];
   try {
-    return Object.getOwnPropertyNames(value).filter((n) => !(typeof value === "function" && ["length", "name", "prototype"].includes(n)));
+    // A function's own internals aren't worth listing; older V8 (Node 24)
+    // also gives sloppy-mode functions own `arguments` and `caller`.
+    const internal = ["length", "name", "prototype", "arguments", "caller"];
+    return Object.getOwnPropertyNames(value).filter((n) => !(typeof value === "function" && internal.includes(n)));
   } catch {
     return [];
   }
