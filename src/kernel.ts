@@ -12,6 +12,7 @@ import { decodeMessage, encodeMessage, type JsonObject, type Message, PROTOCOL_V
 import { PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
 import { Interrupted, type KernelTarget, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
 import { BunTarget } from "./bun-target.ts";
+import { Debugger } from "./debugger.ts";
 import { WorkerdTarget } from "./workerd-target.ts";
 import { launchCelld } from "./celld-target.ts";
 import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate } from "./transform.ts";
@@ -73,6 +74,8 @@ export class Kernel {
   readonly #project: DenoProject | null;
   #projectWarning: string | null = null;
   #noticeShownFor: KernelTarget | null = null;
+  /** JupyterLab's visual debugger, for targets driven over CDP (#18). */
+  readonly #debugger: Debugger | null;
   /** Cells run with store_history, for history_request (#10). */
   readonly #history: HistoryEntry[] = [];
   readonly #session = randomUUID();
@@ -99,6 +102,9 @@ export class Kernel {
     this.#runtime = runtime;
     this.#denoCompat = options.denoCompat ?? false;
     this.#project = runtime === "deno" ? this.#loadProject(options.notebookDir ?? process.cwd()) : null;
+    this.#debugger = runtime === "node" || runtime === "deno"
+      ? new Debugger((event) => this.#publish("debug_event", event), () => this.#transformOptions())
+      : null;
     startHeartbeat(conn.hb_port, conn.ip);
     this.#shell = new RouterSocket(conn.shell_port, conn.ip);
     this.#control = new RouterSocket(conn.control_port, conn.ip);
@@ -205,7 +211,9 @@ export class Kernel {
 
   #ensureTarget(): Promise<KernelTarget> {
     if (this.#target) return Promise.resolve(this.#target);
-    this.#targetStarting ??= this.#launchTarget().then((target) => {
+    this.#targetStarting ??= this.#launchTarget().then(async (target) => {
+      // Before any cell runs on it, so breakpoints already apply.
+      await this.#debugger?.attachTarget(target.debug ?? null);
       this.#target = target;
       this.#targetStarting = null;
       return target;
@@ -222,6 +230,7 @@ export class Kernel {
       message: (msg) => void this.#onTargetMessage(msg),
       exit: (code, note) => {
         this.#target = null;
+        void this.#debugger?.attachTarget(null);
         if (!this.#shuttingDown) {
           const text = note ?? `[cdp-kernel] ${this.#runtime} exited (${code}); restarting on next cell`;
           this.#publish("stream", { name: "stderr", text: `\n${text}\n` });
@@ -302,7 +311,10 @@ export class Kernel {
       },
       banner: `cdp-kernel on ${this.#runtime} ${versions?.runtime ?? ""} (${versions?.engine || "?"})`,
       help_links: [],
-      debugger: false,
+      debugger: this.#debugger !== null,
+      // What current ipykernel advertises; JupyterLab itself goes by the
+      // kernelspec's metadata.debugger.
+      supported_features: this.#debugger !== null ? ["debugger"] : [],
     };
   }
 
@@ -317,6 +329,26 @@ export class Kernel {
         await this.#interrupt();
         this.#reply(this.#control, peer, msg, "interrupt_reply", { status: "ok" });
         break;
+      case "debug_request": {
+        // JupyterLab treats a debug request as done only once the kernel
+        // reports idle for it, as ipykernel does for control messages.
+        // (Jupyter Server leaves debug_request out of the kernel's status.)
+        this.#status("busy", msg.header);
+        let reply: JsonObject;
+        try {
+          if (this.#debugger === null) {
+            reply = { type: "response", request_seq: msg.content.seq, command: msg.content.command, success: false, message: `${this.#runtime} targets have no debugger`, body: {} };
+          } else {
+            // Everything but debugInfo talks to the target, so make sure there is one.
+            if (msg.content.command !== "debugInfo") await this.#ensureTarget().catch(() => null);
+            reply = await this.#debugger.handle(msg.content) as JsonObject;
+          }
+          this.#reply(this.#control, peer, msg, "debug_reply", reply);
+        } finally {
+          this.#status("idle", msg.header);
+        }
+        break;
+      }
       case "shutdown_request": {
         const restart = msg.content.restart === true;
         this.#reply(this.#control, peer, msg, "shutdown_reply", { status: "ok", restart });
@@ -431,16 +463,21 @@ export class Kernel {
   async #evaluateCell(target: KernelTarget, code: string): Promise<EvaluateResult> {
     // Object-literal wrapping (Deno's evaluate_line_with_object_wrapping):
     // try `({ ... })` first and fall back to the code as written.
+    // While debugging, cells carry the path JupyterLab gave them and keep a
+    // line map, so breakpoints bind and frames point at the cell (#18).
+    const debugging = this.#debugger?.started === true && target.debug !== undefined;
+    const transform = (source: string) =>
+      debugging && this.#debugger ? this.#debugger.cellScript(code, source) : target.transform(source, this.#transformOptions());
     const wrapped = objectLiteralCandidate(code);
     if (wrapped !== null) {
       try {
-        const result = await target.evaluate(target.transform(wrapped, this.#transformOptions()));
+        const result = await target.evaluate(transform(wrapped));
         if (!result.exceptionDetails) return result;
       } catch (err) {
         if (!(err instanceof CellSyntaxError)) throw err;
       }
     }
-    return target.evaluate(target.transform(code, this.#transformOptions()));
+    return target.evaluate(transform(code));
   }
 
   async #execute(msg: Message, peer: string): Promise<void> {

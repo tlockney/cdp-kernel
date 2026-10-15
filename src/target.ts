@@ -8,6 +8,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { join } from "node:path";
 import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
+import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
 
 /** Targets driven over CDP. */
@@ -40,6 +41,8 @@ export interface KernelTarget {
   lexicalNames(): Promise<string[]>;
   /** inspect_request (#10): text describing a dotted path's value, without running anything. */
   inspect(path: string, detail: number): Promise<string | null>;
+  /** The Debugger domain, on targets driven over CDP (#18). */
+  readonly debug?: DebugChannel;
   replyInput(value: string | null): void;
   kill(): void;
 }
@@ -244,6 +247,8 @@ export class Target implements KernelTarget {
   #contextId: number;
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
+  #paused = false;
+  readonly #baselineGlobals = new Set<string>();
   readonly versions: { runtime: string; engine: string };
 
   private constructor(
@@ -351,7 +356,26 @@ export class Target implements KernelTarget {
       `JSON.stringify(typeof Deno !== "undefined" ? { runtime: Deno.version.deno, engine: "V8 " + Deno.version.v8 } : { runtime: process.versions.node, engine: "V8 " + process.versions.v8 })`,
     );
     Object.assign(target.versions, JSON.parse(String(versions.result.value)));
+    // The runtime's own enumerable globals, before any cell: the debugger's
+    // variable views show only what cells added (#18).
+    const globals = asEvaluateResult(
+      await shell.send("Runtime.evaluate", { expression: "Object.keys(globalThis)", contextId, returnByValue: true }),
+    );
+    const names = globals.result.value;
+    if (Array.isArray(names)) for (const name of names) target.#baselineGlobals.add(String(name));
+    shell.on("Debugger.paused", () => (target.#paused = true));
+    shell.on("Debugger.resumed", () => (target.#paused = false));
     return target;
+  }
+
+  /** The Debugger domain on this target's session, for src/debugger.ts. */
+  get debug(): DebugChannel {
+    return {
+      send: (method, params = {}) => this.#shell.send(method, params),
+      on: (method, listener) => this.#shell.on(method, listener),
+      contextId: this.#contextId,
+      baselineGlobals: this.#baselineGlobals,
+    };
   }
 
   // Binding messages wait until both pipes have caught up to their marker,
@@ -398,6 +422,8 @@ export class Target implements KernelTarget {
    */
   async interrupt(): Promise<void> {
     this.#interrupted = true;
+    // A paused isolate runs nothing to terminate: let it go first (#18).
+    if (this.#paused) await this.#shell.send("Debugger.resume").catch(() => {});
     await this.#control.send("Runtime.terminateExecution");
     this.#shell.abandonPending();
   }

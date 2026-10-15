@@ -44,7 +44,9 @@ function install(runtime: RuntimeName, denoCompat: boolean, name: string, displa
     // Interrupts arrive as interrupt_request on the control channel rather
     // than as SIGINT to this process.
     interrupt_mode: "message",
-    metadata: { runtime, denoCompat, version: VERSION },
+    // JupyterLab enables its visual debugger from metadata.debugger (#18);
+    // only the targets driven over CDP have one.
+    metadata: { runtime, denoCompat, version: VERSION, debugger: runtime === "node" || runtime === "deno" },
   };
   writeFileSync(join(dir, "kernel.json"), JSON.stringify(spec, null, 2) + "\n");
   console.log(`installed kernelspec ${name} -> ${dir}`);

@@ -146,7 +146,14 @@ function isMediaBundle(obj) {
  */
 export function createJupyter(host) {
   async function format(obj) {
-    if (hasDisplaySymbol(obj)) return await obj[$display]();
+    return await formatNow(obj);
+  }
+
+  // format without awaiting: the debugger's variable viewer formats values
+  // while the target is paused, when no promise settles (#18). A $display
+  // method's promise is the caller's to handle.
+  function formatNow(obj) {
+    if (hasDisplaySymbol(obj)) return obj[$display]();
     if (typeof obj !== "object" || obj === null) return { "text/plain": host.inspect(obj) };
     if (isCanvasLike(obj)) {
       const [prefix, data] = obj.toDataURL().split(",");
@@ -240,6 +247,7 @@ export function createJupyter(host) {
       widget: createWidgetFactory(comms.api, $display),
     },
     broadcastResult,
+    formatNow,
     confirm,
     prompt,
     commDispatch: comms.dispatch,
