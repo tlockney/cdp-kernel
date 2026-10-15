@@ -48,6 +48,8 @@ export interface KernelTarget {
 }
 
 const BINDING = "__cdpk_send";
+/** How long a target may take from spawn to a usable session. */
+const START_TIMEOUT_MS = 60_000;
 const MARKER_RE = /\x1b\[cdpk:(\d+)(m?)\]\x1b/;
 const MAX_MARKER_LEN = 24;
 // Lines the runtimes print to stderr on their own: inspector notices, and
@@ -276,7 +278,13 @@ export class Target implements KernelTarget {
   static async launch(
     runtime: CdpRuntime,
     events: TargetEvents,
-    options: { cwd?: string; executable?: string; denoCompat?: boolean; denoConfig?: string } = {},
+    options: {
+      cwd?: string;
+      executable?: string;
+      denoCompat?: boolean;
+      denoConfig?: string;
+      startTimeoutMs?: number;
+    } = {},
   ): Promise<Target> {
     const runtimeUrl = new URL("../runtime/", import.meta.url).href;
     // A Deno target ignores the project's import map for imports made from
@@ -292,6 +300,32 @@ export class Target implements KernelTarget {
     if (runtime === "deno" && options.denoConfig !== undefined) env.CDPK_DENO_PROJECT = "1";
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
+    // A start that fails or stalls must not leave the runtime running: its
+    // pipes and inspector sockets would keep this process alive (#52).
+    const sessions: CdpSession[] = [];
+    const timeoutMs = options.startTimeoutMs ?? START_TIMEOUT_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${cmd} did not start within ${timeoutMs / 1000}s`)), timeoutMs);
+    });
+    try {
+      return await Promise.race([Target.#start(runtime, events, cmd, child, sessions), stalled]);
+    } catch (error) {
+      for (const session of sessions) session.close();
+      child.kill();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  static async #start(
+    runtime: CdpRuntime,
+    events: TargetEvents,
+    cmd: string,
+    child: ChildProcessWithoutNullStreams,
+    sessions: CdpSession[],
+  ): Promise<Target> {
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
 
@@ -327,7 +361,9 @@ export class Target implements KernelTarget {
     });
 
     const shell = await CdpSession.connect(wsUrl);
+    sessions.push(shell);
     const control = await CdpSession.connect(wsUrl);
+    sessions.push(control);
 
     const contextReady = new Promise<number>((resolve) => {
       shell.on("Runtime.executionContextCreated", (params) => {

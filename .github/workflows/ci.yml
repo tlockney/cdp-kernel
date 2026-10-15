@@ -54,12 +54,17 @@ jobs:
 
       - run: npm ci
       - run: npm run check
+      # Each takes a few minutes at most. A hang should fail the job, not hold
+      # a runner until the job's own timeout (#52).
       - run: npm test
+        timeout-minutes: 10
       - run: npm run e2e
+        timeout-minutes: 10
       - if: matrix.shipped
         run: deno publish --dry-run
       - name: e2e (npm package)
         if: matrix.shipped
+        timeout-minutes: 10
         run: |
           npm pack --pack-destination "$RUNNER_TEMP"
           mkdir -p "$RUNNER_TEMP/pkg" && cd "$RUNNER_TEMP/pkg"
@@ -69,6 +74,7 @@ jobs:
           CDPK_E2E_CLI="$RUNNER_TEMP/pkg/node_modules/.bin/cdp-kernel" npm run e2e
       - name: e2e (Deno host)
         if: matrix.shipped
+        timeout-minutes: 10
         run: CDPK_E2E_CLI="deno run -A src/main.ts" npm run e2e
 
   # No Windows job: Windows isn't supported yet, and is its own issue (#32).
@@ -102,3 +108,4 @@ jobs:
       - name: Chromium and its system libraries
         run: uv run --with playwright python -m playwright install --with-deps chromium
       - run: npm run test:lab
+        timeout-minutes: 10
