@@ -31,7 +31,7 @@ import { runtimeDir } from "./package.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
-import { ensureInstalled, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
+import { ensureInstalled, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
 
 /** The driver Worker's modules; the first is its main module. */
 export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "widget.mjs", "evaluator.mjs"];
@@ -133,7 +133,7 @@ export async function bundleModule(specifier: string, cwd: string): Promise<stri
       ? jsrToNpm(specifier.slice(4))
       : null;
     if (pkg) {
-      const { dir, alias } = ensureInstalled(pkg);
+      const { dir, alias } = ensureInstalled(pkg, "npm", { lockFile: findLockFile(cwd) });
       entry = alias + pkg.subpath;
       resolveDir = dir;
     }

@@ -122,7 +122,7 @@ function bunResolve(specifier) {
   if (specifier.startsWith("npm:")) pkg = packages.parsePackageSpecifier(specifier.slice(4));
   else if (specifier.startsWith("jsr:")) pkg = packages.jsrToNpm(specifier.slice(4));
   if (pkg) {
-    const { dir, alias } = packages.ensureInstalled(pkg, "bun");
+    const { dir, alias } = packages.ensureInstalled(pkg, "bun", { lockFile: packages.findLockFile(cwd) });
     return Bun.resolveSync(alias + pkg.subpath, dir);
   }
   // Relative, absolute, or a URL scheme such as node:, bun: or file:.
