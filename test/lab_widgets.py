@@ -27,7 +27,7 @@ from nbformat.v4 import new_code_cell, new_notebook
 from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parent.parent
-PORT = 8899
+BASE_PORT = 8899
 TOKEN = "cdpk-check"
 
 ESM = """export default {
@@ -112,7 +112,18 @@ def button_is(page, text, timeout=20):
                       timeout=timeout, what=f"button to read {text!r}")
 
 
-def check(runtime):
+def stop(server):
+    """Stops the server; one that ignores SIGTERM (Jupyter can take a while
+    to shut its kernels down) is killed, so teardown never fails a check."""
+    server.terminate()
+    try:
+        server.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        server.wait()
+
+
+def check(runtime, port):
     work = Path(tempfile.mkdtemp(prefix="cdpk-lab-"))
     data_dir = work / "data"
     env = {**os.environ, "JUPYTER_DATA_DIR": str(data_dir)}
@@ -129,14 +140,14 @@ def check(runtime):
     nbformat.write(nb, work / "counter.ipynb")
 
     lab = subprocess.Popen(
-        ["jupyter", "lab", "--no-browser", f"--port={PORT}", f"--IdentityProvider.token={TOKEN}",
+        ["jupyter", "lab", "--no-browser", f"--port={port}", f"--IdentityProvider.token={TOKEN}",
          f"--ServerApp.root_dir={work}", "--LabApp.expose_app_in_browser=True"],
         env=env, stdout=subprocess.DEVNULL, stderr=open(work / "lab.log", "w"),
     )
     try:
         for _ in range(120):
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/status?token={TOKEN}", timeout=1)
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status?token={TOKEN}", timeout=1)
                 break
             except Exception:
                 time.sleep(0.5)
@@ -146,7 +157,7 @@ def check(runtime):
             console = []
             page.on("console", lambda m: console.append(f"{m.type}: {m.text}"))
             page.on("pageerror", lambda e: console.append(f"pageerror: {e}"))
-            page.goto(f"http://127.0.0.1:{PORT}/lab?token={TOKEN}")
+            page.goto(f"http://127.0.0.1:{port}/lab?token={TOKEN}")
             wait_until(page, "() => Boolean(window.jupyterapp)", what="JupyterLab app")
             page.evaluate(OPEN_NOTEBOOK, "counter.ipynb")
             try:
@@ -187,8 +198,7 @@ def check(runtime):
             browser.close()
         print(f"ok    {runtime}: widget renders and syncs both ways")
     finally:
-        lab.terminate()
-        lab.wait(timeout=20)
+        stop(lab)
 
 
 def main():
@@ -196,9 +206,10 @@ def main():
     # Fetch Playwright's Chromium on first use; quick when already present.
     subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True, stdout=subprocess.DEVNULL)
     failures = 0
-    for runtime in runtimes:
+    # A port per check, so a server outliving its check can't be reused.
+    for offset, runtime in enumerate(runtimes):
         try:
-            check(runtime)
+            check(runtime, BASE_PORT + offset)
         except Exception as err:
             failures += 1
             print(f"FAIL  {runtime}: {err}")
