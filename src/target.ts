@@ -348,11 +348,11 @@ export class Target implements KernelTarget {
 
     // Wait for the bootstrap's top-level await to finish installing the shim.
     for (let i = 0; i < 200; i++) {
-      const probe = await target.#evaluateRaw(`typeof globalThis.${SHIM}?.tick === "function"`);
+      const probe = await target.#evaluateSync(`typeof globalThis.${SHIM}?.tick === "function"`);
       if (probe.result.value === true) break;
       await new Promise((r) => setTimeout(r, 25));
     }
-    const versions = await target.#evaluateRaw(
+    const versions = await target.#evaluateSync(
       `JSON.stringify(typeof Deno !== "undefined" ? { runtime: Deno.version.deno, engine: "V8 " + Deno.version.v8 } : { runtime: process.versions.node, engine: "V8 " + process.versions.v8 })`,
     );
     Object.assign(target.versions, JSON.parse(String(versions.result.value)));
@@ -390,10 +390,23 @@ export class Target implements KernelTarget {
 
   /** Resolves once all output and messages sent so far have been delivered. */
   async flush(): Promise<void> {
-    const n = await this.#evaluateRaw(`${SHIM}.barrier()`);
+    const n = await this.#evaluateSync(`${SHIM}.barrier()`);
     const barrier = Number(n.result.value);
     await Promise.all([this.#stdout.waitFor(barrier), this.#stderr.waitFor(barrier)]);
     await this.#messages;
+  }
+
+  /**
+   * For expressions that return a value without awaiting. With replMode or
+   * awaitPromise, the inspector holds the result promise only weakly until
+   * its then-callback runs, even when the expression returns a plain value:
+   * a GC in that window fails the call with "Promise was collected" (#50).
+   * A plain evaluate returns the value directly.
+   */
+  #evaluateSync(expression: string): Promise<EvaluateResult> {
+    return this.#shell
+      .send("Runtime.evaluate", { expression, contextId: this.#contextId, returnByValue: true })
+      .then(asEvaluateResult);
   }
 
   #evaluateRaw(expression: string, session = this.#shell): Promise<EvaluateResult> {
