@@ -34,15 +34,22 @@ test("aliasFor is stable and distinct per range", () => {
   assert.match(aliasFor("left-pad", "^1"), /^cdpk-[0-9a-f]{12}$/);
 });
 
-test("installCommand: npm for Node, this runtime's own bun for Bun", () => {
+test("installCommand: npm for Node, this runtime's own bun for Bun, both saving exactly (#40)", () => {
   assert.deepEqual(installCommand("npm", "cdpk-x", "is-odd", "3.0.1"), {
     cmd: "npm",
-    args: ["install", "--no-audit", "--no-fund", "--loglevel=error", "cdpk-x@npm:is-odd@3.0.1"],
+    args: ["install", "--no-audit", "--no-fund", "--loglevel=error", "--save-exact", "cdpk-x@npm:is-odd@3.0.1"],
   });
   assert.deepEqual(installCommand("bun", "cdpk-x", "@jsr/std__text", "1"), {
     cmd: process.execPath,
-    args: ["add", "--silent", "cdpk-x@npm:@jsr/std__text@1"],
+    args: ["add", "--silent", "--exact", "cdpk-x@npm:@jsr/std__text@1"],
   });
+});
+
+test("installCommand lets npm fetch JSR's tarballs, and only JSR's (#39)", () => {
+  // npm 12 refuses npm.jsr.io tarballs as "remote" packages by default.
+  assert.deepEqual(installCommand("npm", "cdpk-j", "@jsr/std__fmt", "1").env, { npm_config_allow_remote: "root" });
+  assert.equal(installCommand("npm", "cdpk-n", "is-odd", "3").env, undefined, "npm packages keep npm's default");
+  assert.equal(installCommand("bun", "cdpk-b", "@jsr/std__fmt", "1").env, undefined);
 });
 
 test("node-hooks.mjs loads in Bun, which has no module.registerHooks", { skip: !hasBun() }, () => {

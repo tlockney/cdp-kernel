@@ -124,8 +124,14 @@ In a cell:
   from the notebook's `node_modules`, `node:` builtins, and `npm:pkg@range`
   or `jsr:@scope/pkg@range`.
   - On Node, `npm:` and `jsr:` install on first use into
-    `~/.cache/cdp-kernel/npm`.
-  - **Lockfile.** To pin versions, create a `cdp-kernel.lock.json` in the
+    `~/.cache/cdp-kernel/npm`. An exact version (`npm:react@19.0.0`) installs
+    exactly that version. A range (`npm:react@19`) is resolved the first
+    time it's imported and stays at that version, even as other packages
+    are installed later. Caches written by cdp-kernel 0.3.0 or earlier
+    recorded ranges, which later installs could re-resolve. Delete
+    `~/.cache/cdp-kernel/npm` to start fresh. `jsr:` works with npm 12,
+    which otherwise refuses JSR's registry tarballs.
+  - **Lockfile** (cdp-kernel 0.4.0 or later). To pin versions, create a `cdp-kernel.lock.json` in the
     notebook's directory (or above it) containing `{}`. From then on, each
     `npm:`/`jsr:` range is recorded with the exact version it resolved to,
     and installed at that version, so the notebook gets the same packages
