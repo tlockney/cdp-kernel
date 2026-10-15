@@ -237,7 +237,8 @@ test("realPath resolves symlinks, async and sync", async (t) => {
   const link = path.join(dir, "link");
   fs.writeFileSync(file, "x");
   fs.symlinkSync(file, link);
-  const expected = fs.realpathSync(file);
+  // The native call expands Windows 8.3 names (RUNNER~1), as Deno.realPath does (#32).
+  const expected = fs.realpathSync.native(file);
   assert.equal(await deno.realPath(link), expected);
   assert.equal(deno.realPathSync(link), expected);
 });

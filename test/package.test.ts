@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   dependencyCutoff,
@@ -56,7 +56,7 @@ test("every runtime file exists and is published", () => {
 test("moduleOrigin: file, jsr (version pinned), other remote", () => {
   assert.deepEqual(moduleOrigin(pathToFileURL("/opt/cdpk/dist/main.js").href), {
     kind: "file",
-    path: "/opt/cdpk/dist/main.js",
+    path: resolve("/opt/cdpk/dist/main.js"), // D:\opt\... on Windows (#32)
   });
   assert.deepEqual(moduleOrigin("https://jsr.io/@tlockney/cdp-kernel/0.1.0/src/main.ts"), {
     kind: "jsr",
@@ -128,7 +128,7 @@ test("runtimeDir uses a file: directory in place", async () => {
   const dir = await runtimeDir(pathToFileURL("/opt/cdpk/runtime/").href, "/unused", () => {
     throw new Error("must not fetch");
   });
-  assert.equal(dir, "/opt/cdpk/runtime/");
+  assert.equal(dir, resolve("/opt/cdpk/runtime") + sep);
 });
 
 test("isInsideNodeModules spots an npm-installed runtime directory", () => {
