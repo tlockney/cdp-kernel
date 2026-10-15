@@ -68,6 +68,7 @@
   "devDependencies": {
     "@types/node": "^24.19.2",
     "typescript": "^5.9.3",
-    "workerd": "1.20261015.1"
+    "workerd": "1.20261015.1",
+    "wrangler": "4.151.0"
   }
 }

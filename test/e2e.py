@@ -271,8 +271,6 @@ def checks(runtime, workdir, offline):
         # Bun has no terminateExecution, but an awaiting cell leaves its event
         # loop free, so the cell is abandoned in place.
         s.run("globalThis.kept = 'state'")
-        # Waiting on a timer: workerd cancels a cell whose promise nothing
-        # pending can settle (hung_cell_reported).
         reply, _ = interrupt_cell(s, "await new Promise((r) => setTimeout(r, 60_000))")
         assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
         _, out = s.run("kept")
@@ -315,14 +313,53 @@ def checks(runtime, workdir, offline):
         want = f"file:|||{cwd}/|{cwd}"
         assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == want, out
 
-    def hung_cell_reported(s):
-        # workerd cancels a request waiting on a promise that nothing pending
-        # can settle; the cell says why, and the session survives.
-        s.run("globalThis.kept = 'state'")
-        reply, _ = s.run("await new Promise(() => {})")
-        assert reply["status"] == "error" and "hung request" in reply["evalue"], reply
-        _, out = s.run("kept")
-        assert "state" in result_of(out)["text/plain"], out
+    def session_carries_over(s):
+        # Every cell runs in one session's IoContext (#26): an I/O object made
+        # in one cell works in the next, and a timer outlives its cell.
+        s.run("globalThis.res = new Response('carried')")
+        reply, out = s.run("await res.text()")
+        assert reply["status"] == "ok", reply
+        assert "carried" in result_of(out)["text/plain"], out
+        s.run("globalThis.fired = false; setTimeout(() => { fired = true }, 100)")
+        time.sleep(0.4)
+        _, out = s.run("fired")
+        assert strip_ansi(result_of(out)["text/plain"]) == "true", out
+
+    def project_notice_once(s):
+        # The first cell says which project's bindings loaded; later ones don't.
+        reply, out = s.run("1 + 1")
+        assert reply["status"] == "ok", reply
+        assert "env has COUNTER, DB, GREETING, KV; worker is its default export" in text_of(out), out
+        _, again = s.run("2 + 2")
+        assert text_of(again) == "", again
+
+    def project_bindings(s):
+        _, out = s.run("env.GREETING")
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "hello", out
+        reply, out = s.run("await env.KV.put('k', 'v1');\nawait env.KV.get('k')")
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "v1", out
+        reply, out = s.run(
+            "await env.DB.exec('CREATE TABLE IF NOT EXISTS t (x)');\n"
+            "await env.DB.prepare('INSERT INTO t VALUES (?)').bind(7).run();\n"
+            "(await env.DB.prepare('SELECT x FROM t').first()).x"
+        )
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]) == "7", out
+
+    def durable_object_stub_across_cells(s):
+        # The project's own Durable Object class, through a stub made once.
+        s.run("const stub = env.COUNTER.get(env.COUNTER.idFromName('e2e'))")
+        first = s.run("await stub.increment()")[1]
+        second = s.run("await stub.increment()")[1]
+        a = int(strip_ansi(result_of(first)["text/plain"]))
+        b = int(strip_ansi(result_of(second)["text/plain"]))
+        assert b == a + 1, (first, second)
+
+    def project_worker_fetch(s):
+        reply, out = s.run("await (await worker.fetch(new Request('https://x/path'), env)).text()")
+        assert reply["status"] == "ok", reply
+        assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "hello from /path", out
 
     def uncaught_later(s):
         s.run("setTimeout(() => { throw new Error('late') }, 10)")
@@ -476,6 +513,11 @@ def checks(runtime, workdir, offline):
                 relative_ts_import, interrupt]
     if runtime == "deno-broken-project":
         return [broken_project_warns_once, typescript, relative_ts_import]
+    if runtime == "workerd-project":
+        # The busy interrupt restarts workerd, so it goes last.
+        return [project_notice_once, kernel_info, project_bindings, durable_object_stub_across_cells,
+                project_worker_fetch, session_carries_over, relative_ts_import,
+                interrupt_await_keeps_state, interrupt_busy_restarts]
 
     tests = [
         kernel_info, stdout_stream, execute_result, typescript, redeclare_const,
@@ -490,7 +532,7 @@ def checks(runtime, workdir, offline):
     if runtime == "workerd":
         # A request can't block on stdin, and workerd has no cwd of its own.
         tests = [t for t in tests if t not in (prompt_stdin, import_meta)]
-        tests += [request_scoped_apis, import_meta_workerd, hung_cell_reported]
+        tests += [request_scoped_apis, import_meta_workerd, session_carries_over]
         if not offline:
             tests.append(workerd_fetch)
     # Busy-loop interrupt keeps state where the inspector can stop running JS.
@@ -518,7 +560,47 @@ VARIANTS = {
     "bun": ("bun", False, False),
     # workerd, evaluating each cell inside a request to a driver Worker (#8).
     "workerd": ("workerd", False, False),
+    # ... in a Workers project, with its bindings through its Miniflare (#26).
+    "workerd-project": ("workerd", False, "workers"),
 }
+
+
+def write_workers_project(workdir):
+    """A Workers project with vars, KV, D1 and its own Durable Object class.
+    Its node_modules is the checkout's, for wrangler and Miniflare."""
+    files = {
+        "package.json": json.dumps({"private": True, "type": "module"}),
+        "wrangler.jsonc": "// a comment, as wrangler allows\n" + json.dumps({
+            "name": "e2e-project",
+            "main": "src/index.ts",
+            "compatibility_date": "2026-09-01",
+            "vars": {"GREETING": "hello"},
+            "kv_namespaces": [{"binding": "KV", "id": "kv-local"}],
+            "d1_databases": [{"binding": "DB", "database_name": "db", "database_id": "local-db"}],
+            "durable_objects": {"bindings": [{"name": "COUNTER", "class_name": "Counter"}]},
+            "migrations": [{"tag": "v1", "new_sqlite_classes": ["Counter"]}],
+        }),
+        "src/index.ts": (
+            'import { DurableObject } from "cloudflare:workers";\n'
+            "export class Counter extends DurableObject {\n"
+            "  async increment(): Promise<number> {\n"
+            '    const n = ((await this.ctx.storage.get<number>("n")) ?? 0) + 1;\n'
+            '    await this.ctx.storage.put("n", n);\n'
+            "    return n;\n"
+            "  }\n"
+            "}\n"
+            "export default {\n"
+            "  fetch(request: Request, env: { GREETING: string }): Response {\n"
+            '    return new Response(env.GREETING + " from " + new URL(request.url).pathname);\n'
+            "  },\n"
+            "};\n"
+        ),
+    }
+    for rel, text in files.items():
+        path = workdir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    (workdir / "node_modules").symlink_to(ROOT / "node_modules")
 
 
 def write_deno_project(workdir):
@@ -589,6 +671,8 @@ def main():
             workdir = Path(tempfile.mkdtemp(prefix="cdpk e2e #%-" if base == "bun" else "cdpk e2e #%?-"))
             if project == "broken":
                 (workdir / "deno.json").write_text("{ this is not json")
+            elif project == "workers":
+                write_workers_project(workdir)
             elif project:
                 write_deno_project(workdir)
             km = KernelManager(kernel_name=f"cdp-{base}{'-deno' if compat else ''}")

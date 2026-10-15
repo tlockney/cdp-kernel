@@ -70,6 +70,7 @@ export class Kernel {
   // A Deno target in a Deno project uses its config (#13).
   readonly #project: DenoProject | null;
   #projectWarning: string | null = null;
+  #noticeShownFor: KernelTarget | null = null;
   readonly #session = randomUUID();
   readonly #shell: RouterSocket;
   readonly #control: RouterSocket;
@@ -443,6 +444,11 @@ export class Kernel {
     this.#executing = true;
     try {
       const target = await this.#ensureTarget();
+      if (target.notice !== undefined && this.#noticeShownFor !== target) {
+        // Once per target, in the first cell it runs.
+        this.#noticeShownFor = target;
+        this.#publish("stream", { name: "stderr", text: `${target.notice}\n` });
+      }
       const result = await this.#evaluateCell(target, code);
       if (result.exceptionDetails) {
         const exception = result.exceptionDetails.exception;

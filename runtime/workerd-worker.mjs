@@ -2,15 +2,14 @@
 //
 // workerd's inspector can evaluate code, but outside a request there is no
 // IoContext: timers, fetch and crypto.randomUUID throw "Disallowed operation
-// called within global scope". So every host request is an HTTP request to
-// this Worker, over a Unix socket only the host can reach, and runs inside
-// that request. The cell code itself comes from transformCellForEval and is
-// run by the UnsafeEval binding as global code, so its declarations persist
-// across requests (see evaluator.mjs).
+// called within global scope". So the host opens one WebSocket session to
+// this Worker (over a Unix socket only it can reach, or through a project's
+// Miniflare) and every request runs inside that session's request. The cell
+// code itself comes from transformCellForEval and is run by the UnsafeEval
+// binding as global code, so its declarations persist (see evaluator.mjs).
 //
-// The response is a stream of JSON lines: console output and iopub messages
-// as they happen, then the reply. One stream per request keeps them in
-// order without the barrier markers the pipe-based targets need.
+// Console output, iopub messages and replies all go back over the one
+// socket, in order, so no barrier markers are needed.
 //
 // workerd can't load modules at runtime beyond its builtins, so the host
 // bundles anything else a cell imports (src/workerd-target.ts) and sends it
@@ -20,7 +19,6 @@ import { formatWithOptions, inspect } from "node:util";
 import { createJupyter } from "./display.mjs";
 import { createHandler } from "./evaluator.mjs";
 
-const ENC = new TextEncoder();
 const BUILTIN = /^(?:node|cloudflare|workerd):/;
 
 function base64(bytes) {
@@ -32,9 +30,7 @@ function base64(bytes) {
 }
 
 // --- Output -----------------------------------------------------------------
-// Lines go to the stream of the request running user code (a cell, a comm
-// message or a result display). Anything emitted between requests, e.g. by a
-// widget's timer, waits for the next one.
+// Lines go to the host's session. Anything emitted before it connects waits.
 let sink = null;
 const outbox = [];
 
@@ -117,6 +113,10 @@ function install(env) {
   globalThis.jupyter = jupyter.namespace;
   globalThis.prompt = jupyter.prompt;
   globalThis.confirm = jupyter.confirm;
+  // A cell has no fetch(request, env), so the Worker's bindings (#26) are a
+  // global, without the kernel's own.
+  const { UNSAFE, TOKEN, META, ...bindings } = env;
+  globalThis.env = bindings;
   const evaluate = (code) => env.UNSAFE.eval(code, "cell");
   handle = createHandler(globalThis.__cdpk, evaluate);
   return evaluate;
@@ -135,35 +135,50 @@ async function loadModules(bundles = {}) {
   }
 }
 
-// Requests that run user code own the output stream.
-const RUNS_USER_CODE = new Set(["eval", "comm", "broadcast"]);
+async function answer(req) {
+  if (req.op === "info") {
+    return {
+      v8: globalThis.process?.versions?.v8 ?? "",
+      bindings: Object.keys(globalThis.env),
+      // A Workers project's default export (src/workers-project.ts).
+      worker: globalThis.worker !== undefined,
+    };
+  }
+  if (req.op === "eval") await loadModules(req.modules);
+  return await handle(req);
+}
 
 export default {
   async fetch(request, env) {
     if (request.headers.get("x-cdpk-token") !== env.TOKEN) return new Response("forbidden", { status: 403 });
+    if (request.headers.get("upgrade") !== "websocket") return new Response("expected a WebSocket", { status: 426 });
     evaluate ??= install(env);
-    if (request.method === "GET") return Response.json({ v8: globalThis.process?.versions?.v8 ?? "" });
 
-    const req = await request.json();
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const write = (line) => void writer.write(ENC.encode(line + "\n")).catch(() => {});
-    const own = RUNS_USER_CODE.has(req.op);
-    if (own) {
-      sink = write;
-      for (const line of outbox.splice(0)) write(line);
-    }
-    (async () => {
+    // The session: every request from the host arrives as a message, and
+    // all of them run in this one request's IoContext. So I/O objects (a
+    // Durable Object stub, a stream) made in one cell work in the next, and
+    // work a cell leaves running outlives it (#26).
+    const { 0: client, 1: server } = new WebSocketPair();
+    server.accept();
+    const send = (line) => {
       try {
-        if (req.op === "eval") await loadModules(req.modules);
-        write(JSON.stringify({ kind: "reply", ...(await handle(req)) }));
-      } catch (err) {
-        write(JSON.stringify({ kind: "reply", failure: String(err?.stack ?? err) }));
-      } finally {
-        if (own && sink === write) sink = null;
-        await writer.close().catch(() => {});
+        server.send(line);
+      } catch {
+        // The host is gone.
       }
-    })();
-    return new Response(readable, { headers: { "content-type": "application/x-ndjson" } });
+    };
+    sink = send;
+    for (const line of outbox.splice(0)) send(line);
+    server.addEventListener("message", (event) => {
+      const req = JSON.parse(event.data);
+      answer(req).then(
+        (reply) => send(JSON.stringify({ kind: "reply", id: req.id, ...reply })),
+        (err) => send(JSON.stringify({ kind: "reply", id: req.id, failure: String(err?.stack ?? err) })),
+      );
+    });
+    server.addEventListener("close", () => {
+      if (sink === send) sink = null;
+    });
+    return new Response(null, { status: 101, webSocket: client });
   },
 };

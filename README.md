@@ -168,29 +168,53 @@ What differs from the CDP targets is listed under [Known gaps](#known-gaps).
 
 workerd's inspector can evaluate code, but outside a request there is no
 I/O context: timers, `fetch` and `crypto.randomUUID()` throw "Disallowed
-operation called within global scope". So the workerd target runs every
-cell inside a request to a driver Worker (`src/workerd-target.ts`,
+operation called within global scope". So the workerd target runs its
+cells inside a driver Worker (`src/workerd-target.ts`,
 `runtime/workerd-worker.mjs`):
 
-- **A private socket.** The host writes a workerd config into a private
-  temporary directory and serves the driver on a Unix socket there. Each
-  request carries a per-launch token. There is no TCP port and no
-  inspector.
-- **Cells run inside requests.** Cells are transformed as for Bun and run
-  by workerd's `UnsafeEval` binding (hence `--experimental`), so cells get
-  Workers' `fetch`, `Request`, `caches`, timers and randomness, and
-  globals persist between cells.
-- **Output streams back.** `console` output and display messages come back
-  on the request's own response as they happen, so they stay in order.
-- **Interrupt.** Aborting a waiting cell's request makes workerd cancel it,
-  keeping state. A busy cell gets the Bun treatment: workerd is stopped and
-  restarts on the next cell.
-- **Hung cells.** workerd itself cancels a cell that waits on a promise
-  nothing pending can settle (`await new Promise(() => {})`), and the cell
-  says so.
+- **One session.** The host opens a single WebSocket to the driver, and
+  every cell runs inside that session's request. Cells get Workers'
+  `fetch`, `Request`, `caches`, timers and randomness, and anything one
+  cell makes carries over to the next: globals, a Durable Object stub, a
+  stream, a timer still pending.
+- **A private socket.** Outside a Workers project, the host writes a
+  workerd config into a private temporary directory and serves the driver
+  on a Unix socket there, opened with a per-launch token. There is no TCP
+  port and no inspector.
+- **Cells.** Cells are transformed as for Bun and run by workerd's
+  `UnsafeEval` binding (hence `--experimental`).
+- **Output.** `console` output and display messages come back over the
+  session as they happen, in order.
+- **Interrupt.** A cell that's waiting on something is abandoned in place,
+  keeping state, as on Bun. A busy one gets Bun's treatment too: workerd is
+  stopped and restarts on the next cell.
 
 What workerd's own process prints, such as its warnings, goes to the Jupyter
 server log, not the notebook.
+
+### Workers projects
+
+If a `wrangler.jsonc`, `wrangler.json` or `wrangler.toml` sits in the
+notebook's directory or above it, the driver runs on the project's own
+Miniflare, the simulator `wrangler dev` uses, with the project's bindings
+(`src/workers-project.ts`):
+
+- `env` holds the bindings: whatever wrangler translates for Miniflare.
+  Vars, KV, D1 and Durable Objects are tested; R2, Queues and the others
+  go through the same path but aren't.
+- The project's `main` is bundled into the driver, so its Durable Object
+  classes run, and `worker` is its default export:
+  `await worker.fetch(new Request("https://x/"), env)`.
+- State lives in the project's `.wrangler/state/cdp-kernel`, beside
+  `wrangler dev`'s own, so the two never open the same Durable Object.
+- The first cell's output names the bindings. If the project can't load,
+  for example because wrangler isn't installed in it, the first cell says
+  why and the kernel runs on plain workerd.
+
+wrangler and Miniflare come from the project's `node_modules`, so they match
+its versions. Miniflare 4 and 5 both work. Miniflare listens on a loopback
+TCP port, so there the per-launch token is what keeps other local processes
+out.
 
 ## Editor types
 
@@ -346,9 +370,9 @@ that failed.
   - Bun 1.4 can't import a module whose path contains `?`.
   - No `--deno-compat` namespace.
 - On workerd:
-  - Work a cell starts but doesn't await, such as a `setTimeout` callback,
-    is canceled when the cell ends, because its request does. This is the
-    same rule Workers follow in production.
+  - All cells share one request, so it never ends. Unlike production
+    Workers, there is no per-request CPU or duration limit, and
+    `ctx.waitUntil` isn't available in a cell.
   - No `prompt()` or `confirm()` answers: they return `null`, as without a
     stdin channel. `jupyter.image(path)` can't read files; pass the bytes.
   - Each imported module is bundled with its dependencies. Two imports that
@@ -356,8 +380,9 @@ that failed.
   - Interrupting a busy cell restarts workerd and loses state.
   - Top-level declarations and results behave as on Bun: declarations are
     `globalThis` properties, and only a trailing expression shows a result.
-  - No bindings yet (KV, Durable Objects, D1) and no way to load a Workers
-    project's `wrangler` config (#26).
+  - In a Workers project, `main` is bundled with esbuild directly, not with
+    wrangler's build. Custom `build` commands, `alias` and module `rules`
+    aren't applied.
 
 ## Provenance
 
