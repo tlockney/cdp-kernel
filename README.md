@@ -7,7 +7,7 @@ runtime: Node or Deno over the Chrome DevTools Protocol, or Bun, workerd and
 celld, which evaluate cells in-process. In principle, anything else whose
 inspector speaks CDP works too.
 
-**Website:** <https://tlockney.github.io/cdp-kernel/> ·
+**Website:** <https://cdp-kernel.org/> ·
 **Docs:** [`docs/`](https://github.com/tlockney/cdp-kernel/tree/main/docs)
 
 This is early software. It passes a conformance suite derived from Deno's
