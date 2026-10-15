@@ -21,6 +21,8 @@ export const VERSION = "0.1.1";
 export const RUNTIME_FILES = [
   "bootstrap.mjs",
   "display.mjs",
+  "comm.mjs",
+  "widget.mjs",
   "node-hooks.mjs",
   "deno-compat.mjs",
   "node-modules-resolve.mjs",

@@ -11,7 +11,11 @@
 //   Deno.readFileSync               -> host.readFile
 //   op_jupyter_broadcast            -> host.send
 // WebGPU texture/buffer display depends on Deno's wgpu bindings and is
-// omitted.
+// omitted. Comms and widgets (jupyter.comm, jupyter.widget) are additions
+// Deno doesn't have; see comm.mjs and widget.mjs.
+
+import { createComms } from "./comm.mjs";
+import { createWidgetFactory } from "./widget.mjs";
 
 export const $display = Symbol.for("Jupyter.display");
 
@@ -220,6 +224,8 @@ export function createJupyter(host) {
     return answer === "" ? defaultValue : answer;
   }
 
+  const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
+
   return {
     namespace: {
       broadcast,
@@ -230,9 +236,12 @@ export function createJupyter(host) {
       svg: taggedTemplate("image/svg+xml"),
       image,
       $display,
+      comm: comms.api,
+      widget: createWidgetFactory(comms.api, $display),
     },
     broadcastResult,
     confirm,
     prompt,
+    commDispatch: comms.dispatch,
   };
 }
