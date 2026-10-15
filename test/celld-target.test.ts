@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -93,14 +93,14 @@ test("bundleDriver makes one module: the driver, and a project's exports", async
 
 type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string };
 
-async function launch(t: { after(fn: () => void): void }, cwd: string) {
+async function launch(t: { after(fn: () => void): void }, cwd: string, executable = CELLD) {
   const events: Event[] = [];
   const handlers: TargetEvents = {
     stream: (stream, text) => void events.push({ stream, text }),
     message: (message) => void events.push({ message }),
     exit: (exit, note) => void events.push({ exit, note }),
   };
-  const target = await launchCelld(handlers, { cwd, executable: CELLD });
+  const target = await launchCelld(handlers, { cwd, executable });
   t.after(() => target.kill());
   /** A cell's value, carried back as an error message to skip display plumbing. */
   const value = async (cell: string): Promise<string> => {
@@ -175,6 +175,7 @@ test("a project's bindings, its Durable Objects, and state beside celld dev's", 
   for (let i = 0; i < 100 && existsSync(config); i++) await new Promise((r) => setTimeout(r, 100));
   assert.ok(!existsSync(config), "the config with the token is removed");
   const second = await launch(t, dir);
+  assert.match(second.target.notice ?? "", /env has COUNTER, GREETING, KV/, "the second launch has the project too");
   assert.equal(await second.value("return await env.COUNTER.get(env.COUNTER.idFromName('t')).increment()"), "2");
   assert.ok(existsSync(join(dir, ".celld", "cdp-kernel", ".celld", "dev")));
   assert.ok(!existsSync(join(dir, ".celld", "dev")), "celld dev's own state is untouched");
@@ -211,4 +212,24 @@ test("interrupting a waiting cell keeps state; a busy one stops celld entirely",
   assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: restartNote("celld") });
   await new Promise((r) => setTimeout(r, 500));
   assert.equal(celldProcesses(), "", "no celld node is left behind");
+});
+
+test("a start that loses a port race is retried, and keeps the project", { skip }, async (t) => {
+  const dir = scratch(t);
+  writeProject(dir, PROJECT_CONFIG);
+  // celld's first `dev` fails as its node does when another process takes
+  // its listener port first (#54); later ones run the real celld.
+  const tries = join(dir, "tries");
+  const fake = join(dir, "celld-racing");
+  writeFileSync(
+    fake,
+    `#!/bin/sh\nif [ "$1" = dev ] && [ ! -e '${tries}' ]; then\n  touch '${tries}'\n` +
+      `  echo 'Error: bind --listen 127.0.0.1:1' >&2\n  echo '    Address already in use (os error 98)' >&2\n  exit 1\nfi\n` +
+      `exec '${CELLD}' "$@"\n`,
+  );
+  chmodSync(fake, 0o755);
+  const { target, value } = await launch(t, dir, fake);
+  assert.ok(existsSync(tries), "the first start failed");
+  assert.match(target.notice ?? "", /env has COUNTER, GREETING, KV/);
+  assert.equal(await value("return env.GREETING"), "hello");
 });
