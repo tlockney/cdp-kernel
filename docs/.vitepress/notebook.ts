@@ -127,7 +127,14 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown): stri
     return `<p class="nb-note">An interactive widget. It runs in JupyterLab, Notebook 7 or VS Code, not on this page.</p>`;
   }
   const markdown = get("text/markdown");
-  if (typeof markdown === "string") return `<div class="nb-markdown">${md.render(markdown, env)}</div>`;
+  if (typeof markdown === "string") {
+    // Headings in output belong to the output, not the page: without ids they
+    // stay out of the outline and get no anchor link.
+    const html = md.render(markdown, { ...(env as object), headers: [] })
+      .replace(/<(h[1-6])\b[^>]*>/g, "<$1>")
+      .replace(/<a class="header-anchor"[^>]*>[\s\S]*?<\/a>/g, "");
+    return `<div class="nb-markdown">${html}</div>`;
+  }
   const json = get("application/json");
   if (json !== undefined) return `<pre class="nb-stream">${escapeHTML(JSON.stringify(json, null, 2))}</pre>`;
   const plain = get("text/plain");
@@ -135,9 +142,14 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown): stri
   return "";
 }
 
-/** A cell's outputs, in a frame labelled with its execution count. */
+/** Marks table cells that hold just a number, so they can be right-aligned. */
+const numberCells = (html: string) =>
+  html.replace(/<td(\s[^>]*)?>(\s*[-+−]?[\d,.]+(?:e[-+]?\d+)?%?\s*)<\/td>/gi, (td, attrs = "", n) =>
+    /\bclass=/.test(attrs) ? td : `<td${attrs} class="nb-num">${n}</td>`);
+
+/** A cell's outputs. */
 export function renderOutputs(md: MarkdownIt, cell: Cell, env: unknown): string {
-  const outputs = (cell.outputs ?? []).map((o) => renderOutput(md, o, env)).filter(Boolean);
+  const outputs = (cell.outputs ?? []).map((o) => numberCells(renderOutput(md, o, env))).filter(Boolean);
   if (!outputs.length) return "";
   return `<div class="nb-outputs" v-pre>${outputs.map((o) => `<div class="nb-output">${o}</div>`).join("")}</div>`;
 }
@@ -187,6 +199,18 @@ function bar(file: string, opts: Options, text: string): string {
 
 const fenceLang: Record<string, string> = { typescript: "ts", javascript: "js", python: "py" };
 
+/** Code cells longer than this many lines start folded. */
+const foldAt = 20;
+
+/** A code cell: its highlighted code, folded when long, and its outputs. */
+function cellHTML(md: MarkdownIt, code: string, cell: Cell, env: unknown): string {
+  const lines = join(cell.source).replace(/\n+$/, "").split("\n").length;
+  const fold = lines > foldAt
+    ? `<button class="nb-unfold" type="button" aria-expanded="false">Show all ${lines} lines</button>`
+    : "";
+  return `<div class="nb-cell${fold ? " nb-folded" : ""}">${code}${fold}${renderOutputs(md, cell, env)}</div>`;
+}
+
 /** A whole notebook: Markdown cells as prose, code cells with their outputs. */
 function renderNotebook(md: MarkdownIt, file: string, env: unknown, opts: Options): string {
   const notebook = readNotebook(file);
@@ -201,7 +225,7 @@ function renderNotebook(md: MarkdownIt, file: string, env: unknown, opts: Option
     else if (cell.cell_type === "code") {
       const fence = "`".repeat(Math.max(3, ...(source.match(/`+/g) ?? []).map((t) => t.length + 1)));
       const code = md.render(`${fence}${lang}\n${source}\n${fence}\n`, env);
-      html += `<div class="nb-cell"><div class="nb-prompt">[${cell.execution_count ?? " "}]</div>${code}${renderOutputs(md, cell, env)}</div>`;
+      html += cellHTML(md, code, cell, env);
     }
   }
   return html;
@@ -241,8 +265,7 @@ export function notebookPlugin(md: MarkdownIt, opts: Options) {
         `${page}: a \`cell\` code block isn't in ${path.relative(opts.docsDir, file)} as written; run npm run docs:notebooks\n${want}`,
       );
     }
-    const count = cell.execution_count ?? " ";
-    return `<div class="nb-cell"><div class="nb-prompt">[${count}]</div>${code}${renderOutputs(md, cell, env)}</div>`;
+    return cellHTML(md, code, cell, env);
   };
 
   // The marker comment becomes a bar offering the notebook for download.

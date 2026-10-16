@@ -53,38 +53,43 @@
   background: var(--vp-c-bg-soft);
 }
 .nb-bar-links a { font-weight: 500; }
-.nb-cell {
-  position: relative;
-  margin: 1rem 0;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
+/* A cell reads as a code block with its output underneath, not as a
+   JupyterLab cell: no prompt, no box around the output. */
+.nb-cell { position: relative; margin: 1.25rem 0 1.5rem; }
+.nb-cell > div[class*="language-"] { margin: 0 !important; }
+/* Long cells start folded to their first lines (theme/index.ts unfolds). */
+.nb-folded > div[class*="language-"] {
+  max-height: 19.5rem;
   overflow: hidden;
 }
-.nb-cell > div[class*="language-"] {
-  margin: 0 !important;
-  border-radius: 0 !important;
-}
-.nb-prompt {
+.nb-folded > div[class*="language-"]::after {
+  content: "";
   position: absolute;
-  z-index: 2;
-  bottom: 100%;
-  left: 0;
-  transform: translateY(1.55rem);
-  padding-left: 0.75rem;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.7rem;
-  color: var(--vp-c-text-3);
+  inset: auto 0 0 0;
+  height: 4rem;
+  background: linear-gradient(transparent, var(--vp-code-block-bg));
   pointer-events: none;
 }
-.nb-cell > div[class*="language-"] pre { padding-top: 1.5rem !important; }
-.nb-outputs {
-  max-height: 26rem;
-  overflow: auto;
-  border-top: 1px solid var(--vp-c-divider);
-  background: var(--vp-c-bg);
+.nb-unfold {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 0.3rem;
+  border-radius: 0 0 8px 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--vp-c-brand-1);
+  background: var(--vp-code-block-bg);
 }
-.nb-output { padding: 0.6rem 1.25rem; }
-.nb-output + .nb-output { border-top: 1px dashed var(--vp-c-divider); }
+.nb-unfold:hover { color: var(--vp-c-brand-2); }
+.nb-folded > div[class*="language-"]:has(+ .nb-unfold) { border-radius: 8px 8px 0 0; }
+.nb-outputs {
+  margin-top: 0.75rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--vp-c-brand-soft);
+}
+.nb-output { padding: 0.25rem 0; overflow-x: auto; }
+.nb-output + .nb-output { margin-top: 0.5rem; }
 .vp-doc .nb-output pre.nb-stream {
   margin: 0;
   padding: 0;
@@ -94,6 +99,8 @@
   line-height: 1.35;
   white-space: pre;
   color: var(--vp-c-text-1);
+  max-height: 24rem;
+  overflow: auto;
 }
 .vp-doc .nb-output pre.nb-stderr { color: var(--vp-c-danger-1); }
 .nb-markdown > :first-child, .nb-html > :first-child { margin-top: 0; }
@@ -111,4 +118,20 @@
 .ansi-cyan { color: var(--vp-c-brand-1); }
 .nb-note { margin: 0; font-size: 0.875rem; font-style: italic; color: var(--vp-c-text-2); }
 .nb-vega { min-height: 2rem; }
-.nb-html table { font-size: 0.8125rem; }
+/* Tables and headings in output: compact, and smaller than the page's own. */
+.vp-doc .nb-output table { margin: 0.25rem 0; font-size: 0.8125rem; line-height: 1.4; }
+.vp-doc .nb-output th, .vp-doc .nb-output td { padding: 0.3rem 0.7rem; }
+.vp-doc .nb-output tr:nth-child(2n) { background: none; }
+.vp-doc .nb-output tbody tr { border-top: 1px solid var(--vp-c-divider); }
+.vp-doc .nb-output th, .vp-doc .nb-output td { border: none; }
+.vp-doc .nb-output thead th { border-bottom: 1px solid var(--vp-c-text-3); background: none; text-align: left; }
+.vp-doc .nb-output td.nb-num { text-align: right; font-variant-numeric: tabular-nums; }
+.vp-doc .nb-output :is(h1, h2, h3, h4) {
+  margin: 0.5rem 0 0.4rem;
+  padding: 0;
+  border: none;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: normal;
+}
