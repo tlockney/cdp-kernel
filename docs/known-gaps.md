@@ -29,6 +29,14 @@
   formatter. `test/formatting.test.ts` runs both runtimes on the fixture
   and fails if a new kind of difference appears (#17).
 - WebGPU texture and buffer display is dropped.
+- The `--deno-compat` namespace on Node (`cdp-node-deno`) is partial: it
+  covers `Deno.jupyter`, `Deno.env`, and Deno's basic file and process
+  functions. Other members (`Deno.serve`, `Deno.Command`, `Deno.open`, …)
+  are `undefined` rather than throwing a clear error
+  ([#172](https://github.com/tlockney/cdp-kernel/issues/172)), and
+  `Deno.version.deno` is `"0.0.0-cdp-kernel"`.
+  [Notebooks written for Deno](jupyter-api.md#notebooks-written-for-deno)
+  lists what's there.
 - On Bun:
   - Interrupting a busy cell restarts Bun and loses state. An awaiting cell
     keeps it.
