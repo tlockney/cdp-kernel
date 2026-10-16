@@ -148,7 +148,8 @@ can't reach the driver, and the token guards against other processes
 running as you. Whatever workerd prints itself, such as its warnings, goes
 to the Jupyter server log with a `[cdp-kernel workerd]` prefix; cell
 output never takes that route. The directory is removed when workerd
-exits.
+exits, crash included. If the kernel process itself is killed first, it
+stays behind in the system temp directory as `cdpk-workerd-*`.
 
 ### A Workers project, on Miniflare
 
@@ -224,8 +225,8 @@ is reported in the first cell, and the driver runs without it.
 `celld dev` runs its worker process in a separate process group and waits
 for it to stop gracefully, which a busy cell never allows. So stopping
 kills that process first, then `celld dev`. The generated files are
-removed when celld exits; a project's state stays in `.celld/cdp-kernel`
-for the next kernel.
+removed when celld exits, unless the kernel process itself is killed
+first. A project's state stays in `.celld/cdp-kernel` for the next kernel.
 
 ## Interrupts
 

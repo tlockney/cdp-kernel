@@ -4,7 +4,9 @@
   controls (sliders, dropdowns) are Python classes, so they're not available.
 - Inspection tooltips show what's found at runtime (type, signature,
   preview, properties), not TypeScript types or JSDoc. On Bun, workerd and
-  celld, a getter on the path is reported but not called. History is kept
+  celld, a getter on the path is reported but not called, and completion
+  works only on a plain dotted path (`a.b.c`): any other expression
+  completes to nothing. History is kept
   for the current kernel session only.
 - The debugger is for Node and Deno targets only. Breakpoints are per line,
   conditional breakpoints and logpoints aren't supported, variables can't be
@@ -27,7 +29,8 @@
   That's deliberate: each runtime's users see the format they expect, and
   Node's inspector has no quote-style option, short of porting Deno's
   formatter. `test/formatting.test.ts` runs both runtimes on the fixture
-  and fails if a new kind of difference appears (#17).
+  and fails if a new kind of difference appears
+  ([#17](https://github.com/tlockney/cdp-kernel/issues/17)).
 - WebGPU texture and buffer display is dropped.
 - On Bun:
   - Interrupting a busy cell restarts Bun and loses state. An awaiting cell
@@ -43,8 +46,8 @@
   - All cells share one request, so it never ends. Unlike production
     Workers, there is no per-request CPU or duration limit, and
     `ctx.waitUntil` isn't available in a cell.
-  - No `prompt()` or `confirm()` answers: they return `null`, as without a
-    stdin channel. `jupyter.image(path)` can't read files; pass the bytes.
+  - No `prompt()` or `confirm()` answers: `prompt()` returns `null` and
+    `confirm()` returns `false`, as without a stdin channel. `jupyter.image(path)` can't read files; pass the bytes.
   - Each imported module is bundled with its dependencies. Two imports that
     share a dependency each get their own copy.
   - Interrupting a busy cell restarts workerd and loses state.
@@ -54,8 +57,8 @@
     wrangler's build. Custom `build` commands, `alias` and module `rules`
     aren't applied.
 - On celld, as on workerd, except:
-  - Only the binding and compatibility keys of a project's config are
-    copied. `assets`, `triggers` and `containers` aren't, and neither is
+  - Only the binding and compatibility keys of a project's config (and
+    Durable Object `migrations`) are copied. `assets`, `triggers` and `containers` aren't, and neither is
     `.dev.vars`. Relative paths inside the copied keys resolve from
     `.celld/cdp-kernel`, not from the project.
   - Interrupting a busy cell restarts celld and loses state.

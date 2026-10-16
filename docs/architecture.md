@@ -5,7 +5,7 @@ The design in full, with the alternatives considered, is in the [feasibility stu
 ## Why this shape
 
 Deno 2.9's kernel is already two halves joined by thirteen ops
-(denoland/deno#34083 rewrote it in JS and dropped libzmq):
+([denoland/deno#34083](https://github.com/denoland/deno/pull/34083) rewrote it in JS and dropped libzmq):
 
 - `cli/js/jupyter_kernel.js`: ZMTP and the Jupyter wire protocol in plain
   JS over TCP.
@@ -82,7 +82,8 @@ bootstrap module.
 
 Edits keep line numbers: a multi-line import rewritten to one line is padded
 with the newlines it replaced (`applyEdits`), so the cell's lines still match
-esbuild's source map (#18).
+esbuild's source map
+([#18](https://github.com/tlockney/cdp-kernel/issues/18)).
 
 On Bun, workerd and celld, cells don't run through replMode, so acorn has a
 second job there: `hoistForEval` declares each top-level name with `var` in
