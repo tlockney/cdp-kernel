@@ -265,6 +265,13 @@ async function platform() {
   const util = await import("node:util");
   const fs = await import("node:fs");
   const buf = Buffer.alloc(1);
+  // Node writes to a pipe without blocking and queues what doesn't fit for
+  // the event loop to flush. input() blocks the main thread in readSync, so
+  // queued output, and the input_request's barrier marker after it, would
+  // never reach the host (#131). Blocking writes finish before readSync
+  // starts, as Node already does on Windows. Not on Bun: it has no
+  // _handle, and touching process.stdout this early truncates large writes.
+  if (!isBun) for (const stream of [process.stdout, process.stderr]) stream._handle?.setBlocking?.(true);
   return {
     inspect: (v) => util.inspect(v, { colors: true, depth: 4 }),
     inspectPlain: (v) => util.inspect(v, { colors: false, depth: 2 }),
