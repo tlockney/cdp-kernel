@@ -25,6 +25,7 @@ import { build } from "esbuild";
 import type { CdpParams } from "./cdp.ts";
 import { parseJsonc } from "./deno-config.ts";
 import { runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 import type { TargetEvents } from "./target.ts";
 import type { WsChannel } from "./ws-client.ts";
 import { cellMeta, type WorkerHost, WorkerdTarget } from "./workerd-target.ts";
@@ -216,9 +217,14 @@ class CelldHost implements WorkerHost {
     const child = spawn(celld, ["dev", dir, "--host", "127.0.0.1", "--port", String(port), "--no-watch"], {
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.once("exit", () => {
+    const removeFiles = () => {
       if (projectConfig === null) rmSync(dir, { recursive: true, force: true });
       else for (const name of ["driver.mjs", "wrangler.jsonc"]) rmSync(join(dir, name), { force: true });
+    };
+    child.once("exit", removeFiles);
+    killOnExit(child, () => {
+      killTree(child);
+      removeFiles();
     });
     // Cell output is captured in the driver; celld's own lines go to the
     // server log.

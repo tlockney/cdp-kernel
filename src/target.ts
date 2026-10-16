@@ -12,6 +12,7 @@ import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type Evalua
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 
 /** Targets driven over CDP. */
 export type CdpRuntime = "node" | "deno";
@@ -325,6 +326,7 @@ export class Target implements KernelTarget {
     if (esbuild !== null) env.CDPK_ESBUILD_BINARY = esbuild;
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
+    killOnExit(child);
     // A start that fails or stalls must not leave the runtime running: its
     // pipes and inspector sockets would keep this process alive (#52).
     const sessions: CdpSession[] = [];

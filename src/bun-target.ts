@@ -14,6 +14,7 @@ import type { Duplex } from "node:stream";
 import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 import { Gates, Interrupted, isTargetMessage, type KernelTarget, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
 
 /**
@@ -74,6 +75,7 @@ export class BunTarget implements KernelTarget {
     const env: Record<string, string | undefined> = { ...process.env, FORCE_COLOR: "1" };
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe", "pipe"], env });
+    killOnExit(child);
     const channel = child.stdio[3];
     if (!child.stdout || !child.stderr || !isDuplex(channel)) {
       child.kill();
