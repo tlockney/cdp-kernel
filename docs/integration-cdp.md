@@ -205,8 +205,8 @@ resolve hook (`module.registerHooks`) that:
 - Maps `jsr:@scope/name` to JSR's npm registry as `@jsr/scope__name`.
 
 Files a cell imports are loaded by Node itself, which strips TypeScript
-types but doesn't compile `enum` and similar syntax
-([Imported TypeScript files](architecture.md#imported-typescript-files)).
+types; the same hook compiles a file with `enum` or similar syntax with
+esbuild ([Imported TypeScript files](architecture.md#imported-typescript-files)).
 
 **The Deno namespace.** A kernel installed with `--deno-compat` sets
 `CDPK_DENO_COMPAT=1`, and `bootstrap.mjs` installs a partial `Deno` global

@@ -117,15 +117,16 @@ esbuild and acorn only rewrite the cell's text. Resolution happens when
 esbuild transforms only the cell. A `.ts` file the cell imports is loaded
 by the target runtime itself:
 
-- Node strips its types natively (strip-only mode). Syntax that needs
-  code generation, such as `enum`, `namespace` with values, or parameter
-  properties, is rejected with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`, though
-  the same syntax works in a cell.
+- Node strips its types natively (strip-only mode), so line numbers in
+  stack traces match the file. A file with syntax that needs code
+  generation, such as `enum`, `namespace` with values, or parameter
+  properties, is compiled by esbuild instead, with an inline source map.
+  The load hook in `runtime/node-hooks.mjs` runs the host's esbuild binary,
+  which the host passes in `CDPK_ESBUILD_BINARY`.
 - Bun and Deno transpile TypeScript fully.
 - On workerd and celld, esbuild's bundle compiles it.
 
-In Deno, the loader compiles every module the same way, so a cell and an
-imported file accept the same syntax.
+So on every runtime, a cell and an imported `.ts` file accept the same syntax.
 
 ## How the tricky parts work
 

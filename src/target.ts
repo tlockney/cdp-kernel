@@ -5,7 +5,9 @@
 import { Buffer } from "node:buffer";
 import process from "node:process";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createRequire } from "node:module";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
@@ -94,6 +96,27 @@ export function launchCommand(
   // Under a Deno host, process.execPath is deno; find node on PATH instead.
   const node = hostRuntime() === "node" ? process.execPath : "node";
   return { cmd: executable ?? node, args: [...inspect, bootstrap] };
+}
+
+/**
+ * The esbuild binary this host's esbuild runs, for a Node target to compile
+ * imported TypeScript Node can't strip (#73); null when it can't be found.
+ * Resolved from esbuild's own location, so it's found in a node_modules
+ * install and in Deno's npm cache alike.
+ */
+export function esbuildBinary(
+  resolve: (specifier: string) => string = import.meta.resolve,
+  platform: string = process.platform,
+  arch: string = process.arch,
+): string | null {
+  if (process.env.ESBUILD_BINARY_PATH) return process.env.ESBUILD_BINARY_PATH;
+  const subpath = platform === "win32" ? "esbuild.exe" : "bin/esbuild";
+  try {
+    const main = fileURLToPath(resolve("esbuild"));
+    return createRequire(main).resolve(`@esbuild/${platform}-${arch}/${subpath}`);
+  } catch {
+    return null;
+  }
 }
 
 /** Messages the bootstrap sends through the CDP binding. */
@@ -298,6 +321,8 @@ export class Target implements KernelTarget {
     const env: Record<string, string | undefined> = { ...process.env, FORCE_COLOR: "1" };
     if (options.denoCompat) env.CDPK_DENO_COMPAT = "1";
     if (runtime === "deno" && options.denoConfig !== undefined) env.CDPK_DENO_PROJECT = "1";
+    const esbuild = runtime === "node" ? esbuildBinary() : null;
+    if (esbuild !== null) env.CDPK_ESBUILD_BINARY = esbuild;
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
     // A start that fails or stalls must not leave the runtime running: its
