@@ -226,9 +226,12 @@ class CelldHost implements WorkerHost {
     });
     // Cell output is captured in the driver; celld's own lines go to the
     // server log.
+    // `early` keeps that output for a startup error only, and stops growing
+    // once the session is open.
     let early = "";
+    let starting = true;
     const log = (chunk: Buffer) => {
-      early += chunk.toString();
+      if (starting) early += chunk.toString();
       process.stderr.write(`[cdp-kernel celld] ${chunk}`);
     };
     child.stdout?.on("data", log);
@@ -257,7 +260,10 @@ class CelldHost implements WorkerHost {
       return channelOf(ws);
     })();
     try {
-      return new CelldHost(child, await Promise.race([ready, exited]), `celld ${version}`.trim(), projectConfig ?? undefined);
+      const host = new CelldHost(child, await Promise.race([ready, exited]), `celld ${version}`.trim(), projectConfig ?? undefined);
+      starting = false;
+      early = "";
+      return host;
     } catch (err) {
       killTree(child);
       throw err;
