@@ -142,3 +142,19 @@ test("TypeScript enums and annotations survive", async () => {
 test("syntax errors throw CellSyntaxError", () => {
   assert.throws(() => transformCellForEval("const = ;"), CellSyntaxError);
 });
+
+test("the cell starts on line 2 whether or not it declares anything (#150)", async () => {
+  const line = (code: string) => transformCellForEval(code).split("\n").findIndex((l) => l.includes("marker")) + 1;
+  assert.equal(line('throw new Error("marker")'), 2);
+  assert.equal(line('const a = 1;\nthrow new Error("marker")'), 3);
+  const s = session();
+  const stackLine = async (code: string) => {
+    try {
+      await s.cell(code);
+    } catch (err) {
+      return Number(/:(\d+):\d+\)?\s*$/m.exec(String((err as Error).stack).split("\n")[1])?.[1]);
+    }
+  };
+  assert.equal(await stackLine('throw new Error("x")'), 2);
+  assert.equal(await stackLine('const b = 1;\nthrow new Error("x")'), 3);
+});

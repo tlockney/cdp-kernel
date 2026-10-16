@@ -264,8 +264,8 @@ function patternNames(pattern: Pattern, names: Set<string>): void {
  * surrounding script, which a global-code eval turns into a property of
  * globalThis. Inside the function the declarations become assignments to
  * those globals:
- *   const { a } = o; class K {}  ->  var a, K;
- *                                    (async () => { ({ a } = o); K = class K {}; })()
+ *   const { a } = o; class K {}  ->  var a, K; (async () => {
+ *                                    ({ a } = o); K = class K {}; })()
  * So later cells, and closures from this one, all see one binding. A `var`
  * in a top-level block or loop head is global too, as in a script; block
  * scoped and function-local declarations stay where they are. Functions
@@ -343,7 +343,9 @@ function hoistForEval(js: string): string {
     }
   });
 
-  const declare = names.size > 0 ? `var ${[...names].join(", ")};\n` : "";
+  // All on the first line, so the cell always starts on line 2, as after
+  // transformCell's one-line prelude (#150).
+  const declare = names.size > 0 ? `var ${[...names].join(", ")}; ` : "";
   const publish = functions.map((name) => ` globalThis.${name} = ${name};`).join("");
   return `${declare}(async () => { 'use strict';${publish}\n${applyEdits(js, edits)}\n})()`;
 }
