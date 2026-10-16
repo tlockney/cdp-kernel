@@ -70,6 +70,11 @@ reported in the first cell's output, and the kernel runs as in a plain
 directory. Outside a project, the target runs with
 `--node-modules-dir=none --no-lock`.
 
+Standard (TC39) decorators and `accessor` fields work on every target
+without configuration: the cell transform compiles them to plain
+JavaScript. `experimentalDecorators: true` selects TypeScript's legacy
+decorators instead.
+
 For Workers and celld projects, see [Choosing a runtime](runtimes.md#workers-projects).
 
 ## Interrupt

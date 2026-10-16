@@ -142,3 +142,13 @@ test("TypeScript enums and annotations survive", async () => {
 test("syntax errors throw CellSyntaxError", () => {
   assert.throws(() => transformCellForEval("const = ;"), CellSyntaxError);
 });
+
+test("standard decorators work in the eval path (#142)", async () => {
+  const s = session();
+  await s.cell([
+    "function tag(cls: any, ctx: ClassDecoratorContext) { cls.prototype.tag = ctx.name; }",
+    "function twice(_: unknown, ctx: ClassAccessorDecoratorContext) { return { init: (v: number) => v * 2 }; }",
+    "@tag class A { @twice accessor x = 1; }",
+  ].join("\n"));
+  assert.deepEqual(await s.cell("[new A().x, new A().tag]"), [[2, "A"]]);
+});
