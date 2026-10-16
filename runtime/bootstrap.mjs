@@ -191,7 +191,7 @@ globalThis.__cdpk = {
   },
   describeError(value) {
     if (value instanceof Error) {
-      return JSON.stringify({ name: value.name, message: value.message, stack: value.stack ?? "" });
+      return JSON.stringify({ name: value.name, message: value.message, stack: stackOf(value) });
     }
     return JSON.stringify({ name: "Error", message: inspect(value), stack: "" });
   },
@@ -221,9 +221,24 @@ if (isDeno) {
   globalThis.Deno = createDenoShim({ jupyter: jupyter.namespace });
 }
 
+/**
+ * An error's stack, with its first line naming the error. Bun now and then
+ * (about one throw in twenty, #216) records a stack whose first line is a
+ * bare "Error", though name and message are set; the frames are right, so
+ * only the header is rebuilt.
+ */
+function stackOf(err) {
+  const stack = err.stack;
+  if (typeof stack !== "string") return "";
+  const nl = stack.indexOf("\n");
+  const first = nl === -1 ? stack : stack.slice(0, nl);
+  if (first !== "Error" || !err.message) return stack;
+  return `${err.name}: ${err.message}${nl === -1 ? "" : stack.slice(nl)}`;
+}
+
 // An error thrown later by a cell's timer or promise must not kill the kernel.
 function reportUncaught(kind, err) {
-  writeErr(`${kind}: ${err instanceof Error ? (err.stack ?? err.message) : inspect(err)}\n`);
+  writeErr(`${kind}: ${err instanceof Error ? (stackOf(err) || err.message) : inspect(err)}\n`);
 }
 if (isDeno) {
   globalThis.addEventListener("unhandledrejection", (e) => {

@@ -69,6 +69,20 @@ test("a thrown error is described by name, message and stack", { skip }, async (
   assert.match(described.stack, /RangeError: out/);
 });
 
+test("every thrown error's stack names it, though Bun sometimes records a bare header", { skip }, async (t) => {
+  const { target, run } = await launch(t);
+  // Bun leaves out the name and message on about one throw in twenty (#216).
+  for (let i = 0; i < 60; i++) {
+    const { exceptionDetails } = await run(`throw new TypeError('boom ${i}')`);
+    assert.ok(exceptionDetails?.exception);
+    assert.match((await target.describeError(exceptionDetails.exception)).stack, new RegExp(`^TypeError: boom ${i}\n`), `throw ${i}`);
+  }
+  // What Bun records then, made by hand.
+  const { exceptionDetails } = await run("const e = new TypeError('made'); e.stack = 'Error\\n    at cell'; throw e");
+  assert.ok(exceptionDetails?.exception);
+  assert.equal((await target.describeError(exceptionDetails.exception)).stack, "TypeError: made\n    at cell");
+});
+
 test("interrupting an awaiting cell abandons it and keeps the session", { skip }, async (t) => {
   const { target, events, run } = await launch(t);
   await run("globalThis.kept = 'state'");
