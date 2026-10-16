@@ -1,7 +1,7 @@
 # cdp-kernel
 
-A Jupyter kernel for TypeScript and JavaScript, extracted from Deno's
-(`deno jupyter`, v2.9.6), that runs notebooks on several JavaScript runtimes. The kernel
+A Jupyter kernel for TypeScript and JavaScript, extracted from the one built
+into Deno 2.9.6 (`deno jupyter`), that runs notebooks on several JavaScript runtimes. The kernel
 host runs on Node or Deno; the code you type runs in a separate **target**
 runtime: Node or Deno over the Chrome DevTools Protocol, or Bun, workerd and
 celld, which evaluate cells in-process. In principle, anything else whose

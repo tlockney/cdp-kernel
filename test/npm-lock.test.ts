@@ -10,11 +10,13 @@ import { join } from "node:path";
 import {
   aliasFor,
   ensureInstalled,
+  ensureInstalledAsync,
   findLockFile,
   type InstallRunner,
   LOCK_FILE,
   readLock,
   withInstallLock,
+  withInstallLockAsync,
   writeLock,
 } from "../runtime/node-hooks.mjs";
 
@@ -144,6 +146,55 @@ test("withInstallLock waits for a live holder, then times out", (t) => {
   const started = Date.now();
   assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 400 }), /timed out waiting for the install lock/);
   assert.ok(Date.now() - started >= 400);
+});
+
+/** Counts event-loop turns while `work` runs: zero means it blocked. */
+async function ticksDuring<T>(work: () => Promise<T>): Promise<{ value: T; ticks: number }> {
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 10);
+  try {
+    return { value: await work(), ticks };
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+test("ensureInstalledAsync installs once, records the lock and leaves the event loop free (#149)", async (t) => {
+  const dir = scratch(t);
+  const cache = useCache(t, dir);
+  const lockFile = join(dir, LOCK_FILE);
+  writeFileSync(lockFile, "{}");
+  const calls: string[] = [];
+  const fake = fakeInstaller("3.0.1", calls);
+  // A slow npm, answering after 200 ms.
+  const run = (...args: Parameters<InstallRunner>) =>
+    new Promise<ReturnType<InstallRunner>>((resolve) => setTimeout(() => resolve(fake(...args)), 200));
+  const { value, ticks } = await ticksDuring(() => ensureInstalledAsync({ name: "is-odd", range: "^3" }, "npm", { lockFile, run }));
+  assert.deepEqual(value, { dir: cache, alias: aliasFor("is-odd", "^3") });
+  assert.ok(ticks >= 5, `timers ran during the install: ${ticks}`);
+  await ensureInstalledAsync({ name: "is-odd", range: "^3" }, "npm", { run });
+  assert.equal(calls.length, 1, "the second request reuses the install");
+  assert.deepEqual(readLock(lockFile).packages, { "is-odd@^3": "3.0.1" });
+  assert.ok(!existsSync(join(cache, ".install-lock")));
+});
+
+test("ensureInstalledAsync rejects a failed install and releases the lock", async (t) => {
+  const dir = scratch(t);
+  const cache = useCache(t, dir);
+  const failing: InstallRunner = () => ({ status: 1, stderr: "E404 not found" });
+  await assert.rejects(ensureInstalledAsync({ name: "nope", range: "1" }, "npm", { run: failing }), /npm install nope@1 failed:\nE404/);
+  assert.ok(!existsSync(join(cache, ".install-lock")));
+});
+
+test("withInstallLockAsync waits for a live holder without blocking, then times out", async (t) => {
+  const dir = scratch(t);
+  mkdirSync(join(dir, ".install-lock"));
+  writeFileSync(join(dir, ".install-lock", "pid"), String(process.pid));
+  const { value, ticks } = await ticksDuring(() =>
+    withInstallLockAsync(dir, () => "never", { timeoutMs: 400 }).then(() => null, (err: Error) => err)
+  );
+  assert.match(String(value), /timed out waiting for the install lock/);
+  assert.ok(ticks >= 10, `timers ran while waiting: ${ticks}`);
 });
 
 test("withInstallLock waits for a live holder however old its lock (#144)", (t) => {

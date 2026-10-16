@@ -131,13 +131,23 @@ function install(env) {
 
 let evaluate = null;
 
+// Modules whose load rejected. Importing one again gives its error again,
+// and the next eval reply names it, so the host bundles it afresh for the
+// next import (#147), which replaces it here.
+const rejected = new Set();
+const unreported = new Set();
+
 /** Evaluates the bundles a cell brings, once each. */
 async function loadModules(bundles = {}) {
   for (const [specifier, script] of Object.entries(bundles)) {
-    if (modules.has(specifier)) continue;
+    if (modules.has(specifier) && !rejected.has(specifier)) continue;
+    rejected.delete(specifier);
     const loading = Promise.resolve().then(() => evaluate(script));
-    // A module that failed to load is retried by the next import of it.
-    loading.catch(() => modules.delete(specifier));
+    loading.catch(() => {
+      if (modules.get(specifier) !== loading) return;
+      rejected.add(specifier);
+      unreported.add(specifier);
+    });
     modules.set(specifier, loading);
   }
 }
@@ -151,8 +161,13 @@ async function answer(req) {
       worker: globalThis.worker !== undefined,
     };
   }
-  if (req.op === "eval") await loadModules(req.modules);
-  return await handle(req);
+  if (req.op !== "eval") return await handle(req);
+  await loadModules(req.modules);
+  const reply = await handle(req);
+  // After the cell, so a load that failed in it is counted.
+  const failedModules = [...unreported];
+  unreported.clear();
+  return { ...reply, failedModules };
 }
 
 export default {
