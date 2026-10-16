@@ -148,7 +148,10 @@ can't reach the driver, and the token guards against other processes
 running as you. Whatever workerd prints itself, such as its warnings, goes
 to the Jupyter server log with a `[cdp-kernel workerd]` prefix; cell
 output never takes that route. The directory is removed when workerd
-exits.
+exits. A kernel that dies without cleaning up, such as one killed with
+SIGKILL, would leave it and workerd behind, so the directory also records the kernel's and workerd's pids, and the
+next workerd kernel to start removes directories whose kernel is gone,
+killing their workerd if it's still running.
 
 ### A Workers project, on Miniflare
 

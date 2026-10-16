@@ -4,6 +4,7 @@
 // end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,7 @@ import {
   compatibilityDateOf,
   findWorkerd,
   importSpecifiers,
+  sweepStaleWorkerdDirs,
   RESTART_NOTE,
   WORKER_MODULES,
   workerdConfig,
@@ -232,4 +234,31 @@ test("comm messages reach registered targets inside a request", { skip }, async 
     handled: true,
   });
   assert.deepEqual(await target.dispatchComm("comm_msg", { comm_id: "c1", data: {} }, {}, []), { handled: true });
+});
+
+test("sweepStaleWorkerdDirs removes a dead kernel's directory and stops its workerd", { skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "cdpk-sweep-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // A pid that has exited, standing in for a SIGKILLed kernel.
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+  const stale = join(root, "cdpk-workerd-stale");
+  mkdirSync(stale);
+  // Stands in for its workerd: a process running in that directory.
+  const orphan = spawn("sleep", ["60"], { cwd: stale, stdio: "ignore" });
+  t.after(() => orphan.kill("SIGKILL"));
+  const orphanExit = new Promise((resolve) => orphan.once("exit", (_code, signal) => resolve(signal)));
+  writeFileSync(join(stale, "owner.json"), JSON.stringify({ host: dead, workerd: orphan.pid }));
+  // A live kernel's, and one whose workerd pid now belongs to another process.
+  const live = join(root, "cdpk-workerd-live");
+  mkdirSync(live);
+  writeFileSync(join(live, "owner.json"), JSON.stringify({ host: process.pid, workerd: orphan.pid }));
+  const reused = join(root, "cdpk-workerd-reused");
+  mkdirSync(reused);
+  writeFileSync(join(reused, "owner.json"), JSON.stringify({ host: dead, workerd: process.pid }));
+
+  sweepStaleWorkerdDirs(root);
+  assert.equal(await orphanExit, "SIGKILL");
+  assert.ok(!existsSync(stale));
+  assert.ok(existsSync(live), "a live kernel's directory is kept");
+  assert.ok(!existsSync(reused), "a dead kernel's directory goes");
 });
