@@ -100,8 +100,15 @@ async function launch(t: { after(fn: () => void): void }, cwd: string, executabl
     message: (message) => void events.push({ message }),
     exit: (exit, note) => void events.push({ exit, note }),
   };
+  const before = new Set(celldPids());
   const target = await launchCelld(handlers, { cwd, executable });
-  t.after(() => target.kill());
+  const own = celldPids().filter((pid) => !before.has(pid));
+  // Wait out celld's graceful stop, which can take seconds, so this launch's
+  // processes don't outlive the test into the next one's check (#93).
+  t.after(async () => {
+    target.kill();
+    assert.deepEqual(await celldGone(own), [], "celld exits after kill()");
+  });
   /** A cell's value, carried back as an error message to skip display plumbing. */
   const value = async (cell: string): Promise<string> => {
     const r = await target.evaluate(target.transform(`throw new Error(String(await (async () => { ${cell} })()))`, {}));
@@ -112,6 +119,25 @@ async function launch(t: { after(fn: () => void): void }, cwd: string, executabl
 
 function celldProcesses(): string {
   return execSync("ps -axo command | grep -v grep | grep -E '(^|/)celld (dev|--no-control-plane)' || true", { encoding: "utf8" }).trim();
+}
+
+function celldPids(): number[] {
+  return execSync("ps -axo pid=,command= | grep -v grep | grep -E '(^|/)celld (dev|--no-control-plane)' || true", { encoding: "utf8" })
+    .split("\n").filter((line) => line.trim()).map((line) => parseInt(line, 10));
+}
+
+/**
+ * The given celld processes still running once they're gone or a deadline
+ * passes. It's past the 3 s after which a graceful stop is forced.
+ */
+async function celldGone(pids: number[], ms = 10_000): Promise<number[]> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const running = new Set(celldPids());
+    const left = pids.filter((pid) => running.has(pid));
+    if (left.length === 0 || Date.now() >= deadline) return left;
+    await new Promise((r) => setTimeout(r, 50));
+  }
 }
 
 function writeProject(dir: string, config: string): void {
@@ -210,7 +236,8 @@ test("interrupting a waiting cell keeps state; a busy one stops celld entirely",
   assert.ok((await outcome) instanceof Interrupted);
   assert.ok(exitedFirst);
   assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: restartNote("celld") });
-  await new Promise((r) => setTimeout(r, 500));
+  // Killed, but a slow runner can take a moment to reap them (#93).
+  await celldGone(celldPids());
   assert.equal(celldProcesses(), "", "no celld node is left behind");
 });
 
