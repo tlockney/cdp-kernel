@@ -34,3 +34,24 @@ test("a target whose inspector never comes up is stopped when the start times ou
   for (let i = 0; i < 40 && alive(pid); i++) await new Promise((r) => setTimeout(r, 25));
   assert.equal(alive(pid), false, "the stalled runtime was killed");
 });
+
+test("a target whose bootstrap never installs the shim is stopped when the start times out", { skip: process.platform === "win32" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cdpk-start-"));
+  const pidFile = join(dir, "pid");
+  const fake = join(dir, "fake-node");
+  // A real inspector, but a script that never defines __cdpk: the probe loop
+  // used to give up after 5 s and return a target every cell fails on (#134).
+  writeFileSync(
+    fake,
+    `#!/bin/sh\necho $$ > "${pidFile}"\nexec "${process.execPath}" --inspect=127.0.0.1:0 --inspect-publish-uid=stderr -e "setInterval(() => {}, 1000)"\n`,
+  );
+  chmodSync(fake, 0o755);
+
+  await assert.rejects(
+    Target.launch("node", events, { executable: fake, startTimeoutMs: 6_000 }),
+    /did not start within 6s/,
+  );
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  for (let i = 0; i < 40 && alive(pid); i++) await new Promise((r) => setTimeout(r, 25));
+  assert.equal(alive(pid), false, "the stalled runtime was killed");
+});

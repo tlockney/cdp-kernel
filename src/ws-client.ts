@@ -2,7 +2,7 @@
 // target's session with its driver Worker (#26). The WebSocket that Node
 // and Deno provide can't connect to a Unix socket, and a TCP listener would
 // be reachable by every local process. Text messages only: that's all the
-// session carries.
+// session carries, so binary messages are dropped.
 
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
@@ -12,6 +12,7 @@ const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 export const OP_CONTINUATION = 0x0;
 export const OP_TEXT = 0x1;
+export const OP_BINARY = 0x2;
 export const OP_CLOSE = 0x8;
 export const OP_PING = 0x9;
 export const OP_PONG = 0xa;
@@ -47,15 +48,24 @@ export function encodeFrame(opcode: number, payload: Buffer, mask: Buffer | null
   return out;
 }
 
-/** Splits a byte stream into frames, holding back a partial one. */
+/**
+ * Splits a byte stream into frames, holding back a partial one. Chunks of a
+ * large frame are only joined once the whole frame has arrived.
+ */
 export class FrameDecoder {
-  #buffer = Buffer.alloc(0);
+  #chunks: Buffer[] = [];
+  #length = 0;
+  /** Bytes the frame at the front needs, once its header is known. */
+  #needed = 0;
 
   push(chunk: Buffer): Frame[] {
-    this.#buffer = Buffer.concat([this.#buffer, chunk]);
+    this.#chunks.push(chunk);
+    this.#length += chunk.length;
+    if (this.#length < this.#needed) return [];
+    let b = this.#chunks.length === 1 ? this.#chunks[0] : Buffer.concat(this.#chunks, this.#length);
+    this.#needed = 0;
     const frames: Frame[] = [];
     for (;;) {
-      const b = this.#buffer;
       if (b.length < 2) break;
       const masked = (b[1] & 0x80) !== 0;
       let len = b[1] & 0x7f;
@@ -71,12 +81,17 @@ export class FrameDecoder {
       }
       const maskAt = offset;
       if (masked) offset += 4;
-      if (b.length < offset + len) break;
+      if (b.length < offset + len) {
+        this.#needed = offset + len;
+        break;
+      }
       const payload = Buffer.from(b.subarray(offset, offset + len));
       if (masked) for (let i = 0; i < len; i++) payload[i] ^= b[maskAt + (i & 3)];
       frames.push({ fin: (b[0] & 0x80) !== 0, opcode: b[0] & 0x0f, payload });
-      this.#buffer = b.subarray(offset + len);
+      b = b.subarray(offset + len);
     }
+    this.#chunks = b.length ? [b] : [];
+    this.#length = b.length;
     return frames;
   }
 }
@@ -107,6 +122,9 @@ export function connectUnixWebSocket(
     let head = Buffer.alloc(0);
     const decoder = new FrameDecoder();
     let parts: Buffer[] = [];
+    // The opcode of the message whose fragments are arriving.
+    let messageOpcode: number | null = null;
+    let closeSent = false;
 
     const finish = () => {
       if (closed) return;
@@ -117,27 +135,39 @@ export function connectUnixWebSocket(
     const write = (opcode: number, payload: Buffer) => {
       if (!closed) socket.write(encodeFrame(opcode, payload));
     };
+    const sendClose = (payload: Buffer) => {
+      if (closeSent) return;
+      closeSent = true;
+      write(OP_CLOSE, payload);
+    };
     const channel: WsChannel = {
       send: (text) => write(OP_TEXT, Buffer.from(text)),
       onMessage: (listener) => void messageListeners.push(listener),
       onClose: (listener) => void closeListeners.push(listener),
       close() {
-        write(OP_CLOSE, Buffer.alloc(0));
+        sendClose(Buffer.alloc(0));
         socket.end();
       },
     };
     const onFrames = (frames: Frame[]) => {
       for (const frame of frames) {
-        if (frame.opcode === OP_TEXT || frame.opcode === OP_CONTINUATION) {
-          parts.push(frame.payload);
-          if (frame.fin) {
-            const text = Buffer.concat(parts).toString("utf8");
+        if (frame.opcode === OP_TEXT || frame.opcode === OP_BINARY || frame.opcode === OP_CONTINUATION) {
+          if (frame.opcode !== OP_CONTINUATION) {
+            messageOpcode = frame.opcode;
             parts = [];
-            for (const listener of messageListeners) listener(text);
+          }
+          if (messageOpcode === OP_TEXT) parts.push(frame.payload);
+          if (frame.fin) {
+            const text = messageOpcode === OP_TEXT ? Buffer.concat(parts).toString("utf8") : null;
+            parts = [];
+            messageOpcode = null;
+            if (text !== null) for (const listener of messageListeners) listener(text);
           }
         } else if (frame.opcode === OP_PING) {
           write(OP_PONG, frame.payload);
         } else if (frame.opcode === OP_CLOSE) {
+          // Echo the status code, as RFC 6455 section 5.5.1 asks.
+          sendClose(frame.payload.subarray(0, 2));
           socket.end();
         }
       }

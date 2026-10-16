@@ -281,8 +281,8 @@ def checks(runtime, workdir, offline):
         return reply, outputs
 
     def interrupt_await_keeps_state(s):
-        # Bun has no terminateExecution, but an awaiting cell leaves its event
-        # loop free, so the cell is abandoned in place.
+        # An awaiting cell leaves the event loop free, so every target
+        # abandons it in place, Bun too, though it has no terminateExecution.
         s.run("globalThis.kept = 'state'")
         reply, _ = interrupt_cell(s, "await new Promise((r) => setTimeout(r, 60_000))")
         assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
@@ -677,7 +677,7 @@ def checks(runtime, workdir, offline):
     if not runtime.startswith(("bun", "workerd", "celld")):
         tests.append(debugger_breakpoint)
     in_process = runtime in ("bun", "workerd", "celld")
-    tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if in_process else [interrupt]
+    tests += [interrupt_await_keeps_state] + ([interrupt_busy_restarts] if in_process else [interrupt])
     if not offline:
         tests += [npm_import, jsr_import]
         # Deno targets resolve npm: themselves; the lockfile is the kernel's.
