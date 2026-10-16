@@ -64,6 +64,8 @@ calls nothing else, so this list is the complete contract:
 
 | Member | What the kernel uses it for |
 |---|---|
+| `runtime` | Which runtime the target is: `node`, `deno`, `bun`, `workerd` or `celld`. |
+| `versions` | The runtime's and the engine's version, shown in the `kernel_info_reply` banner. |
 | `transform(code, options)` | Turns a cell into the script `evaluate` takes. Node and Deno use `transformCell`; the others use `transformCellForEval`. |
 | `evaluate(script)` | Runs a cell. Resolves to a CDP-shaped `EvaluateResult`: a result, or exception details. Rejects with `Interrupted` after an interrupt. |
 | `interrupt()` | Stops the running cell (see [Interrupts](#interrupts)). |

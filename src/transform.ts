@@ -6,7 +6,7 @@
 // TypeScript/JSX part and acorn finds the module syntax that a script can't
 // contain:
 //   import x, { y as z } from "m"  ->  var __cdpk_m0 = await __cdpk.import("m");
-//                                     var x = __cdpk_m0.default, z = __cdpk_m0.y;
+//                                     var x = __cdpk_m0["default"], z = __cdpk_m0["y"];
 //   import("m")                    ->  __cdpk.import("m")
 //   import.meta                    ->  __cdpk.meta
 //   export const a = 1             ->  const a = 1
