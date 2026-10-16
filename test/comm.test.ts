@@ -144,6 +144,22 @@ test("a throwing handler rejects dispatch so the kernel can report it", async ()
   await assert.rejects(comms.dispatch("comm_msg", { comm_id: "id-1", data: {} }, {}, []), /handler broke/);
 });
 
+test("a comm_open handler that throws leaves no comm behind", async () => {
+  const { sent, comms } = harness();
+  let opened: { send(data?: object): void; closed: boolean } | undefined;
+  comms.api.registerTarget("t", (comm) => {
+    opened = comm;
+    throw new Error("open broke");
+  });
+  await assert.rejects(comms.dispatch("comm_open", { comm_id: "a", target_name: "t", data: {} }, {}, []), /open broke/);
+  assert.deepEqual(comms.list(), []);
+  assert.equal(await comms.dispatch("comm_msg", { comm_id: "a", data: {} }, {}, []), false);
+  // The frontend has been told it's closed, so the handle sends nothing.
+  assert.equal(opened?.closed, true);
+  opened?.send({ late: true });
+  assert.deepEqual(sent, []);
+});
+
 test("open comms are listed with their targets", () => {
   const { comms } = harness();
   comms.api.open("a");

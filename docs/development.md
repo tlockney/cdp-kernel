@@ -35,26 +35,35 @@ CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
 ## Releasing
 
 One version number lives in three places: `package.json`, `deno.jsonc` and
-`src/package.ts`. `test/package.test.ts` fails if they disagree. To release:
+`src/package.ts`. `test/package.test.ts` fails if they disagree, or if
+[`CHANGELOG.md`](changelog.md) has no `## <version> (<RELEASE_DATE>)`
+entry for it: move the "Unreleased" items under a heading for the new version as
+part of the bump. To release:
 
 1. Bump all three, and set `RELEASE_DATE` in `src/package.ts` to today
    (UTC). Commit, and merge to `main`.
-2. Tag and push: `git tag v0.1.1 && git push origin v0.1.1`.
+2. Tag and push, for example `git tag v0.4.1 && git push origin v0.4.1`.
 
 The `publish` workflow then:
 
 1. Checks that the tag matches the version, and that `RELEASE_DATE` is
    today or yesterday. A JSR kernelspec's dependency cutoff comes from that
    date, so a stale one would block the release it ships in.
-2. Runs the type check, the unit tests, and the e2e suite against the packed
-   npm tarball and against a Deno host.
-3. Publishes to JSR (`deno publish`).
-4. Publishes to npm (`npm publish`).
+2. Runs the whole CI workflow (`ci.yml`): the type check, unit tests and
+   e2e suite on every matrix cell, the e2e suite against the packed npm
+   tarball and against a Deno host, `deno publish --dry-run`, and the
+   JupyterLab widget test (`lab`).
+3. Once both checks pass, publishes to JSR (`deno publish`) and to npm
+   (`npm publish`), in two jobs that run in parallel.
 
 Both registries authenticate the workflow through GitHub OIDC, so no tokens
 are stored:
 - **npm:** a trusted publisher for `tlockney/cdp-kernel` + `publish.yml`.
 - **JSR:** the package is linked to this repo in its JSR settings.
+
+Once both registries have the version, a `release` job creates the
+GitHub release for the tag, with the version's `CHANGELOG.md` entry as
+its notes.
 
 Neither registry lets a version be republished. Each job skips a version
 its registry already has, so re-running a release only fills in the half
