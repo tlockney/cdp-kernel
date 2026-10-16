@@ -100,7 +100,9 @@ before sending the cell:
 A specifier that can't be bundled becomes a bundle that rejects with
 esbuild's error, so the error appears in the cell that imports it. Since a
 failed bundle isn't remembered, it's rebuilt the next time, after you fix
-the cause. TypeScript files a cell imports are compiled by esbuild as part
+the cause. The same holds for a module that bundles but throws while it
+loads: every import of it shows that error, and the eval reply tells the
+host to bundle it afresh, so the import after a fix loads the new code. TypeScript files a cell imports are compiled by esbuild as part
 of the bundle, `enum` included.
 
 ## Three ways to serve the driver
