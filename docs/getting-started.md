@@ -108,7 +108,7 @@ string. A few things worth knowing early:
   signature, a preview of its value.
 - **Rich output.** `jupyter.md`, `jupyter.html`, `jupyter.svg` and
   `jupyter.image` render their content, and `jupyter.display(...)` shows
-  something without ending the cell. See [Writing notebooks](notebooks.md)
+  something without ending the cell. See [The jupyter namespace](jupyter-api.md)
   for the full API.
 
 Save the notebook and its outputs are saved with it, so someone opening it
@@ -251,8 +251,10 @@ For type errors in your editor, see [Editor types](editor-types.md).
 
 ## Next steps
 
-- [Writing notebooks](notebooks.md): the display API, imports, pinning
-  package versions with a lockfile, and Deno projects.
+- [The jupyter namespace](jupyter-api.md): rich output, updating output
+  in place, and custom display for your own classes.
+- [Writing notebooks](notebooks.md): imports, pinning package versions
+  with a lockfile, and Deno projects.
 - [Choosing a runtime](runtimes.md): when to use Bun, workerd or celld,
   and how they differ.
 - [Debugger](debugger.md): breakpoints in JupyterLab on Node and Deno.
