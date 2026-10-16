@@ -11,6 +11,8 @@ the kernel on Node, Deno, Bun and workerd, and the output described is what
 they produced. Differences between runtimes are noted where they exist,
 and summarized at the end.
 
+<!-- notebook: public/notebooks/jupyter-api.ipynb -->
+
 | Member | What it does |
 | --- | --- |
 | [`jupyter.display(value, options?)`](#showing-output-with-display) | Show a value now, in the middle of a cell, or update one shown earlier. |
@@ -28,7 +30,7 @@ and summarized at the end.
 
 A cell can produce output three ways:
 
-```ts
+```ts cell
 const languages = ["TypeScript", "Rust", "Go"];
 console.log(`${languages.length} languages`);  // stream output (stdout)
 console.error("this goes to stderr");          // stream output (stderr)
@@ -65,7 +67,7 @@ result or passed to `jupyter.display`.
 Use Markdown for reports built from data: headings, tables, emphasis,
 lists and links.
 
-```ts
+```ts cell
 const scores = { Ada: 92, Grace: 88, Linus: 75 };
 const rows = Object.entries(scores)
   .map(([name, score]) => `| ${name} | ${score} |`)
@@ -93,7 +95,7 @@ HTML output can use any element and inline styles. Interpolated values
 are inserted **as is, without escaping**, so text from users, files or the
 network can break the markup or inject a `<script>`. Escape it yourself:
 
-```ts
+```ts cell
 const comment = `<script>alert("hi")</script> & more`;
 const escapeHTML = (s: string) =>
   s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -110,7 +112,7 @@ to `jupyter.md` and `jupyter.svg`.
 SVG is useful for small charts and diagrams drawn from data, with no
 library:
 
-```ts
+```ts cell
 const data = [4, 8, 15, 16, 23, 42];
 const max = Math.max(...data);
 const bars = data.map((v, i) => {
@@ -131,7 +133,7 @@ frontends render SVG output as an image, which requires it.
 to show more than one thing from a cell, or to show progress while a cell
 is still running.
 
-```ts
+```ts cell
 for (const step of ["fetch", "parse", "summarize"]) {
   await jupyter.display(jupyter.md`Finished **${step}**`);
 }
@@ -153,7 +155,7 @@ Give a display a `display_id`, then display again with the same id and
 `update: true` to replace it instead of adding a new output. This makes
 progress bars, counters and live status lines:
 
-```ts
+```ts cell
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const bar = (pct: number) =>
   jupyter.html`<progress value="${pct}" max="100"></progress> ${pct}%`;
@@ -175,7 +177,7 @@ such as `crypto.randomUUID()`.
 With `raw: true`, a plain object is sent as the MIME bundle itself rather
 than being formatted. Use it for media types the helpers don't produce:
 
-```ts
+```ts cell
 const user = { name: "Ada", roles: ["admin", "dev"], active: true };
 await jupyter.display(
   {
@@ -206,7 +208,7 @@ jupyter.image("./chart.png");
 
 or the image's bytes as a `Uint8Array`:
 
-```ts
+```ts cell
 const response = await fetch("https://www.python.org/static/img/python-logo.png");
 const logo = new Uint8Array(await response.arrayBuffer());
 jupyter.image(logo);
@@ -224,7 +226,7 @@ A `Uint8Array` holding a PNG or JPEG is shown as an image without
 A class can choose how its instances appear by implementing a method keyed
 by the `jupyter.$display` symbol. The method returns a MIME bundle:
 
-```ts
+```ts cell
 class Temperature {
   celsius: number;
   constructor(celsius: number) {
@@ -249,7 +251,7 @@ object is shown: as a cell's result, through `jupyter.display`, or through
 `[new Temperature(2), new Temperature(20)]` shows as plain text. Display
 each one instead:
 
-```ts
+```ts cell
 for (const t of [new Temperature(2), new Temperature(20)]) {
   await jupyter.display(t);
 }
@@ -257,7 +259,7 @@ for (const t of [new Temperature(2), new Temperature(20)]) {
 
 The method can be `async`, to fetch or compute what it shows:
 
-```ts
+```ts cell
 class Weather {
   city: string;
   constructor(city: string) {
@@ -323,7 +325,7 @@ Anything else shows as text. Some examples with common npm packages
 builds a chart in code. JupyterLab renders it as an interactive chart
 with no extension.
 
-```ts
+```ts cell
 import * as vl from "npm:vega-lite-api@5";
 
 const sales = [
@@ -340,7 +342,7 @@ A hand-written spec works too: any object whose `toSpec()` returns it.
 DataFrame shows its first 10 rows as an HTML table (the
 `dataresource` part carries 50):
 
-```ts
+```ts cell
 import pl from "npm:nodejs-polars@0.18";
 
 const df = pl.DataFrame({
@@ -354,7 +356,7 @@ df.sort("population_m", true);
 **Drawing with a canvas.** [@napi-rs/canvas](https://github.com/Brooooooklyn/canvas)
 implements the browser's Canvas 2D API:
 
-```ts
+```ts cell
 import { createCanvas } from "npm:@napi-rs/canvas@0.1";
 
 const canvas = createCanvas(200, 100);
@@ -371,7 +373,7 @@ canvas;
 **DOM elements.** A server-side DOM such as [linkedom](https://github.com/WebReflection/linkedom)
 lets you build HTML with the DOM API and show the element:
 
-```ts
+```ts cell
 import { parseHTML } from "npm:linkedom@0.18";
 
 const { document } = parseHTML("<!doctype html><html><body></body></html>");
@@ -396,7 +398,7 @@ buffers; that is not supported here.
 `value` would send, without showing anything. Use it to check a custom
 display, or to reuse the rendered output elsewhere:
 
-```ts
+```ts cell
 const bundle = await jupyter.format(new Temperature(12));
 Object.keys(bundle);  // [ 'text/plain', 'text/html' ]
 ```
@@ -424,7 +426,7 @@ The most useful is `clear_output`, which clears the cell's output. With
 `wait: true` the old output stays until new output arrives, so it doesn't
 flicker:
 
-```ts
+```ts cell
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 for (const n of [3, 2, 1]) {
