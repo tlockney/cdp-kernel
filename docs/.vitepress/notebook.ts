@@ -42,10 +42,25 @@ export interface Cell {
   metadata?: Record<string, unknown>;
 }
 
+/** A widget model as JupyterLab saves it in notebook metadata. */
+export interface WidgetModel {
+  model_module: string;
+  model_name: string;
+  state: Record<string, unknown>;
+  buffers?: { path: (string | number)[]; data: string; encoding: "base64" | "hex" }[];
+}
+
 export interface Notebook {
   cells: Cell[];
-  metadata: { kernelspec?: { name: string; display_name: string } };
+  metadata: {
+    kernelspec?: { name: string; display_name: string };
+    widgets?: { "application/vnd.jupyter.widget-state+json"?: { state: Record<string, WidgetModel> } };
+  };
 }
+
+/** A notebook's saved widget models, by model id. */
+const widgetModels = (notebook: Notebook) =>
+  notebook.metadata.widgets?.["application/vnd.jupyter.widget-state+json"]?.state ?? {};
 
 export const markerRE = /^<!--\s*notebook:\s*(\S+\.ipynb)\s*-->\s*$/m;
 
@@ -94,7 +109,7 @@ export function ansiToHTML(text: string): string {
 const dataURI = (mime: string, data: string) => `data:${mime};base64,${data.replace(/\s+/g, "")}`;
 
 /** One output as HTML, choosing the richest type a browser can show. */
-export function renderOutput(md: MarkdownIt, output: Output, env: unknown): string {
+export function renderOutput(md: MarkdownIt, output: Output, env: unknown, widgets: Record<string, WidgetModel> = {}): string {
   if (output.output_type === "stream") {
     const cls = output.name === "stderr" ? "nb-stream nb-stderr" : "nb-stream";
     return `<pre class="${cls}">${ansiToHTML(join(output.text).replace(/\n$/, ""))}</pre>`;
@@ -123,7 +138,15 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown): stri
     // Drawn in the browser by the theme (theme/vega.ts), from this spec.
     return `<div class="nb-vega" data-spec="${escapeHTML(JSON.stringify(vega))}"></div>`;
   }
-  if (get("application/vnd.jupyter.widget-view+json") !== undefined) {
+  const view = get("application/vnd.jupyter.widget-view+json") as { model_id?: string } | undefined;
+  if (view !== undefined) {
+    const model = view.model_id ? widgets[view.model_id] : undefined;
+    // An anywidget saved with its state runs on the page (theme/widgets.ts),
+    // with no kernel behind it.
+    if (model?.model_module === "anywidget" && typeof model.state._esm === "string") {
+      return `<div class="nb-widget" data-model="${escapeHTML(JSON.stringify(model))}"></div>
+<p class="nb-note">Running in your browser from the saved notebook. With no kernel here, anything the kernel would do in reply doesn't happen.</p>`;
+    }
     return `<p class="nb-note">An interactive widget. It runs in JupyterLab, Notebook 7 or VS Code, not on this page.</p>`;
   }
   const markdown = get("text/markdown");
@@ -148,8 +171,9 @@ const numberCells = (html: string) =>
     /\bclass=/.test(attrs) ? td : `<td${attrs} class="nb-num">${n}</td>`);
 
 /** A cell's outputs. */
-export function renderOutputs(md: MarkdownIt, cell: Cell, env: unknown): string {
-  const outputs = (cell.outputs ?? []).map((o) => numberCells(renderOutput(md, o, env))).filter(Boolean);
+export function renderOutputs(md: MarkdownIt, cell: Cell, env: unknown, notebook?: Notebook): string {
+  const widgets = notebook ? widgetModels(notebook) : {};
+  const outputs = (cell.outputs ?? []).map((o) => numberCells(renderOutput(md, o, env, widgets))).filter(Boolean);
   if (!outputs.length) return "";
   return `<div class="nb-outputs" v-pre>${outputs.map((o) => `<div class="nb-output">${o}</div>`).join("")}</div>`;
 }
@@ -203,12 +227,12 @@ const fenceLang: Record<string, string> = { typescript: "ts", javascript: "js", 
 const foldAt = 20;
 
 /** A code cell: its highlighted code, folded when long, and its outputs. */
-function cellHTML(md: MarkdownIt, code: string, cell: Cell, env: unknown): string {
+function cellHTML(md: MarkdownIt, code: string, cell: Cell, env: unknown, notebook: Notebook): string {
   const lines = join(cell.source).replace(/\n+$/, "").split("\n").length;
   const fold = lines > foldAt
     ? `<button class="nb-unfold" type="button" aria-expanded="false">Show all ${lines} lines</button>`
     : "";
-  return `<div class="nb-cell${fold ? " nb-folded" : ""}">${code}${fold}${renderOutputs(md, cell, env)}</div>`;
+  return `<div class="nb-cell${fold ? " nb-folded" : ""}">${code}${fold}${renderOutputs(md, cell, env, notebook)}</div>`;
 }
 
 /** A whole notebook: Markdown cells as prose, code cells with their outputs. */
@@ -225,7 +249,7 @@ function renderNotebook(md: MarkdownIt, file: string, env: unknown, opts: Option
     else if (cell.cell_type === "code") {
       const fence = "`".repeat(Math.max(3, ...(source.match(/`+/g) ?? []).map((t) => t.length + 1)));
       const code = md.render(`${fence}${lang}\n${source}\n${fence}\n`, env);
-      html += cellHTML(md, code, cell, env);
+      html += cellHTML(md, code, cell, env, notebook);
     }
   }
   return html;
@@ -259,13 +283,14 @@ export function notebookPlugin(md: MarkdownIt, opts: Options) {
     if (!file) throw new Error(`${page}: a \`cell\` code block needs a <!-- notebook: … --> comment on the page`);
     if (!fs.existsSync(file)) throw new Error(`${page}: ${file} is missing; run npm run docs:notebooks`);
     const want = normalize(token.content);
-    const cell = readNotebook(file).cells.find((c) => c.cell_type === "code" && normalize(join(c.source)) === want);
+    const notebook = readNotebook(file);
+    const cell = notebook.cells.find((c) => c.cell_type === "code" && normalize(join(c.source)) === want);
     if (!cell) {
       throw new Error(
         `${page}: a \`cell\` code block isn't in ${path.relative(opts.docsDir, file)} as written; run npm run docs:notebooks\n${want}`,
       );
     }
-    return cellHTML(md, code, cell, env);
+    return cellHTML(md, code, cell, env, notebook);
   };
 
   // The marker comment becomes a bar offering the notebook for download.
