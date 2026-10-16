@@ -407,10 +407,23 @@ def checks(runtime, workdir, offline):
         assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "hello from /path", out
 
     def uncaught_later(s):
-        s.run("setTimeout(() => { throw new Error('late') }, 10)")
-        time.sleep(0.5)
+        _, out = s.run("setTimeout(() => { throw new Error('late throw') }, 10);\n"
+                       "setTimeout(() => Promise.reject(new Error('late reject')), 10);")
+        time.sleep(0.6)
+        # The errors can arrive before the cell's idle, after it, or with the
+        # next cell, so read them wherever they land.
+        late = "".join(c.get("text", "") for t, c in out if t == "stream")
+        while True:
+            try:
+                msg = s.kc.get_iopub_msg(timeout=0.5)
+            except Exception:
+                break
+            if msg["msg_type"] == "stream":
+                late += msg["content"]["text"]
         _, out = s.run("'still alive'")
         assert "still alive" in result_of(out)["text/plain"]
+        late += "".join(c.get("text", "") for t, c in out if t == "stream")
+        assert "late throw" in late and "late reject" in late, late
 
     def complete(s):
         s.kc.complete("Math.fl", 7)

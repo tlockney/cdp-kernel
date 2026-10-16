@@ -51,6 +51,44 @@ Object.assign(console, {
   error: stream("stderr"),
 });
 
+// An error thrown later by a cell's timer or promise goes to stderr, as on
+// the other targets (runtime/bootstrap.mjs). Workers has no global "error"
+// event, so timer callbacks report their own (#148), and so do the
+// promises they return: celld doesn't dispatch "unhandledrejection".
+function reportUncaught(kind, err) {
+  emit({ kind: "stream", name: "stderr", text: `${kind}: ${err instanceof Error ? (err.stack ?? err.message) : inspect(err)}\n` });
+}
+// A rejection both runtimes' events report is shown once.
+const reported = new WeakSet();
+function reportRejection(reason) {
+  if (typeof reason === "object" && reason !== null) {
+    if (reported.has(reason)) return;
+    reported.add(reason);
+  }
+  reportUncaught("Uncaught (in promise)", reason);
+}
+globalThis.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  reportRejection(event.reason);
+});
+globalThis.process?.on?.("unhandledRejection", reportRejection);
+const reporting = (callback) =>
+  typeof callback !== "function" ? callback : function (...args) {
+    let result;
+    try {
+      result = callback.apply(this, args);
+    } catch (err) {
+      reportUncaught("Uncaught", err);
+      return;
+    }
+    if (typeof result?.then === "function") result.then(undefined, reportRejection);
+    return result;
+  };
+for (const name of ["setTimeout", "setInterval", "queueMicrotask"]) {
+  const original = globalThis[name];
+  globalThis[name] = { [name]: (callback, ...rest) => original(reporting(callback), ...rest) }[name];
+}
+
 const jupyter = createJupyter({
   inspect: (value) => inspect(value, { colors: true, depth: 4 }),
   base64,
