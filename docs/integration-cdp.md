@@ -225,8 +225,10 @@ notebook's directory, the host launches Deno with `--config <path>`
 instead of `--node-modules-dir=none`, so the project's import map,
 `nodeModulesDir` and other settings apply as in `deno jupyter`. Its
 `compilerOptions` for JSX and decorators are passed to esbuild for the
-cell transform (`src/deno-config.ts`). A config that can't be read is
-reported in the first cell, and the kernel runs without it.
+cell transform (`src/deno-config.ts`). Standard decorators are always
+lowered by esbuild, since neither acorn nor V8 parses them yet. A config
+that can't be read is reported in the first cell, and the kernel runs
+without it.
 
 **Resolution.** Deno resolves `npm:`, `jsr:`, URLs and import maps itself.
 `bootstrap.mjs` only resolves relative specifiers against the notebook's
