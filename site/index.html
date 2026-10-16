@@ -12,6 +12,7 @@
   <div class="wrap nav">
     <a class="brand" href="./">cdp-kernel</a>
     <nav>
+      <a href="#start">Start</a>
       <a href="#features">Features</a>
       <a href="#runtimes">Runtimes</a>
       <a href="docs/">Docs</a>
@@ -57,12 +58,44 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
         <code>html</code>, <code>svg</code>, <code>image</code>, and
         <code>Symbol.for("Jupyter.display")</code> for your own types.</p>
     </div>
-    <pre class="cell"><code><span class="k">import</span> { format } <span class="k">from</span> <span class="s">"npm:date-fns@4"</span>;
+    <figure class="nb">
+      <div class="nb-head"><span>[1]</span><span>TypeScript (cdp-kernel, node)</span></div>
+      <pre class="cell"><code><span class="k">import</span> { format } <span class="k">from</span> <span class="s">"npm:date-fns@4"</span>;
 
 <span class="k">const</span> now: <span class="t">Date</span> = <span class="k">new</span> <span class="t">Date</span>();
 <span class="k">await</span> jupyter.display(
   jupyter.md<span class="s">`**Today** is ${</span>format(now, <span class="s">"PPPP"</span>)<span class="s">}`</span>,
 );</code></pre>
+      <div class="nb-out"><strong>Today</strong> is Friday, October 16th, 2026</div>
+      <figcaption>The cell's output: Markdown rendered under the cell, and saved with the notebook.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="start" class="alt">
+  <div class="wrap">
+    <h2>Where to start</h2>
+    <p class="sub">The docs are grouped by how much you already know.</p>
+    <div class="grid paths">
+      <a class="path" href="docs/getting-started">
+        <span class="lvl intro">Introductory</span>
+        <h3>New to notebooks</h3>
+        <p>What notebooks and kernels are, installing, and a first notebook. No Jupyter or Deno
+          background needed.</p>
+      </a>
+      <a class="path" href="docs/notebooks">
+        <span class="lvl guide">Guides</span>
+        <h3>Using cdp-kernel</h3>
+        <p>Imports and packages, rich output with the <code>jupyter</code> namespace, choosing a
+          runtime, widgets and the debugger.</p>
+      </a>
+      <a class="path" href="docs/architecture">
+        <span class="lvl adv">Advanced</span>
+        <h3>How it works</h3>
+        <p>How the kernel was extracted from Deno, how cells become runnable code, and how each
+          runtime is driven.</p>
+      </a>
+    </div>
   </div>
 </section>
 
@@ -106,10 +139,12 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
   </div>
 </section>
 
-<section id="runtimes" class="alt">
+<section id="runtimes">
   <div class="wrap">
     <h2>Runtimes</h2>
     <p class="sub">The kernel host runs on Node or Deno. Cells run in a separate target process.</p>
+    <img class="diagram" src="images/concepts/notebook-kernel-runtime.svg" width="860" height="330"
+      alt="The frontend shows the notebook and sends each cell's code to cdp-kernel, which runs it in the runtime you picked (Node, Deno, Bun, workerd or celld) and sends the output back.">
     <table class="rt">
       <thead><tr><th>Target</th><th>How cells run</th><th>Debugger</th></tr></thead>
       <tbody>
