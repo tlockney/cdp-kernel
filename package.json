@@ -50,6 +50,8 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
     "install:node": "node src/main.ts install --runtime node",
     "install:deno": "node src/main.ts install --runtime deno",
     "install:node-deno": "node src/main.ts install --runtime node --deno-compat",
@@ -69,6 +71,7 @@
   "devDependencies": {
     "@types/node": "^24.19.2",
     "typescript": "^5.9.3",
+    "vitepress": "^1.6.4",
     "workerd": "1.20261015.1",
     "wrangler": "4.151.0"
   }
