@@ -54,6 +54,7 @@ export default defineConfig({
         text: "Using cdp-kernel",
         items: [
           { text: "Overview", link: "/" },
+          { text: "Getting started", link: "/getting-started" },
           { text: "Install", link: "/install" },
           { text: "Writing notebooks", link: "/notebooks" },
           { text: "Runtimes", link: "/runtimes" },
