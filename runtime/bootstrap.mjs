@@ -237,6 +237,29 @@ if (isDeno) {
 // Keep the event loop alive between cells.
 setInterval(() => {}, 1 << 30);
 
+// A host killed by SIGKILL can't stop its runtime, and nothing visible to
+// JS here changes when its inspector sessions drop, so watch for the host
+// itself going: reparented, or no longer there (#219). Bun exits on its
+// channel's EOF instead.
+if (!isBun) {
+  // Held here, so a cell that reassigns them can't break the watch.
+  const proc = process;
+  const exit = process.exit.bind(process);
+  const host = proc.ppid;
+  const hostGone = () => {
+    if (proc.ppid !== host) return true;
+    try {
+      proc.kill(host, 0);
+      return false;
+    } catch (err) {
+      return err?.code === "ESRCH";
+    }
+  };
+  setInterval(() => {
+    if (hostGone()) exit(1);
+  }, 2000);
+}
+
 if (isBun) {
   const { startChannel } = await import("./bun-channel.mjs");
   const { createHandler } = await import("./evaluator.mjs");

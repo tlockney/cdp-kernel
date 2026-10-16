@@ -185,7 +185,11 @@ and `unhandledRejection` handlers (in Deno, `error` and
 the error to stderr, so it shows up in whichever cell is running, and the
 kernel survives.
 
-A `setInterval` keeps the event loop alive between cells.
+A `setInterval` keeps the event loop alive between cells. Another checks
+every 2 seconds that the kernel is still there (the runtime's parent pid
+hasn't changed and still exists) and exits if not, so a runtime doesn't
+outlive a kernel that was killed with SIGKILL. A cell stuck in a busy loop
+never lets that check run.
 
 ## Node specifics
 
