@@ -89,7 +89,17 @@ export function createComms(send, newId = () => crypto.randomUUID()) {
     if (msgType === "comm_open") {
       const handler = targets.get(content.target_name);
       if (!handler) return false;
-      await handler(track(content.comm_id, content.target_name), msg);
+      const comm = track(content.comm_id, content.target_name);
+      try {
+        await handler(comm, msg);
+      } catch (err) {
+        // The host answers a failed comm_open with comm_close, so the comm
+        // is gone on the frontend: drop it here too, without running close
+        // handlers or sending anything (#137).
+        comm.closed = true;
+        forget(comm.id);
+        throw err;
+      }
       return true;
     }
     const comm = comms.get(content.comm_id);

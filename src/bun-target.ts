@@ -11,10 +11,11 @@ import process from "node:process";
 import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
-import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
-import { Gates, Interrupted, isTargetMessage, type KernelTarget, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
+import { killOnExit } from "./children.ts";
+import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
 
 /**
  * How long an interrupted target has to answer a ping. A cell waiting on a
@@ -57,6 +58,9 @@ export class BunTarget implements KernelTarget {
   readonly #gates = new Gates();
   readonly #pending = new Map<number, Pending>();
   #nextId = 0;
+  /** Ids of requests interrupt() may cut short: eval and comm. */
+  readonly #interruptibleIds = new Set<number>();
+  #exitedOnce = false;
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
   #stopNote: string | undefined;
@@ -74,6 +78,7 @@ export class BunTarget implements KernelTarget {
     const env: Record<string, string | undefined> = { ...process.env, FORCE_COLOR: "1" };
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe", "pipe"], env });
+    killOnExit(child);
     const channel = child.stdio[3];
     if (!child.stdout || !child.stderr || !isDuplex(channel)) {
       child.kill();
@@ -113,7 +118,8 @@ export class BunTarget implements KernelTarget {
     this.#channel.on("data", (chunk: string) => {
       buffer += chunk;
       for (let nl = buffer.indexOf("\n"); nl !== -1; nl = buffer.indexOf("\n")) {
-        const msg: unknown = JSON.parse(buffer.slice(0, nl));
+        // Cells can write here through __cdpk_send too (#122).
+        const msg = parseJson(buffer.slice(0, nl));
         buffer = buffer.slice(nl + 1);
         if (isTargetMessage(msg)) this.#deliver(msg, events);
         else if (isRecord(msg) && msg.kind === "reply") this.#settle(msg);
@@ -129,11 +135,13 @@ export class BunTarget implements KernelTarget {
     const pending = this.#pending.get(id);
     if (!pending) return; // abandoned
     this.#pending.delete(id);
+    this.#interruptibleIds.delete(id);
     if (typeof reply.failure === "string") pending.reject(new Error(reply.failure));
     else pending.resolve(reply);
   }
 
   #exited(code: number | null, events: TargetEvents): void {
+    this.#exitedOnce = true;
     this.#gates.openAll();
     this.#stdout.close();
     this.#stderr.close();
@@ -144,6 +152,7 @@ export class BunTarget implements KernelTarget {
   #abandonPending(reason: string): void {
     for (const pending of this.#pending.values()) pending.reject(new Abandoned(reason));
     this.#pending.clear();
+    this.#interruptibleIds.clear();
   }
 
   // Binding messages wait until both pipes have caught up to their marker,
@@ -156,10 +165,13 @@ export class BunTarget implements KernelTarget {
     });
   }
 
-  #request(op: string, params: CdpParams = {}): Promise<CdpParams> {
+  #request(op: string, params: CdpParams = {}, interruptible = false): Promise<CdpParams> {
+    // Bun is gone; a write to its channel would never be answered.
+    if (this.#exitedOnce) return Promise.reject(new Abandoned("the bun session is closed"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
+      if (interruptible) this.#interruptibleIds.add(id);
       this.#channel.write(JSON.stringify({ id, op, ...params }) + "\n");
     });
   }
@@ -168,7 +180,7 @@ export class BunTarget implements KernelTarget {
   async #interruptible(op: string, params: CdpParams, what: string): Promise<CdpParams> {
     this.#interrupted = false;
     try {
-      return await this.#request(op, params);
+      return await this.#request(op, params, true);
     } catch (err) {
       if (err instanceof Abandoned || this.#interrupted) throw new Interrupted(`${what} interrupted`);
       throw err;
@@ -176,7 +188,7 @@ export class BunTarget implements KernelTarget {
   }
 
   async evaluate(script: string): Promise<EvaluateResult> {
-    return (await this.#interruptible("eval", { code: script }, "Execution")) as unknown as EvaluateResult;
+    return asEvaluateResult(await this.#interruptible("eval", { code: script }, "Execution"));
   }
 
   /**
@@ -188,12 +200,19 @@ export class BunTarget implements KernelTarget {
    */
   async interrupt(): Promise<void> {
     this.#interrupted = true;
+    const running = [...this.#interruptibleIds];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), INTERRUPT_GRACE_MS)),
     ]);
     if (answered) {
-      this.#abandonPending("interrupted");
+      // Only the cell or comm handler: a barrier or broadcast request in
+      // flight would otherwise fail as a KernelError (#135).
+      for (const id of running) {
+        this.#pending.get(id)?.reject(new Abandoned("interrupted"));
+        this.#pending.delete(id);
+        this.#interruptibleIds.delete(id);
+      }
       return;
     }
     this.#stopNote = RESTART_NOTE;

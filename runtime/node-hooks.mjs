@@ -19,9 +19,9 @@
 // Not a named import: Bun, which loads this file for its npm:/jsr: helpers,
 // has no registerHooks, and a missing named export fails at link time.
 import module from "node:module";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -48,12 +48,19 @@ export function aliasFor(name, range) {
   return `cdpk-${digest}`;
 }
 
-// Each installer keeps its own cache, so npm's and Bun's lockfiles never
-// meet; both read the @jsr registry from .npmrc.
+/**
+ * Each installer keeps its own cache, so npm's and Bun's lockfiles never
+ * meet. Both sit beside the runtime cache (cacheRoot in src/package.ts);
+ * CDPK_CACHE_DIR overrides npm's.
+ */
+export function cacheDirPath(installer, env = process.env, home = homedir()) {
+  if (installer === "npm" && env.CDPK_CACHE_DIR) return env.CDPK_CACHE_DIR;
+  return join(env.XDG_CACHE_HOME || join(home, ".cache"), "cdp-kernel", installer);
+}
+
+// Both caches read the @jsr registry from .npmrc.
 function cacheDir(installer) {
-  const dir = installer === "npm"
-    ? process.env.CDPK_CACHE_DIR ?? join(homedir(), ".cache", "cdp-kernel", "npm")
-    : join(homedir(), ".cache", "cdp-kernel", installer);
+  const dir = cacheDirPath(installer);
   if (!existsSync(join(dir, "package.json"))) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "package.json"), '{ "private": true }\n');
@@ -98,32 +105,55 @@ export function findLockFile(dir) {
 
 /** `{ version: 1, packages: { "name@range": "exact version" } }`; `{}` counts as empty. */
 export function readLock(path) {
-  const parsed = JSON.parse(readFileSync(path, "utf8") || "{}");
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8") || "{}");
+  } catch (err) {
+    throw new Error(`cannot read ${path}: ${err instanceof Error ? err.message : err}`);
+  }
   const packages = parsed && typeof parsed.packages === "object" && parsed.packages !== null ? parsed.packages : {};
   return { version: 1, packages };
 }
 
-/** Sorted, so a lockfile's diff shows only what changed. */
+/**
+ * Sorted, so a lockfile's diff shows only what changed. Written to a
+ * temporary file and renamed into place, so a crash mid-write can't leave
+ * a truncated lockfile (#144).
+ */
 export function writeLock(path, lock) {
   const packages = Object.fromEntries(Object.entries(lock.packages).sort(([a], [b]) => a.localeCompare(b)));
-  writeFileSync(path, JSON.stringify({ version: 1, packages }, null, 2) + "\n");
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ version: 1, packages }, null, 2) + "\n");
+  renameSync(tmp, path);
 }
 
 // --- Serialized installs (#14) -------------------------------------------------
 // Kernels share one cache per installer, and npm/bun both rewrite its
 // package.json and node_modules, so installs take a lock: a directory, which
-// mkdir creates atomically. A lock left by a process that died is taken over.
+// mkdir creates atomically. A lock left by a process that died is taken over;
+// one whose holder is alive is waited on.
 
 const LOCK_DIR = ".install-lock";
-const STALE_MS = 10 * 60 * 1000;
+/** How long a waiter waits for a live holder before giving up. */
+const WAIT_MS = 10 * 60 * 1000;
+/** A lock this old is taken over even if its pid is alive: the pid was reused. */
+const ABANDONED_MS = 60 * 60 * 1000;
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+function holderPid(lockDir) {
+  try {
+    return Number(readFileSync(join(lockDir, "pid"), "utf8"));
+  } catch {
+    return NaN;
+  }
+}
+
 function holderAlive(lockDir) {
   try {
-    const pid = Number(readFileSync(join(lockDir, "pid"), "utf8"));
+    const pid = holderPid(lockDir);
     if (!Number.isInteger(pid) || pid <= 0) return false;
     process.kill(pid, 0);
     return true;
@@ -133,15 +163,13 @@ function holderAlive(lockDir) {
   }
 }
 
-/** Runs `fn` holding the cache's install lock. Synchronous, like the resolve hook. */
-export function withInstallLock(dir, fn, { timeoutMs = STALE_MS } = {}) {
-  const lockDir = join(dir, LOCK_DIR);
-  const deadline = Date.now() + timeoutMs;
+/** Takes the install lock at `lockDir` if it's free: false means wait and try again. */
+function tryLock(lockDir, deadline) {
   for (;;) {
     try {
       mkdirSync(lockDir);
       writeFileSync(join(lockDir, "pid"), String(process.pid));
-      break;
+      return true;
     } catch (err) {
       if (err?.code !== "EEXIST") throw err;
       let age = 0;
@@ -150,19 +178,46 @@ export function withInstallLock(dir, fn, { timeoutMs = STALE_MS } = {}) {
       } catch {
         continue; // released meanwhile
       }
-      // A holder that died, or one stuck for longer than any install takes.
-      if ((age > 1000 && !holderAlive(lockDir)) || age > STALE_MS) {
+      // A holder that died. The grace period covers the gap between mkdir
+      // and writing the pid. A live holder is waited on rather than stolen
+      // from, which would run a second install alongside its own (#144),
+      // unless the lock is so old its pid must have been reused.
+      if ((age > 1000 && !holderAlive(lockDir)) || age > ABANDONED_MS) {
         rmSync(lockDir, { recursive: true, force: true });
         continue;
       }
       if (Date.now() > deadline) throw new Error(`timed out waiting for the install lock ${lockDir}`);
-      sleep(100);
+      return false;
     }
   }
+}
+
+/** Removes the lock only if still ours: a waiter that took it over owns it now. */
+function releaseLock(lockDir) {
+  if (holderPid(lockDir) === process.pid) rmSync(lockDir, { recursive: true, force: true });
+}
+
+/** Runs `fn` holding the cache's install lock. Synchronous, like the resolve hook. */
+export function withInstallLock(dir, fn, { timeoutMs = WAIT_MS } = {}) {
+  const lockDir = join(dir, LOCK_DIR);
+  const deadline = Date.now() + timeoutMs;
+  while (!tryLock(lockDir, deadline)) sleep(100);
   try {
     return fn();
   } finally {
-    rmSync(lockDir, { recursive: true, force: true });
+    releaseLock(lockDir);
+  }
+}
+
+/** withInstallLock for a caller that mustn't block its event loop while it waits. */
+export async function withInstallLockAsync(dir, fn, { timeoutMs = WAIT_MS } = {}) {
+  const lockDir = join(dir, LOCK_DIR);
+  const deadline = Date.now() + timeoutMs;
+  while (!tryLock(lockDir, deadline)) await new Promise((resolve) => setTimeout(resolve, 100));
+  try {
+    return await fn();
+  } finally {
+    releaseLock(lockDir);
   }
 }
 
@@ -189,8 +244,47 @@ export function spawnCommand(cmd, args, platform = process.platform) {
 }
 
 function spawnInstall(cmd, args, cwd, env = {}) {
-  const spawn = spawnCommand(cmd, args);
-  return spawnSync(spawn.cmd, spawn.args, { cwd, encoding: "utf8", env: { ...process.env, ...env }, shell: spawn.shell });
+  const spawned = spawnCommand(cmd, args);
+  return spawnSync(spawned.cmd, spawned.args, { cwd, encoding: "utf8", env: { ...process.env, ...env }, shell: spawned.shell });
+}
+
+/** spawnInstall without blocking: the kernel host keeps answering while it runs (#149). */
+function spawnInstallAsync(cmd, args, cwd, env = {}) {
+  const spawned = spawnCommand(cmd, args);
+  return new Promise((resolve) => {
+    let stderr = "";
+    const child = spawn(spawned.cmd, spawned.args, {
+      cwd,
+      env: { ...process.env, ...env },
+      shell: spawned.shell,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
+    child.on("error", (error) => resolve({ status: null, stderr, error }));
+    child.on("close", (status) => resolve({ status, stderr }));
+  });
+}
+
+/** The version to install for `name@range`: the locked one, if the lockfile has it. */
+function lockedRequest(name, range, lockFile) {
+  const lock = lockFile ? readLock(lockFile) : null;
+  const locked = lock?.packages[`${name}@${range}`];
+  const version = typeof locked === "string" ? locked : range;
+  return { lock, locked: typeof locked === "string", version, alias: aliasFor(name, version) };
+}
+
+/** Records an unlocked request's installed version in the lockfile. */
+function recordLock(dir, name, range, lockFile, { lock, locked, alias }) {
+  if (!lock || locked) return;
+  const resolved = installedVersion(dir, alias);
+  if (resolved !== null) {
+    lock.packages[`${name}@${range}`] = resolved;
+    writeLock(lockFile, lock);
+  }
+}
+
+function checkInstall(result, installer, name, version) {
+  if (result.status !== 0) throw new Error(`${installer} install ${name}@${version} failed:\n${result.stderr || result.error}`);
 }
 
 /**
@@ -201,27 +295,28 @@ function spawnInstall(cmd, args, cwd, env = {}) {
  */
 export function ensureInstalled({ name, range }, installer = "npm", { lockFile = null, run = spawnInstall } = {}) {
   const dir = cacheDir(installer);
-  const key = `${name}@${range}`;
   return withInstallLock(dir, () => {
-    const lock = lockFile ? readLock(lockFile) : null;
-    const locked = lock?.packages[key];
-    const version = typeof locked === "string" ? locked : range;
-    const alias = aliasFor(name, version);
-    if (installedVersion(dir, alias) === null) {
-      const { cmd, args, env } = installCommand(installer, alias, name, version);
-      const result = run(cmd, args, dir, env);
-      if (result.status !== 0) {
-        throw new Error(`${installer} install ${name}@${version} failed:\n${result.stderr || result.error}`);
-      }
+    const request = lockedRequest(name, range, lockFile);
+    if (installedVersion(dir, request.alias) === null) {
+      const { cmd, args, env } = installCommand(installer, request.alias, name, request.version);
+      checkInstall(run(cmd, args, dir, env), installer, name, request.version);
     }
-    if (lock && typeof locked !== "string") {
-      const resolved = installedVersion(dir, alias);
-      if (resolved !== null) {
-        lock.packages[key] = resolved;
-        writeLock(lockFile, lock);
-      }
+    recordLock(dir, name, range, lockFile, request);
+    return { dir, alias: request.alias };
+  });
+}
+
+/** ensureInstalled for the kernel host (workerd's bundler), which mustn't block (#149). */
+export function ensureInstalledAsync({ name, range }, installer = "npm", { lockFile = null, run = spawnInstallAsync } = {}) {
+  const dir = cacheDir(installer);
+  return withInstallLockAsync(dir, async () => {
+    const request = lockedRequest(name, range, lockFile);
+    if (installedVersion(dir, request.alias) === null) {
+      const { cmd, args, env } = installCommand(installer, request.alias, name, request.version);
+      checkInstall(await run(cmd, args, dir, env), installer, name, request.version);
     }
-    return { dir, alias };
+    recordLock(dir, name, range, lockFile, request);
+    return { dir, alias: request.alias };
   });
 }
 
@@ -233,9 +328,11 @@ export function ensureInstalled({ name, range }, installer = "npm", { lockFile =
 // may have been copied away from any node_modules (src/package.ts), and the
 // esbuild binary, unlike its JavaScript API, works from anywhere.
 
-const TS_FILE = /^file:.*\.[cm]?ts$/;
+// Both match a file: URL's path, so a query or fragment (`./x.ts?v=2`, the
+// cache-busting idiom for a module being edited) doesn't hide the extension (#145).
+const TS_FILE = /\.[cm]?ts$/;
 // Node has no format for these extensions, so its loader is never asked.
-const JSX_FILE = /^file:.*\.([jt]sx)$/;
+const JSX_FILE = /\.([jt]sx)$/;
 const TS_FORMATS = { "module-typescript": "module", "commonjs-typescript": "commonjs" };
 
 function isUnsupportedSyntax(err) {
@@ -281,14 +378,15 @@ export function compileTypeScript(source, filename, binary, run = spawnSync, loa
 
 /** The load hook: Node's result unless it would reject the file's TypeScript. */
 export function loadTypeScript(url, context, nextLoad, binary) {
-  const jsx = JSX_FILE.exec(url);
+  const path = url.startsWith("file:") ? new URL(url).pathname : "";
+  const jsx = JSX_FILE.exec(path);
   if (binary && jsx) {
     // Notebooks import ES modules, so it's compiled as one.
     const filename = fileURLToPath(url);
     const source = compileTypeScript(readFileSync(filename, "utf8"), filename, binary, spawnSync, jsx[1]);
     return { format: "module", source, shortCircuit: true };
   }
-  if (!binary || !TS_FILE.test(url)) return nextLoad(url, context);
+  if (!binary || !TS_FILE.test(path)) return nextLoad(url, context);
   let result;
   try {
     result = nextLoad(url, context);

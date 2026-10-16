@@ -4,17 +4,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   aliasFor,
   ensureInstalled,
+  ensureInstalledAsync,
   findLockFile,
   type InstallRunner,
   LOCK_FILE,
   readLock,
   withInstallLock,
+  withInstallLockAsync,
   writeLock,
 } from "../runtime/node-hooks.mjs";
 
@@ -144,6 +146,83 @@ test("withInstallLock waits for a live holder, then times out", (t) => {
   const started = Date.now();
   assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 400 }), /timed out waiting for the install lock/);
   assert.ok(Date.now() - started >= 400);
+});
+
+/** Counts event-loop turns while `work` runs: zero means it blocked. */
+async function ticksDuring<T>(work: () => Promise<T>): Promise<{ value: T; ticks: number }> {
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 10);
+  try {
+    return { value: await work(), ticks };
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+test("ensureInstalledAsync installs once, records the lock and leaves the event loop free (#149)", async (t) => {
+  const dir = scratch(t);
+  const cache = useCache(t, dir);
+  const lockFile = join(dir, LOCK_FILE);
+  writeFileSync(lockFile, "{}");
+  const calls: string[] = [];
+  const fake = fakeInstaller("3.0.1", calls);
+  // A slow npm, answering after 200 ms.
+  const run = (...args: Parameters<InstallRunner>) =>
+    new Promise<ReturnType<InstallRunner>>((resolve) => setTimeout(() => resolve(fake(...args)), 200));
+  const { value, ticks } = await ticksDuring(() => ensureInstalledAsync({ name: "is-odd", range: "^3" }, "npm", { lockFile, run }));
+  assert.deepEqual(value, { dir: cache, alias: aliasFor("is-odd", "^3") });
+  assert.ok(ticks >= 5, `timers ran during the install: ${ticks}`);
+  await ensureInstalledAsync({ name: "is-odd", range: "^3" }, "npm", { run });
+  assert.equal(calls.length, 1, "the second request reuses the install");
+  assert.deepEqual(readLock(lockFile).packages, { "is-odd@^3": "3.0.1" });
+  assert.ok(!existsSync(join(cache, ".install-lock")));
+});
+
+test("ensureInstalledAsync rejects a failed install and releases the lock", async (t) => {
+  const dir = scratch(t);
+  const cache = useCache(t, dir);
+  const failing: InstallRunner = () => ({ status: 1, stderr: "E404 not found" });
+  await assert.rejects(ensureInstalledAsync({ name: "nope", range: "1" }, "npm", { run: failing }), /npm install nope@1 failed:\nE404/);
+  assert.ok(!existsSync(join(cache, ".install-lock")));
+});
+
+test("withInstallLockAsync waits for a live holder without blocking, then times out", async (t) => {
+  const dir = scratch(t);
+  mkdirSync(join(dir, ".install-lock"));
+  writeFileSync(join(dir, ".install-lock", "pid"), String(process.pid));
+  const { value, ticks } = await ticksDuring(() =>
+    withInstallLockAsync(dir, () => "never", { timeoutMs: 400 }).then(() => null, (err: Error) => err)
+  );
+  assert.match(String(value), /timed out waiting for the install lock/);
+  assert.ok(ticks >= 10, `timers ran while waiting: ${ticks}`);
+});
+
+test("withInstallLock waits for a live holder however old its lock (#144)", (t) => {
+  const dir = scratch(t);
+  const lockDir = join(dir, ".install-lock");
+  mkdirSync(lockDir);
+  writeFileSync(join(lockDir, "pid"), String(process.pid));
+  // Older than the 10-minute wait, as a long install's lock would be.
+  const old = new Date(Date.now() - 15 * 60 * 1000);
+  utimesSync(lockDir, old, old);
+  assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 300 }), /timed out waiting for the install lock/);
+  assert.equal(readFileSync(join(lockDir, "pid"), "utf8"), String(process.pid));
+});
+
+test("withInstallLock leaves a lock another process took over", (t) => {
+  const dir = scratch(t);
+  const lockDir = join(dir, ".install-lock");
+  withInstallLock(dir, () => writeFileSync(join(lockDir, "pid"), "1"));
+  assert.ok(existsSync(lockDir), "the new holder's lock is still there");
+});
+
+test("writeLock replaces the file in one step; a corrupt lockfile names itself", (t) => {
+  const dir = scratch(t);
+  const path = join(dir, LOCK_FILE);
+  writeLock(path, { version: 1, packages: { "is-odd@^3": "3.0.1" } });
+  assert.deepEqual(readdirSync(dir), [LOCK_FILE], "no temporary file left behind");
+  writeFileSync(path, '{"version": 1, "packages": {"is-odd@^3": "3.0');
+  assert.throws(() => readLock(path), (err: Error) => err.message.startsWith(`cannot read ${path}: `));
 });
 
 test("two kernels installing at once don't overlap, and install once", async (t) => {

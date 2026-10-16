@@ -41,6 +41,9 @@ export function parseConnectionInfo(json: string): ConnectionInfo {
   for (const port of ["shell_port", "control_port", "stdin_port", "iopub_port", "hb_port"] as const) {
     if (typeof info[port] !== "number") throw new Error(`connection file: missing ${port}`);
   }
+  for (const field of ["ip", "key"] as const) {
+    if (info[field] !== undefined && typeof info[field] !== "string") throw new Error(`connection file: ${field} is not a string`);
+  }
   if (info.transport !== undefined && info.transport !== "tcp") {
     throw new Error(`unsupported transport ${info.transport}; only tcp is implemented`);
   }
@@ -65,6 +68,16 @@ interface ErrorContent extends JsonObject {
   evalue: string;
   traceback: string[];
 }
+
+/** Shell requests other than execute_request, and their reply types. */
+const SHELL_REPLIES: Record<string, string> = {
+  kernel_info_request: "kernel_info_reply",
+  complete_request: "complete_reply",
+  is_complete_request: "is_complete_reply",
+  inspect_request: "inspect_reply",
+  history_request: "history_reply",
+  comm_info_request: "comm_info_reply",
+};
 
 export class Kernel {
   readonly #conn: ConnectionInfo;
@@ -116,6 +129,14 @@ export class Kernel {
     // Start the runtime eagerly so the first cell doesn't pay for it.
     this.#ensureTarget().catch((err) => this.#log(`target failed to start: ${err}`));
     process.on("SIGINT", () => void this.#interrupt());
+    // Exiting runs the exit hook that kills the runtime (src/children.ts);
+    // these signals' default action would skip it (#218).
+    for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129]] as const) {
+      process.on(signal, () => {
+        this.#shuttingDown = true;
+        process.exit(code);
+      });
+    }
     await Promise.all([this.#loop(this.#shell, (m, p) => this.#handleShell(m, p)),
       this.#loop(this.#control, (m, p) => this.#handleControl(m, p))]);
   }
@@ -227,7 +248,7 @@ export class Kernel {
   #targetEvents(): TargetEvents {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
-      message: (msg) => void this.#onTargetMessage(msg),
+      message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
       exit: (code, note) => {
         this.#target = null;
         void this.#debugger?.attachTarget(null);
@@ -321,37 +342,42 @@ export class Kernel {
   // --- control channel ------------------------------------------------------
 
   async #handleControl(msg: Message, peer: string): Promise<void> {
+    // Every request is wrapped in busy/idle, as on shell (#124). JupyterLab
+    // treats a debug request as done only once the kernel reports idle for
+    // it. (Jupyter Server leaves debug_request out of the kernel's status.)
+    this.#status("busy", msg.header);
+    try {
+      await this.#controlRequest(this.#control, msg, peer);
+    } finally {
+      this.#status("idle", msg.header);
+    }
+  }
+
+  /** Control requests; shutdown and interrupt may also arrive on shell (#124). */
+  async #controlRequest(socket: RouterSocket, msg: Message, peer: string): Promise<void> {
     switch (msg.header.msg_type) {
       case "kernel_info_request":
-        this.#reply(this.#control, peer, msg, "kernel_info_reply", this.#kernelInfo());
+        this.#reply(socket, peer, msg, "kernel_info_reply", this.#kernelInfo());
         break;
       case "interrupt_request":
         await this.#interrupt();
-        this.#reply(this.#control, peer, msg, "interrupt_reply", { status: "ok" });
+        this.#reply(socket, peer, msg, "interrupt_reply", { status: "ok" });
         break;
       case "debug_request": {
-        // JupyterLab treats a debug request as done only once the kernel
-        // reports idle for it, as ipykernel does for control messages.
-        // (Jupyter Server leaves debug_request out of the kernel's status.)
-        this.#status("busy", msg.header);
         let reply: JsonObject;
-        try {
-          if (this.#debugger === null) {
-            reply = { type: "response", request_seq: msg.content.seq, command: msg.content.command, success: false, message: `${this.#runtime} targets have no debugger`, body: {} };
-          } else {
-            // Everything but debugInfo talks to the target, so make sure there is one.
-            if (msg.content.command !== "debugInfo") await this.#ensureTarget().catch(() => null);
-            reply = await this.#debugger.handle(msg.content) as JsonObject;
-          }
-          this.#reply(this.#control, peer, msg, "debug_reply", reply);
-        } finally {
-          this.#status("idle", msg.header);
+        if (this.#debugger === null) {
+          reply = { type: "response", request_seq: msg.content.seq, command: msg.content.command, success: false, message: `${this.#runtime} targets have no debugger`, body: {} };
+        } else {
+          // Everything but debugInfo talks to the target, so make sure there is one.
+          if (msg.content.command !== "debugInfo") await this.#ensureTarget().catch(() => null);
+          reply = await this.#debugger.handle(msg.content) as JsonObject;
         }
+        this.#reply(socket, peer, msg, "debug_reply", reply);
         break;
       }
       case "shutdown_request": {
         const restart = msg.content.restart === true;
-        this.#reply(this.#control, peer, msg, "shutdown_reply", { status: "ok", restart });
+        this.#reply(socket, peer, msg, "shutdown_reply", { status: "ok", restart });
         this.#shuttingDown = true;
         this.#target?.kill();
         // Frontends spawn a fresh kernel even on restart; exit after the
@@ -394,7 +420,25 @@ export class Kernel {
         case "comm_close":
           await this.#handleComm(msg);
           break;
+        case "shutdown_request":
+        case "interrupt_request":
+          // Deprecated on shell, but still allowed, and ipykernel takes them.
+          await this.#controlRequest(this.#shell, msg, peer);
+          break;
+        default:
+          this.#log(`ignoring unknown shell message ${type}`);
       }
+    } catch (err) {
+      // E.g. the runtime failed to launch. Answer anyway, so the frontend
+      // doesn't wait on the request forever (#125).
+      const replyType = SHELL_REPLIES[type];
+      if (replyType !== undefined) {
+        const name = err instanceof Error ? err.name : "Error";
+        const message = err instanceof Error ? err.message : String(err);
+        const error: ErrorContent = { ename: name, evalue: message, traceback: [`${name}: ${message}`] };
+        this.#reply(this.#shell, peer, msg, replyType, { status: "error", ...error });
+      }
+      throw err;
     } finally {
       this.#status("idle", msg.header);
     }
@@ -452,7 +496,12 @@ export class Kernel {
     this.#stdin.sendAll(this.#encode("input_request", { prompt, password }, parent));
     for (;;) {
       const { frames } = await this.#stdin.recv();
-      const reply = decodeMessage(frames);
+      let reply: Message;
+      try {
+        reply = decodeMessage(frames);
+      } catch {
+        continue; // as #loop does (#122)
+      }
       if (!verify(this.#conn.key, reply.signedParts, reply.sig)) continue;
       if (reply.header.msg_type === "input_reply") {
         return typeof reply.content.value === "string" ? reply.content.value : null;
@@ -492,7 +541,8 @@ export class Kernel {
     this.#parent = parent;
     this.#allowStdin = msg.content.allow_stdin === true;
     this.#status("busy", parent);
-    this.#publish("execute_input", { code, execution_count: count });
+    // Silent requests broadcast nothing on iopub but status (#124).
+    if (!silent) this.#publish("execute_input", { code, execution_count: count });
     if (this.#projectWarning !== null) {
       // Shown once, in the first cell, where the user will see it.
       this.#publish("stream", { name: "stderr", text: `[cdp-kernel] ${this.#projectWarning}\n` });

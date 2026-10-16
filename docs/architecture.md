@@ -5,7 +5,7 @@ The design in full, with the alternatives considered, is in the [feasibility stu
 ## Why this shape
 
 Deno 2.9's kernel is already two halves joined by thirteen ops
-(denoland/deno#34083 rewrote it in JS and dropped libzmq):
+([denoland/deno#34083](https://github.com/denoland/deno/pull/34083) rewrote it in JS and dropped libzmq):
 
 - `cli/js/jupyter_kernel.js`: ZMTP and the Jupyter wire protocol in plain
   JS over TCP.
@@ -82,7 +82,8 @@ bootstrap module.
 
 Edits keep line numbers: a multi-line import rewritten to one line is padded
 with the newlines it replaced (`applyEdits`), so the cell's lines still match
-esbuild's source map (#18).
+esbuild's source map
+([#18](https://github.com/tlockney/cdp-kernel/issues/18)).
 
 On Bun, workerd and celld, cells don't run through replMode, so acorn has a
 second job there: `hoistForEval` declares each top-level name with `var` in
@@ -149,3 +150,10 @@ So on every runtime, a cell and an imported `.ts` or `.tsx` file accept the same
 `runtime/display.mjs` are ports of Deno's `cli/js/jupyter_kernel.js` and
 `cli/js/40_jupyter.js` at v2.9.6 (commit `e518fbd`), Copyright 2018-2026 the
 Deno authors, MIT license. Each file header says which parts.
+
+`src/murmur2.ts`, the hash JupyterLab's debugger uses to name a cell's
+source, follows JupyterLab's `packages/debugger/src/hash.ts` (Copyright (c)
+Jupyter Development Team, Modified BSD license), itself adapted from Gary
+Court's `murmurhash2_gc.js` (Copyright (c) 2011 Gary Court, MIT license).
+Both notices are in
+[`THIRD-PARTY-NOTICES`](https://github.com/tlockney/cdp-kernel/blob/main/THIRD-PARTY-NOTICES).

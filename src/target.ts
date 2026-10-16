@@ -12,10 +12,11 @@ import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type Evalua
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 
 /** Targets driven over CDP. */
 export type CdpRuntime = "node" | "deno";
-/** Bun and workerd have their own backends: src/bun-target.ts, src/workerd-target.ts. */
+/** Bun, workerd and celld have their own backends: src/bun-target.ts, src/workerd-target.ts, src/celld-target.ts. */
 export type RuntimeName = CdpRuntime | "bun" | "workerd" | "celld";
 
 /** What the kernel needs from a target runtime. */
@@ -56,9 +57,19 @@ const MARKER_RE = /\x1b\[cdpk:(\d+)(m?)\]\x1b/;
 const MAX_MARKER_LEN = 24;
 // Lines the runtimes print to stderr on their own: inspector notices, and
 // Deno's npm/jsr "Download https://..." progress (which `deno jupyter`
-// sends to the server log rather than the notebook).
-const INSPECTOR_CHATTER =
-  /^(?:\x1b\[[0-9;]*m)*(Debugger listening on |Debugger attached\.|For help, see: |Visit chrome:\/\/inspect|Waiting for the debugger to disconnect|Download(?:\x1b\[[0-9;]*m)* https?:\/\/).*\n/gm;
+// sends to the server log rather than the notebook). Each entry is the
+// line's start once colour codes are removed.
+const INSPECTOR_CHATTER = [
+  "Debugger listening on ",
+  "Debugger attached.",
+  "For help, see: https://nodejs.org/",
+  "Visit chrome://inspect",
+  "Waiting for the debugger to disconnect",
+];
+const DENO_CHATTER = [...INSPECTOR_CHATTER, "Download http://", "Download https://"];
+const ANSI_SGR = /\x1b\[[0-9;]*m/g;
+/** A colour code cut off at the end of a chunk. */
+const PARTIAL_SGR = /\x1b(?:\[[0-9;]*)?$/;
 
 export interface LaunchOptions {
   /** Runtime binary; defaults to `deno`, or `node` (this one when hosted by Node). */
@@ -123,6 +134,15 @@ export function esbuildBinary(
 export type TargetMessage =
   | { kind: "iopub"; msg_type: string; content: CdpParams; metadata: CdpParams; buffers: string[]; barrier: number }
   | { kind: "input_request"; prompt: string; password: boolean; barrier: number };
+
+/** The parsed value, or undefined for text that isn't JSON. */
+export function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
 
 export function isTargetMessage(value: unknown): value is TargetMessage {
   if (typeof value !== "object" || value === null) return false;
@@ -224,6 +244,63 @@ export class PipeDemux {
   }
 }
 
+/**
+ * Removes the runtime's own stderr lines (see INSPECTOR_CHATTER) and passes
+ * everything else on. A chatter line can arrive split across chunks, so a
+ * trailing partial line that could still turn out to be one is held back
+ * until its newline arrives; any other partial line passes straight through.
+ */
+export class StderrFilter {
+  readonly #starts: readonly string[];
+  readonly #emit: (text: string) => void;
+  #held = "";
+  #atLineStart = true;
+
+  constructor(runtime: CdpRuntime, emit: (text: string) => void) {
+    this.#starts = runtime === "deno" ? DENO_CHATTER : INSPECTOR_CHATTER;
+    this.#emit = emit;
+  }
+
+  push(chunk: string): void {
+    let text = this.#held + chunk;
+    this.#held = "";
+    let out = "";
+    if (!this.#atLineStart) {
+      // The rest of a line that already went out unfiltered.
+      const nl = text.indexOf("\n");
+      if (nl === -1) {
+        this.#emit(text);
+        return;
+      }
+      out = text.slice(0, nl + 1);
+      text = text.slice(nl + 1);
+    }
+    const lines = text.split("\n");
+    const last = lines.pop()!;
+    for (const line of lines) if (!this.#isChatter(line, false)) out += line + "\n";
+    if (last && this.#isChatter(last, true)) this.#held = last;
+    else out += last;
+    this.#atLineStart = last === "" || this.#held !== "";
+    if (out) this.#emit(out);
+  }
+
+  /** Releases a held partial line (the process died). */
+  flush(): void {
+    if (this.#held) this.#emit(this.#held);
+    this.#held = "";
+    this.#atLineStart = true;
+  }
+
+  /** Whether `line` is chatter or, when `partial`, could still become chatter. */
+  #isChatter(line: string, partial: boolean): boolean {
+    let plain = line.replace(ANSI_SGR, "");
+    if (partial) plain = plain.replace(PARTIAL_SGR, "");
+    // Any other escape may be a PipeDemux marker, which must never be dropped or held.
+    if (plain.includes("\x1b")) return false;
+    return this.#starts.some((start) => plain.startsWith(start) || (partial && start.startsWith(plain)));
+  }
+}
+
 /** Promises keyed by barrier number, resolvable before or after first use. */
 export class Gates {
   #map = new Map<number, { promise: Promise<void>; resolve: () => void }>();
@@ -260,6 +337,13 @@ export class Interrupted extends Error {
   override name = "Interrupted";
 }
 
+/** A catch handler: a call interrupt() abandoned becomes Interrupted. */
+function interrupted(what: string): (err: unknown) => never {
+  return (err) => {
+    throw err instanceof CdpAbandoned ? new Interrupted(`${what} interrupted`) : err;
+  };
+}
+
 export class Target implements KernelTarget {
   readonly runtime: CdpRuntime;
   readonly transform = transformCell;
@@ -273,6 +357,9 @@ export class Target implements KernelTarget {
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
   #paused = false;
+  /** Set once the main context is gone: the runtime is exiting (#130). */
+  #exiting = false;
+  readonly #exited: Promise<void>;
   readonly #baselineGlobals = new Set<string>();
   readonly versions: { runtime: string; engine: string };
 
@@ -289,6 +376,10 @@ export class Target implements KernelTarget {
   ) {
     this.runtime = runtime;
     this.#child = child;
+    this.#exited = new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) resolve();
+      else child.once("exit", () => resolve());
+    });
     this.#shell = shell;
     this.#control = control;
     this.#stdout = stdout;
@@ -325,6 +416,7 @@ export class Target implements KernelTarget {
     if (esbuild !== null) env.CDPK_ESBUILD_BINARY = esbuild;
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
+    killOnExit(child);
     // A start that fails or stalls must not leave the runtime running: its
     // pipes and inspector sockets would keep this process alive (#52).
     const sessions: CdpSession[] = [];
@@ -357,10 +449,8 @@ export class Target implements KernelTarget {
     const gates = new Gates();
     const stdout = new PipeDemux((text) => events.stream("stdout", text), (n) => gates.wait(n));
     const stderr = new PipeDemux((text) => events.stream("stderr", text), (n) => gates.wait(n));
-    const pushStderr = (chunk: string) => {
-      const text = chunk.replace(INSPECTOR_CHATTER, "");
-      if (text) stderr.push(text);
-    };
+    const filter = new StderrFilter(runtime, (text) => stderr.push(text));
+    const pushStderr = (chunk: string) => filter.push(chunk);
     // Until the inspector URL appears, stderr carries the runtime's banner.
     const wsUrl = await new Promise<string>((resolve, reject) => {
       let banner = "";
@@ -380,6 +470,7 @@ export class Target implements KernelTarget {
     child.stdout.on("data", (c: string) => stdout.push(c));
     child.once("exit", (code) => {
       gates.openAll();
+      filter.flush();
       stdout.close();
       stderr.close();
       events.exit(code);
@@ -401,14 +492,25 @@ export class Target implements KernelTarget {
     const contextId = await contextReady;
 
     const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
+    // process.exit() or Deno.exit() destroys the context, then the runtime
+    // waits for its inspector clients to disconnect before it exits. Let go,
+    // so it exits and the kernel starts a fresh one (#130).
+    shell.on("Runtime.executionContextDestroyed", (params) => {
+      if (params.executionContextId === contextId) target.#onExit();
+    });
     shell.on("Runtime.bindingCalled", (params) => {
       if (params.name !== BINDING || typeof params.payload !== "string") return;
-      const msg: unknown = JSON.parse(params.payload);
+      // __cdpk_send is an ordinary global, so a cell can call it with
+      // anything; that mustn't take the host down (#122).
+      const msg = parseJson(params.payload);
       if (isTargetMessage(msg)) target.#deliver(msg, events);
     });
 
-    // Wait for the bootstrap's top-level await to finish installing the shim.
-    for (let i = 0; i < 200; i++) {
+    // Wait for the bootstrap's top-level await to finish installing the
+    // shim. There is no cap here: launch's start timeout bounds the wait and
+    // kills the child, so a slow bootstrap never yields a target without
+    // the shim (#134).
+    for (;;) {
       const probe = await target.#evaluateSync(`typeof globalThis.${SHIM}?.tick === "function"`);
       if (probe.result.value === true) break;
       await new Promise((r) => setTimeout(r, 25));
@@ -451,7 +553,7 @@ export class Target implements KernelTarget {
 
   /** Resolves once all output and messages sent so far have been delivered. */
   async flush(): Promise<void> {
-    const n = await this.#evaluateSync(`${SHIM}.barrier()`);
+    const n = await this.#evaluateSync(`${SHIM}.barrier()`).catch(interrupted("Execution"));
     const barrier = Number(n.result.value);
     await Promise.all([this.#stdout.waitFor(barrier), this.#stderr.waitFor(barrier)]);
     await this.#messages;
@@ -483,8 +585,25 @@ export class Target implements KernelTarget {
       return await this.#evaluateRaw(script);
     } catch (err) {
       if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Execution interrupted");
+      if (this.#exiting) {
+        // The child's exit, which drops this target in the kernel, comes
+        // first, so the next cell starts a fresh one.
+        await this.#exited;
+        throw new Error(`${this.runtime} exited`);
+      }
       throw err;
     }
+  }
+
+  #onExit(): void {
+    if (this.#exiting) return;
+    this.#exiting = true;
+    this.#shell.close();
+    this.#control.close();
+    // In case it still doesn't exit once both sessions are gone.
+    setTimeout(() => {
+      if (this.#child.exitCode === null && this.#child.signalCode === null) this.#child.kill("SIGKILL");
+    }, 2000).unref();
   }
 
   /**
@@ -536,10 +655,12 @@ export class Target implements KernelTarget {
       : result.unserializableValue !== undefined
       ? { unserializableValue: result.unserializableValue }
       : { value: result.value };
+    // An async $display method can still be running when interrupt()
+    // abandons the call (#135).
     await this.#callAsyncFunctionOn(`function (n, r) { return globalThis.${SHIM}.broadcastResult(n, r); }`, [
       { value: executionCount },
       arg,
-    ]);
+    ]).catch(interrupted("Execution"));
   }
 
   /**
@@ -596,7 +717,8 @@ export class Target implements KernelTarget {
   #evaluatePure(expression: string): Promise<EvaluateResult | null> {
     return this.#shell
       .send("Runtime.evaluate", { expression, contextId: this.#contextId, throwOnSideEffect: true })
-      .then(asEvaluateResult, () => null);
+      .then(asEvaluateResult)
+      .catch(() => null);
   }
 
   async propertyNames(expression: string): Promise<string[]> {

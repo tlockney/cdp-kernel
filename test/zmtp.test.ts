@@ -1,15 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { connect, createServer, type AddressInfo } from "node:net";
+import { EventEmitter } from "node:events";
+import { connect, createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import {
   encodeFrame,
   encodeMultipart,
   makeGreeting,
   makeReadyCommand,
+  PubSocket,
   Queue,
   readFrame,
+  recvMultipart,
   RouterSocket,
   SocketReader,
+  startHeartbeat,
 } from "../src/zmtp.ts";
 
 const ENC = new TextEncoder();
@@ -129,6 +133,138 @@ test("RouterSocket loopback: handshake, receive multipart, send back", async () 
     for (const peerSocket of router.peers.values()) peerSocket.destroy();
     await new Promise<void>((resolve) => router.server.close(() => resolve()));
   }
+});
+
+/** A SocketReader over a stand-in socket, fed by hand. */
+function fedReader(): { reader: SocketReader; feed(bytes: Uint8Array): void } {
+  const socket = new EventEmitter();
+  return { reader: new SocketReader(socket as Socket), feed: (bytes) => void socket.emit("data", Buffer.from(bytes)) };
+}
+
+test("frames split across reads decode, one byte at a time", async () => {
+  const { reader, feed } = fedReader();
+  const big = new Uint8Array(300).map((_, i) => i % 251);
+  const wire = encodeMultipart([ENC.encode("one"), big, new Uint8Array(0)]);
+  const received = recvMultipart(reader);
+  for (const byte of wire) {
+    feed(new Uint8Array([byte]));
+    await new Promise((r) => setImmediate(r));
+  }
+  const frames = await received;
+  assert.equal(frames.length, 3);
+  assert.equal(DEC.decode(frames[0]), "one");
+  assert.deepEqual(frames[1], big);
+  assert.equal(frames[2].length, 0, "a zero-length frame is kept");
+});
+
+test("recvMultipart skips command frames, before and between message frames", async () => {
+  const { reader, feed } = fedReader();
+  const subscribe = encodeFrame(ENC.encode("\x09SUBSCRIBE"), false, true);
+  const ping = encodeFrame(ENC.encode("\x04PING\x00\x00"), false, true);
+  feed(subscribe);
+  feed(encodeFrame(ENC.encode("a"), true));
+  feed(ping);
+  feed(encodeFrame(ENC.encode("b"), false));
+  feed(encodeMultipart([ENC.encode("next")]));
+  assert.deepEqual((await recvMultipart(reader)).map((f) => DEC.decode(f)), ["a", "b"]);
+  assert.deepEqual((await recvMultipart(reader)).map((f) => DEC.decode(f)), ["next"]);
+});
+
+test("SocketReader fails a pending read when the connection closes", async () => {
+  const socket = new EventEmitter();
+  const reader = new SocketReader(socket as Socket);
+  const pending = reader.readExact(4);
+  socket.emit("data", Buffer.from([1, 2]));
+  socket.emit("close");
+  await assert.rejects(pending, /connection closed/);
+});
+
+// --- Loopback sockets ---------------------------------------------------------
+
+async function listening(server: Server, t: { after(fn: () => void): void }): Promise<number> {
+  // Not awaited: close() waits for open connections, and the clients' own
+  // after() hooks, which end them, run later.
+  t.after(() => void server.close());
+  if (!server.listening) await new Promise<void>((resolve) => server.once("listening", resolve));
+  return (server.address() as AddressInfo).port;
+}
+
+/** A client that has completed the ZMTP handshake as `socketType`. */
+async function peer(port: number, socketType: string, t: { after(fn: () => void): void }) {
+  const socket = connect(port, "127.0.0.1");
+  t.after(() => socket.destroy());
+  const reader = new SocketReader(socket);
+  socket.write(makeGreeting());
+  socket.write(makeReadyCommand(socketType));
+  await reader.readExact(64);
+  assert.equal((await readFrame(reader)).isCommand, true);
+  return { socket, reader };
+}
+
+async function until(check: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!check()) {
+    assert.ok(Date.now() < deadline, "timed out");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+test("heartbeat echoes each message back", async (t) => {
+  const server = startHeartbeat(0, "127.0.0.1");
+  const port = await listening(server, t);
+  const { socket, reader } = await peer(port, "REQ", t);
+  socket.write(encodeMultipart([ENC.encode("ping"), ENC.encode("2")]));
+  assert.deepEqual((await recvMultipart(reader)).map((f) => DEC.decode(f)), ["ping", "2"]);
+  socket.write(encodeMultipart([ENC.encode("again")]));
+  assert.deepEqual((await recvMultipart(reader)).map((f) => DEC.decode(f)), ["again"]);
+});
+
+test("PubSocket fans out to every subscriber, whatever they send", async (t) => {
+  const pub = new PubSocket(0, "127.0.0.1");
+  t.after(() => {
+    for (const socket of pub.subscribers) socket.destroy();
+  });
+  const port = await listening(pub.server, t);
+  const a = await peer(port, "SUB", t);
+  const b = await peer(port, "SUB", t);
+  // ZMTP 3.1 subscribes with a command frame, 3.0 with a 0x01-prefixed message.
+  a.socket.write(encodeFrame(ENC.encode("\x09SUBSCRIBE"), false, true));
+  b.socket.write(encodeFrame(new Uint8Array([1]), false));
+  await until(() => pub.subscribers.size === 2);
+  pub.send([ENC.encode("topic"), ENC.encode("body")]);
+  for (const { reader } of [a, b]) {
+    assert.deepEqual((await recvMultipart(reader)).map((f) => DEC.decode(f)), ["topic", "body"]);
+  }
+  b.socket.destroy();
+  await until(() => pub.subscribers.size === 1);
+  pub.send([ENC.encode("later")]);
+  assert.deepEqual((await recvMultipart(a.reader)).map((f) => DEC.decode(f)), ["later"]);
+});
+
+test("RouterSocket keeps peers apart: replies go to their sender, sendAll to everyone", async (t) => {
+  const router = new RouterSocket(0, "127.0.0.1");
+  t.after(() => {
+    for (const socket of router.peers.values()) socket.destroy();
+  });
+  const port = await listening(router.server, t);
+  const a = await peer(port, "DEALER", t);
+  const b = await peer(port, "DEALER", t);
+  a.socket.write(encodeMultipart([ENC.encode("from a")]));
+  const fromA = await router.recv();
+  b.socket.write(encodeMultipart([ENC.encode("from b")]));
+  const fromB = await router.recv();
+  assert.deepEqual([DEC.decode(fromA.frames[0]), DEC.decode(fromB.frames[0])], ["from a", "from b"]);
+  assert.notEqual(fromA.peer, fromB.peer);
+
+  router.send(fromB.peer, [ENC.encode("to b")]);
+  router.sendAll([ENC.encode("to all")]);
+  assert.deepEqual((await recvMultipart(a.reader)).map((f) => DEC.decode(f)), ["to all"], "a gets only the broadcast");
+  assert.deepEqual((await recvMultipart(b.reader)).map((f) => DEC.decode(f)), ["to b"]);
+  assert.deepEqual((await recvMultipart(b.reader)).map((f) => DEC.decode(f)), ["to all"]);
+
+  a.socket.destroy();
+  await until(() => router.peers.size === 1);
+  router.send(fromA.peer, [ENC.encode("gone")]); // a departed peer is dropped quietly
 });
 
 test("RouterSocket waits for a port that is briefly in use", async () => {

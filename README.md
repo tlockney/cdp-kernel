@@ -1,7 +1,7 @@
 # cdp-kernel
 
-A Jupyter kernel for TypeScript and JavaScript, extracted from Deno's
-(`deno jupyter`, v2.9.6), that runs notebooks on several JavaScript runtimes. The kernel
+A Jupyter kernel for TypeScript and JavaScript, extracted from the one built
+into Deno 2.9.6 (`deno jupyter`), that runs notebooks on several JavaScript runtimes. The kernel
 host runs on Node or Deno; the code you type runs in a separate **target**
 runtime: Node or Deno over the Chrome DevTools Protocol, or Bun, workerd and
 celld, which evaluate cells in-process. In principle, anything else whose
@@ -80,4 +80,7 @@ Bun, rusty_v8, FFI), and the evidence.
 ## License
 
 MIT. Parts are ports of Deno's Jupyter kernel, Copyright 2018-2026 the Deno
-authors; see [Architecture › Provenance](https://cdp-kernel.org/docs/architecture#provenance).
+authors. The debugger's MurmurHash2 follows JupyterLab's (BSD-3-Clause) and
+Gary Court's (MIT); their notices are in
+[THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES). See
+[Architecture › Provenance](https://cdp-kernel.org/docs/architecture#provenance).
