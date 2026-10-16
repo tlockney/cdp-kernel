@@ -114,7 +114,7 @@ async function launch(t: { after(fn: () => void): void }, cwd: string, executabl
     const r = await target.evaluate(target.transform(`throw new Error(String(await (async () => { ${cell} })()))`, {}));
     return r.exceptionDetails?.exception ? (await target.describeError(r.exceptionDetails.exception)).message : "no value";
   };
-  return { target, events, value };
+  return { target, events, value, own };
 }
 
 function celldProcesses(): string {
@@ -217,7 +217,8 @@ test("a wrangler.toml project is reported, and the driver runs alone", { skip },
 
 test("interrupting a waiting cell keeps state; a busy one stops celld entirely", { skip }, async (t) => {
   const dir = scratch(t);
-  const { target, events, value } = await launch(t, dir);
+  const { target, events, value, own } = await launch(t, dir);
+  assert.ok(own.length > 0, "the launch's celld processes were found");
   await target.evaluate(target.transform("globalThis.kept = 'yes'", {}));
   const waiting = target.evaluate(target.transform("await new Promise(() => {})", {}));
   await new Promise((r) => setTimeout(r, 200));
@@ -236,9 +237,11 @@ test("interrupting a waiting cell keeps state; a busy one stops celld entirely",
   assert.ok((await outcome) instanceof Interrupted);
   assert.ok(exitedFirst);
   assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: restartNote("celld") });
-  // Killed, but a slow runner can take a moment to reap them (#93).
-  await celldGone(celldPids());
-  assert.equal(celldProcesses(), "", "no celld node is left behind");
+  // Killed, but a slow runner can take a moment to reap them (#93). Only
+  // this launch's processes count: a developer's own celld, or an orphan
+  // from an earlier run (#127), is reported but doesn't fail the test (#151).
+  assert.deepEqual(await celldGone(own), [], "no celld process of this launch is left behind");
+  for (const other of celldProcesses().split("\n").filter(Boolean)) t.diagnostic(`unrelated celld process running: ${other}`);
 });
 
 test("a start that loses a port race is retried, and keeps the project", { skip }, async (t) => {

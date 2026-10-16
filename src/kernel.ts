@@ -235,7 +235,7 @@ export class Kernel {
   #targetEvents(): TargetEvents {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
-      message: (msg) => void this.#onTargetMessage(msg),
+      message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
       exit: (code, note) => {
         this.#target = null;
         void this.#debugger?.attachTarget(null);
@@ -460,7 +460,12 @@ export class Kernel {
     this.#stdin.sendAll(this.#encode("input_request", { prompt, password }, parent));
     for (;;) {
       const { frames } = await this.#stdin.recv();
-      const reply = decodeMessage(frames);
+      let reply: Message;
+      try {
+        reply = decodeMessage(frames);
+      } catch {
+        continue; // as #loop does (#122)
+      }
       if (!verify(this.#conn.key, reply.signedParts, reply.sig)) continue;
       if (reply.header.msg_type === "input_reply") {
         return typeof reply.content.value === "string" ? reply.content.value : null;
