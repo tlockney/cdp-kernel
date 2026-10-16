@@ -338,7 +338,8 @@ function hoistForEval(js: string): string {
       edits.push({ start: stmt.start, end: stmt.start, text: `${stmt.id.name} = ` });
       edits.push({ start: stmt.end, end: stmt.end, text: ";" });
     } else if (stmt.type === "ExpressionStatement" && i === program.body.length - 1) {
-      replace(stmt, `return [${src(stmt.expression)}];`);
+      // Parenthesized, so `1, 2` returns [2] rather than [1, 2] (#140).
+      replace(stmt, `return [(${src(stmt.expression)})];`);
     } else {
       nestedVars(stmt);
     }

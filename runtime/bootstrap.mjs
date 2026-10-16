@@ -55,7 +55,12 @@ function barrier(gated = false) {
 function send(payload) {
   const binding = globalThis.__cdpk_send;
   if (typeof binding !== "function") return; // host not attached yet
-  binding(JSON.stringify({ ...payload, barrier: barrier(true) }));
+  // Serialize before writing the marker: if the payload can't be
+  // serialized (a BigInt, a cycle), the error reaches the cell without a
+  // gated marker the host would wait on forever (#129). `payload` always
+  // has a `kind`, so `body` is never "{}".
+  const body = JSON.stringify(payload);
+  binding(`{"barrier":${barrier(true)},${body.slice(1)}`);
 }
 
 const jupyter = createJupyter({
