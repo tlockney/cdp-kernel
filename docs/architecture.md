@@ -149,3 +149,10 @@ So on every runtime, a cell and an imported `.ts` or `.tsx` file accept the same
 `runtime/display.mjs` are ports of Deno's `cli/js/jupyter_kernel.js` and
 `cli/js/40_jupyter.js` at v2.9.6 (commit `e518fbd`), Copyright 2018-2026 the
 Deno authors, MIT license. Each file header says which parts.
+
+`src/murmur2.ts`, the hash JupyterLab's debugger uses to name a cell's
+source, follows JupyterLab's `packages/debugger/src/hash.ts` (Copyright (c)
+Jupyter Development Team, Modified BSD license), itself adapted from Gary
+Court's `murmurhash2_gc.js` (Copyright (c) 2011 Gary Court, MIT license).
+Both notices are in
+[`THIRD-PARTY-NOTICES`](https://github.com/tlockney/cdp-kernel/blob/main/THIRD-PARTY-NOTICES).
