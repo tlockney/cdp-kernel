@@ -191,7 +191,7 @@ globalThis.__cdpk = {
   },
   describeError(value) {
     if (value instanceof Error) {
-      return JSON.stringify({ name: value.name, message: value.message, stack: value.stack ?? "" });
+      return JSON.stringify({ name: value.name, message: value.message, stack: stackOf(value) });
     }
     return JSON.stringify({ name: "Error", message: inspect(value), stack: "" });
   },
@@ -226,9 +226,24 @@ if (isDeno) {
   globalThis.Deno = createDenoShim({ jupyter: jupyter.namespace });
 }
 
+/**
+ * An error's stack, with its first line naming the error. Bun now and then
+ * (about one throw in twenty, #216) records a stack whose first line is a
+ * bare "Error", though name and message are set; the frames are right, so
+ * only the header is rebuilt.
+ */
+function stackOf(err) {
+  const stack = err.stack;
+  if (typeof stack !== "string") return "";
+  const nl = stack.indexOf("\n");
+  const first = nl === -1 ? stack : stack.slice(0, nl);
+  if (first !== "Error" || !err.message) return stack;
+  return `${err.name}: ${err.message}${nl === -1 ? "" : stack.slice(nl)}`;
+}
+
 // An error thrown later by a cell's timer or promise must not kill the kernel.
 function reportUncaught(kind, err) {
-  writeErr(`${kind}: ${err instanceof Error ? (err.stack ?? err.message) : inspect(err)}\n`);
+  writeErr(`${kind}: ${err instanceof Error ? (stackOf(err) || err.message) : inspect(err)}\n`);
 }
 if (isDeno) {
   globalThis.addEventListener("unhandledrejection", (e) => {
@@ -246,6 +261,29 @@ if (isDeno) {
 
 // Keep the event loop alive between cells.
 setInterval(() => {}, 1 << 30);
+
+// A host killed by SIGKILL can't stop its runtime, and nothing visible to
+// JS here changes when its inspector sessions drop, so watch for the host
+// itself going: reparented, or no longer there (#219). Bun exits on its
+// channel's EOF instead.
+if (!isBun) {
+  // Held here, so a cell that reassigns them can't break the watch.
+  const proc = process;
+  const exit = process.exit.bind(process);
+  const host = proc.ppid;
+  const hostGone = () => {
+    if (proc.ppid !== host) return true;
+    try {
+      proc.kill(host, 0);
+      return false;
+    } catch (err) {
+      return err?.code === "ESRCH";
+    }
+  };
+  setInterval(() => {
+    if (hostGone()) exit(1);
+  }, 2000);
+}
 
 if (isBun) {
   const { startChannel } = await import("./bun-channel.mjs");
@@ -274,9 +312,10 @@ async function platform() {
   // the event loop to flush. input() blocks the main thread in readSync, so
   // queued output, and the input_request's barrier marker after it, would
   // never reach the host (#131). Blocking writes finish before readSync
-  // starts, as Node already does on Windows. Not on Bun: it has no
-  // _handle, and touching process.stdout this early truncates large writes.
-  if (!isBun) for (const stream of [process.stdout, process.stderr]) stream._handle?.setBlocking?.(true);
+  // starts, as Node already does on Windows. Bun has no _handle and needs
+  // its own fix (#180).
+  if (isBun) await syncBunOutput();
+  else for (const stream of [process.stdout, process.stderr]) stream._handle?.setBlocking?.(true);
   return {
     inspect: (v) => util.inspect(v, { colors: true, depth: 4 }),
     inspectPlain: (v) => util.inspect(v, { colors: false, depth: 2 }),
@@ -295,6 +334,31 @@ async function platform() {
         }
       }),
   };
+}
+
+// Bun makes stdout and stderr non-blocking once process.stdout or
+// process.stderr exists, and then queues what doesn't fit in the pipe for
+// its event loop, console.log's output included. input() blocks the main
+// thread in readSync, so queued output, and the input_request's barrier
+// marker after it, would never reach the host (#180). Here every write
+// finishes before it returns: process.stdout.write and process.stderr.write
+// write through, and console is Node's Console over them, so console output
+// is formatted as on Node.
+async function syncBunOutput() {
+  const { writeAll } = await import("./bun-channel.mjs");
+  const { Console } = await import("node:console");
+  for (const [stream, fd] of [[process.stdout, 1], [process.stderr, 2]]) {
+    stream.write = (chunk, encoding, callback) => {
+      if (typeof encoding === "function") [callback, encoding] = [encoding, undefined];
+      writeAll(fd, typeof chunk === "string" ? Buffer.from(chunk, encoding) : chunk);
+      if (callback) process.nextTick(callback);
+      return true;
+    };
+  }
+  const sync = new Console({ stdout: process.stdout, stderr: process.stderr, colorMode: true });
+  for (const key of Object.keys(console)) {
+    if (typeof sync[key] === "function") console[key] = sync[key].bind(sync);
+  }
 }
 
 function readLine(nextByte) {

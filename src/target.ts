@@ -12,6 +12,7 @@ import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type Evalua
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 
 /** Targets driven over CDP. */
 export type CdpRuntime = "node" | "deno";
@@ -336,6 +337,13 @@ export class Interrupted extends Error {
   override name = "Interrupted";
 }
 
+/** A catch handler: a call interrupt() abandoned becomes Interrupted. */
+function interrupted(what: string): (err: unknown) => never {
+  return (err) => {
+    throw err instanceof CdpAbandoned ? new Interrupted(`${what} interrupted`) : err;
+  };
+}
+
 export class Target implements KernelTarget {
   readonly runtime: CdpRuntime;
   readonly transform = transformCell;
@@ -349,6 +357,9 @@ export class Target implements KernelTarget {
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
   #paused = false;
+  /** Set once the main context is gone: the runtime is exiting (#130). */
+  #exiting = false;
+  readonly #exited: Promise<void>;
   readonly #baselineGlobals = new Set<string>();
   readonly versions: { runtime: string; engine: string };
 
@@ -365,6 +376,10 @@ export class Target implements KernelTarget {
   ) {
     this.runtime = runtime;
     this.#child = child;
+    this.#exited = new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) resolve();
+      else child.once("exit", () => resolve());
+    });
     this.#shell = shell;
     this.#control = control;
     this.#stdout = stdout;
@@ -401,6 +416,7 @@ export class Target implements KernelTarget {
     if (esbuild !== null) env.CDPK_ESBUILD_BINARY = esbuild;
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
+    killOnExit(child);
     // A start that fails or stalls must not leave the runtime running: its
     // pipes and inspector sockets would keep this process alive (#52).
     const sessions: CdpSession[] = [];
@@ -476,6 +492,12 @@ export class Target implements KernelTarget {
     const contextId = await contextReady;
 
     const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
+    // process.exit() or Deno.exit() destroys the context, then the runtime
+    // waits for its inspector clients to disconnect before it exits. Let go,
+    // so it exits and the kernel starts a fresh one (#130).
+    shell.on("Runtime.executionContextDestroyed", (params) => {
+      if (params.executionContextId === contextId) target.#onExit();
+    });
     shell.on("Runtime.bindingCalled", (params) => {
       if (params.name !== BINDING || typeof params.payload !== "string") return;
       // __cdpk_send is an ordinary global, so a cell can call it with
@@ -531,7 +553,7 @@ export class Target implements KernelTarget {
 
   /** Resolves once all output and messages sent so far have been delivered. */
   async flush(): Promise<void> {
-    const n = await this.#evaluateSync(`${SHIM}.barrier()`);
+    const n = await this.#evaluateSync(`${SHIM}.barrier()`).catch(interrupted("Execution"));
     const barrier = Number(n.result.value);
     await Promise.all([this.#stdout.waitFor(barrier), this.#stderr.waitFor(barrier)]);
     await this.#messages;
@@ -563,8 +585,25 @@ export class Target implements KernelTarget {
       return await this.#evaluateRaw(script);
     } catch (err) {
       if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Execution interrupted");
+      if (this.#exiting) {
+        // The child's exit, which drops this target in the kernel, comes
+        // first, so the next cell starts a fresh one.
+        await this.#exited;
+        throw new Error(`${this.runtime} exited`);
+      }
       throw err;
     }
+  }
+
+  #onExit(): void {
+    if (this.#exiting) return;
+    this.#exiting = true;
+    this.#shell.close();
+    this.#control.close();
+    // In case it still doesn't exit once both sessions are gone.
+    setTimeout(() => {
+      if (this.#child.exitCode === null && this.#child.signalCode === null) this.#child.kill("SIGKILL");
+    }, 2000).unref();
   }
 
   /**
@@ -616,10 +655,12 @@ export class Target implements KernelTarget {
       : result.unserializableValue !== undefined
       ? { unserializableValue: result.unserializableValue }
       : { value: result.value };
+    // An async $display method can still be running when interrupt()
+    // abandons the call (#135).
     await this.#callAsyncFunctionOn(`function (n, r) { return globalThis.${SHIM}.broadcastResult(n, r); }`, [
       { value: executionCount },
       arg,
-    ]);
+    ]).catch(interrupted("Execution"));
   }
 
   /**
@@ -676,7 +717,8 @@ export class Target implements KernelTarget {
   #evaluatePure(expression: string): Promise<EvaluateResult | null> {
     return this.#shell
       .send("Runtime.evaluate", { expression, contextId: this.#contextId, throwOnSideEffect: true })
-      .then(asEvaluateResult, () => null);
+      .then(asEvaluateResult)
+      .catch(() => null);
   }
 
   async propertyNames(expression: string): Promise<string[]> {

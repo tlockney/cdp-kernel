@@ -181,6 +181,18 @@ test("transformCell keeps the classic React default without project options", ()
   assert.match(transformCell("<b>hi</b>"), /React\.createElement\("b"/);
 });
 
+test("standard decorators and accessor fields are lowered (#142)", async () => {
+  const cell = [
+    "function tag(cls: any, ctx: ClassDecoratorContext) { cls.prototype.tag = ctx.name; }",
+    "function twice(_: unknown, ctx: ClassAccessorDecoratorContext) { return { init: (v: number) => v * 2 }; }",
+    "@tag class A { @twice accessor x = 1; }",
+  ].join("\n");
+  const out = body(cell);
+  assert.doesNotMatch(out, /^\s*@/m);
+  const { result } = await run(out.replace(/\n;let __cdpk_settled = await __cdpk\.tick\(\);$/, ""), {}, "return [new A().x, new A().tag];");
+  assert.deepEqual(result, [2, "A"]);
+});
+
 test("transformCell honours experimentalDecorators from the project config", () => {
   const cell = "function log(t: unknown) {}\nclass A { @log m() {} }";
   // TS legacy decorators compile to a __decorateClass helper call.

@@ -80,4 +80,7 @@ Bun, rusty_v8, FFI), and the evidence.
 ## License
 
 MIT. Parts are ports of Deno's Jupyter kernel, Copyright 2018-2026 the Deno
-authors; see [Architecture › Provenance](https://cdp-kernel.org/docs/architecture#provenance).
+authors. The debugger's MurmurHash2 follows JupyterLab's (BSD-3-Clause) and
+Gary Court's (MIT); their notices are in
+[THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES). See
+[Architecture › Provenance](https://cdp-kernel.org/docs/architecture#provenance).

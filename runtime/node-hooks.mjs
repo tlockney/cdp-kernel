@@ -21,7 +21,7 @@
 import module from "node:module";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -105,32 +105,55 @@ export function findLockFile(dir) {
 
 /** `{ version: 1, packages: { "name@range": "exact version" } }`; `{}` counts as empty. */
 export function readLock(path) {
-  const parsed = JSON.parse(readFileSync(path, "utf8") || "{}");
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8") || "{}");
+  } catch (err) {
+    throw new Error(`cannot read ${path}: ${err instanceof Error ? err.message : err}`);
+  }
   const packages = parsed && typeof parsed.packages === "object" && parsed.packages !== null ? parsed.packages : {};
   return { version: 1, packages };
 }
 
-/** Sorted, so a lockfile's diff shows only what changed. */
+/**
+ * Sorted, so a lockfile's diff shows only what changed. Written to a
+ * temporary file and renamed into place, so a crash mid-write can't leave
+ * a truncated lockfile (#144).
+ */
 export function writeLock(path, lock) {
   const packages = Object.fromEntries(Object.entries(lock.packages).sort(([a], [b]) => a.localeCompare(b)));
-  writeFileSync(path, JSON.stringify({ version: 1, packages }, null, 2) + "\n");
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ version: 1, packages }, null, 2) + "\n");
+  renameSync(tmp, path);
 }
 
 // --- Serialized installs (#14) -------------------------------------------------
 // Kernels share one cache per installer, and npm/bun both rewrite its
 // package.json and node_modules, so installs take a lock: a directory, which
-// mkdir creates atomically. A lock left by a process that died is taken over.
+// mkdir creates atomically. A lock left by a process that died is taken over;
+// one whose holder is alive is waited on.
 
 const LOCK_DIR = ".install-lock";
-const STALE_MS = 10 * 60 * 1000;
+/** How long a waiter waits for a live holder before giving up. */
+const WAIT_MS = 10 * 60 * 1000;
+/** A lock this old is taken over even if its pid is alive: the pid was reused. */
+const ABANDONED_MS = 60 * 60 * 1000;
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+function holderPid(lockDir) {
+  try {
+    return Number(readFileSync(join(lockDir, "pid"), "utf8"));
+  } catch {
+    return NaN;
+  }
+}
+
 function holderAlive(lockDir) {
   try {
-    const pid = Number(readFileSync(join(lockDir, "pid"), "utf8"));
+    const pid = holderPid(lockDir);
     if (!Number.isInteger(pid) || pid <= 0) return false;
     process.kill(pid, 0);
     return true;
@@ -155,8 +178,11 @@ function tryLock(lockDir, deadline) {
       } catch {
         continue; // released meanwhile
       }
-      // A holder that died, or one stuck for longer than any install takes.
-      if ((age > 1000 && !holderAlive(lockDir)) || age > STALE_MS) {
+      // A holder that died. The grace period covers the gap between mkdir
+      // and writing the pid. A live holder is waited on rather than stolen
+      // from, which would run a second install alongside its own (#144),
+      // unless the lock is so old its pid must have been reused.
+      if ((age > 1000 && !holderAlive(lockDir)) || age > ABANDONED_MS) {
         rmSync(lockDir, { recursive: true, force: true });
         continue;
       }
@@ -166,27 +192,32 @@ function tryLock(lockDir, deadline) {
   }
 }
 
+/** Removes the lock only if still ours: a waiter that took it over owns it now. */
+function releaseLock(lockDir) {
+  if (holderPid(lockDir) === process.pid) rmSync(lockDir, { recursive: true, force: true });
+}
+
 /** Runs `fn` holding the cache's install lock. Synchronous, like the resolve hook. */
-export function withInstallLock(dir, fn, { timeoutMs = STALE_MS } = {}) {
+export function withInstallLock(dir, fn, { timeoutMs = WAIT_MS } = {}) {
   const lockDir = join(dir, LOCK_DIR);
   const deadline = Date.now() + timeoutMs;
   while (!tryLock(lockDir, deadline)) sleep(100);
   try {
     return fn();
   } finally {
-    rmSync(lockDir, { recursive: true, force: true });
+    releaseLock(lockDir);
   }
 }
 
 /** withInstallLock for a caller that mustn't block its event loop while it waits. */
-export async function withInstallLockAsync(dir, fn, { timeoutMs = STALE_MS } = {}) {
+export async function withInstallLockAsync(dir, fn, { timeoutMs = WAIT_MS } = {}) {
   const lockDir = join(dir, LOCK_DIR);
   const deadline = Date.now() + timeoutMs;
   while (!tryLock(lockDir, deadline)) await new Promise((resolve) => setTimeout(resolve, 100));
   try {
     return await fn();
   } finally {
-    rmSync(lockDir, { recursive: true, force: true });
+    releaseLock(lockDir);
   }
 }
 

@@ -19,15 +19,16 @@ import { Buffer } from "node:buffer";
 import process from "node:process";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
@@ -198,6 +199,62 @@ export interface WorkerHost {
   onExit(listener: (code: number | null) => void): void;
 }
 
+const WORKERD_DIR_PREFIX = "cdpk-workerd-";
+/** In each workerd directory: `{ host, workerd }` pids. */
+const OWNER_FILE = "owner.json";
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as { code?: string }).code === "EPERM";
+  }
+}
+
+/** Whether `pid` is still the workerd serving `dir`, not a reused pid. */
+function isWorkerdIn(pid: number, dir: string): boolean {
+  try {
+    if (process.platform === "linux") return readlinkSync(`/proc/${pid}/cwd`) === dir;
+    const args = execFileSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
+    return /workerd/.test(args) && args.includes("config.capnp");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Removes workerd directories under `root` whose kernel has died without
+ * cleaning up (SIGKILL runs no exit hook), killing their workerd if it's
+ * still running (#220).
+ */
+export function sweepStaleWorkerdDirs(root = tmpdir()): void {
+  let names: string[];
+  try {
+    names = readdirSync(root).filter((name) => name.startsWith(WORKERD_DIR_PREFIX));
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const dir = join(root, name);
+    let owner: { host?: unknown; workerd?: unknown };
+    try {
+      owner = JSON.parse(readFileSync(join(dir, OWNER_FILE), "utf8"));
+    } catch {
+      continue; // Another user's, from before owner files, or being set up.
+    }
+    if (typeof owner.host !== "number" || pidAlive(owner.host)) continue;
+    if (typeof owner.workerd === "number" && isWorkerdIn(owner.workerd, dir)) {
+      try {
+        process.kill(owner.workerd, "SIGKILL");
+      } catch {
+        // Gone already.
+      }
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** The driver on a workerd of its own, behind a Unix socket. */
 export class RawWorkerd implements WorkerHost {
   readonly runtime: string;
@@ -216,7 +273,9 @@ export class RawWorkerd implements WorkerHost {
     const source = await runtimeDir(new URL("../runtime/", import.meta.url).href);
     // mkdtemp makes the directory 0700: only this user reaches the socket,
     // and the token stops anything else running as them by accident.
-    const dir = mkdtempSync(join(tmpdir(), "cdpk-workerd-"));
+    sweepStaleWorkerdDirs();
+    const dir = mkdtempSync(join(tmpdir(), WORKERD_DIR_PREFIX));
+    writeFileSync(join(dir, OWNER_FILE), JSON.stringify({ host: process.pid }));
     const socket = join(dir, "sock");
     for (const name of WORKER_MODULES) copyFileSync(join(source, name), join(dir, name));
     writeFileSync(join(dir, "config.capnp"), workerdConfig({ socket, compatibilityDate }));
@@ -225,12 +284,20 @@ export class RawWorkerd implements WorkerHost {
     // --experimental: the UnsafeEval binding.
     const child = spawn(workerd, ["serve", "config.capnp", "--experimental"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });
     child.once("exit", () => rmSync(dir, { recursive: true, force: true }));
+    if (child.pid !== undefined) writeFileSync(join(dir, OWNER_FILE), JSON.stringify({ host: process.pid, workerd: child.pid }));
+    killOnExit(child, () => {
+      child.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    });
 
     // Cell output is captured inside the Worker; what workerd itself prints
     // (its own warnings, errors from background work) goes to the server log.
+    // `early` keeps that output for a startup error only, and stops growing
+    // once the session is open.
     let early = "";
+    let starting = true;
     const log = (chunk: Buffer) => {
-      early += chunk.toString();
+      if (starting) early += chunk.toString();
       process.stderr.write(`[cdp-kernel workerd] ${chunk}`);
     };
     child.stdout?.on("data", log);
@@ -252,7 +319,10 @@ export class RawWorkerd implements WorkerHost {
       }
     })();
     try {
-      return new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      const host = new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      starting = false;
+      early = "";
+      return host;
     } catch (err) {
       child.kill();
       throw err;
@@ -426,7 +496,7 @@ export class WorkerdTarget implements KernelTarget {
     const { failedModules, ...reply } = await this.#interruptibly("eval", { code: script, modules }, "Execution");
     // A module that threw while loading is rebuilt for its next import (#147).
     if (Array.isArray(failedModules)) for (const specifier of failedModules) this.#sent.delete(specifier);
-    return reply as unknown as EvaluateResult;
+    return asEvaluateResult(reply);
   }
 
   /**
