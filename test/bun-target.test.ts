@@ -127,3 +127,22 @@ test("prompt() blocks on stdin for the host's reply", { skip }, async (t) => {
   assert.equal((await result).result.type, "string");
   await run("1");
 });
+
+// Bun queues writes to a non-blocking pipe for its event loop, which
+// prompt()'s blocking read stops (#180).
+for (const write of ["process.stdout.write", "console.log", "console.error"]) {
+  test(`prompt() after ${write} of more than the pipe holds gets its reply`, { skip }, async (t) => {
+    const { target, events, run } = await launch(t);
+    await run(`jupyter.broadcast("warm", {})`); // stdout and stderr now exist
+    const result = target.evaluate(target.transform(`${write}("x".repeat(300_000) + "\\n"); prompt("Name?")`, {}));
+    for (let i = 0; i < 250 && !events.some((e) => "message" in e && e.message.kind === "input_request"); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const chars = () => events.reduce((n, e) => n + ("text" in e ? e.text.replaceAll(/\x1b\[cdpk:\d+m?\]\x1b/g, "").length : 0), 0);
+    assert.ok(events.some((e) => "message" in e && e.message.kind === "input_request"), `no input_request after ${chars()} chars`);
+    // The output came before the request, not after it.
+    assert.ok(chars() >= 300_001, `${chars()} chars before the input_request`);
+    target.replyInput("Ada");
+    assert.equal((await result).result.type, "string");
+  });
+}

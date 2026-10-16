@@ -76,6 +76,13 @@ Bun writes to fd 3 synchronously (`fs.writeSync`, retrying on `EAGAIN`),
 like a CDP binding call. That keeps a message's position relative to the
 `console.log` calls around it, which the barrier markers depend on.
 
+stdout and stderr are written the same way. Once `process.stdout` exists,
+Bun makes the pipes non-blocking and queues output that doesn't fit for its
+event loop, which `prompt()`'s blocking read of stdin would stop, so the
+bootstrap replaces `process.stdout.write` and `process.stderr.write` with
+synchronous writes and `console` with Node's `Console` over them. Console
+output on Bun is therefore formatted as on Node.
+
 When the host goes away, fd 3 reaches end-of-file and Bun exits, so a
 crashed kernel leaves no orphan behind.
 

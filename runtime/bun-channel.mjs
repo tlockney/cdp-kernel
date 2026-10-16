@@ -14,8 +14,8 @@ import fs from "node:fs";
 const CHANNEL_FD = 3;
 
 /** Synchronous, like a CDP binding call, so output order is kept. */
-function writeAll(fd, text) {
-  const bytes = Buffer.from(text);
+export function writeAll(fd, text) {
+  const bytes = typeof text === "string" ? Buffer.from(text) : Buffer.from(text.buffer, text.byteOffset, text.byteLength);
   for (let offset = 0; offset < bytes.length;) {
     try {
       offset += fs.writeSync(fd, bytes, offset);

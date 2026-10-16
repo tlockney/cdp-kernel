@@ -312,9 +312,10 @@ async function platform() {
   // the event loop to flush. input() blocks the main thread in readSync, so
   // queued output, and the input_request's barrier marker after it, would
   // never reach the host (#131). Blocking writes finish before readSync
-  // starts, as Node already does on Windows. Not on Bun: it has no
-  // _handle, and touching process.stdout this early truncates large writes.
-  if (!isBun) for (const stream of [process.stdout, process.stderr]) stream._handle?.setBlocking?.(true);
+  // starts, as Node already does on Windows. Bun has no _handle and needs
+  // its own fix (#180).
+  if (isBun) await syncBunOutput();
+  else for (const stream of [process.stdout, process.stderr]) stream._handle?.setBlocking?.(true);
   return {
     inspect: (v) => util.inspect(v, { colors: true, depth: 4 }),
     inspectPlain: (v) => util.inspect(v, { colors: false, depth: 2 }),
@@ -333,6 +334,31 @@ async function platform() {
         }
       }),
   };
+}
+
+// Bun makes stdout and stderr non-blocking once process.stdout or
+// process.stderr exists, and then queues what doesn't fit in the pipe for
+// its event loop, console.log's output included. input() blocks the main
+// thread in readSync, so queued output, and the input_request's barrier
+// marker after it, would never reach the host (#180). Here every write
+// finishes before it returns: process.stdout.write and process.stderr.write
+// write through, and console is Node's Console over them, so console output
+// is formatted as on Node.
+async function syncBunOutput() {
+  const { writeAll } = await import("./bun-channel.mjs");
+  const { Console } = await import("node:console");
+  for (const [stream, fd] of [[process.stdout, 1], [process.stderr, 2]]) {
+    stream.write = (chunk, encoding, callback) => {
+      if (typeof encoding === "function") [callback, encoding] = [encoding, undefined];
+      writeAll(fd, typeof chunk === "string" ? Buffer.from(chunk, encoding) : chunk);
+      if (callback) process.nextTick(callback);
+      return true;
+    };
+  }
+  const sync = new Console({ stdout: process.stdout, stderr: process.stderr, colorMode: true });
+  for (const key of Object.keys(console)) {
+    if (typeof sync[key] === "function") console[key] = sync[key].bind(sync);
+  }
 }
 
 function readLine(nextByte) {
