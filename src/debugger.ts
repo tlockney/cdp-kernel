@@ -9,12 +9,12 @@
 // Lines go through the cell's source map (src/sourcemap.ts), since esbuild
 // rewrites TypeScript.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import type { CdpParams, RemoteObject } from "./cdp.ts";
+import { type CdpParams, isRecord, isRemoteObject, type RemoteObject } from "./cdp.ts";
 import { murmur2 } from "./murmur2.ts";
 import type { LineMap } from "./sourcemap.ts";
 import { type CellTransformOptions, SETTLE, transformCellWithLines } from "./transform.ts";
@@ -62,9 +62,6 @@ interface CallFrame {
   scopeChain: { type: string; object: RemoteObject; name?: string }[];
 }
 
-function isRecord(value: unknown): value is CdpParams {
-  return typeof value === "object" && value !== null;
-}
 
 /**
  * CDPK_DEBUG_TRACE=1 logs every debug request, reply and event to stderr
@@ -76,8 +73,11 @@ function trace(kind: string, ...parts: unknown[]): void {
   process.stderr.write(`[cdp-kernel debugger] ${kind} ${text.length > 600 ? `${text.slice(0, 600)}…` : text}\n`);
 }
 
-function isRemoteObject(value: unknown): value is RemoteObject {
-  return isRecord(value) && typeof value.type === "string";
+function isCallFrame(value: unknown): value is CallFrame {
+  return isRecord(value) && typeof value.callFrameId === "string" && typeof value.functionName === "string" &&
+    isRecord(value.location) && typeof value.location.scriptId === "string" &&
+    typeof value.location.lineNumber === "number" && Array.isArray(value.scopeChain) &&
+    value.scopeChain.every((scope) => isRecord(scope) && typeof scope.type === "string" && isRemoteObject(scope.object));
 }
 
 /** A DAP value string for a CDP RemoteObject. */
@@ -115,6 +115,7 @@ export class Debugger {
   readonly #pauseWaiters: (() => void)[] = [];
   readonly #emit: (event: DapMessage) => void;
   readonly #transformOptions: () => CellTransformOptions;
+  #cleanupRegistered = false;
 
   constructor(emit: (event: DapMessage) => void, transformOptions: () => CellTransformOptions = () => ({})) {
     this.#emit = emit;
@@ -354,7 +355,7 @@ export class Debugger {
   // --- stopped state ----------------------------------------------------------
 
   #onPaused(params: CdpParams): void {
-    this.#frames = Array.isArray(params.callFrames) ? (params.callFrames as CallFrame[]) : [];
+    this.#frames = Array.isArray(params.callFrames) ? params.callFrames.filter(isCallFrame) : [];
     this.#stopped = true;
     for (const notify of this.#pauseWaiters.splice(0)) notify();
     this.#refs.clear();
@@ -545,6 +546,11 @@ export class Debugger {
 
   #writeCell(path: string, code: string): void {
     try {
+      if (!this.#cleanupRegistered) {
+        // The files only serve this kernel's frontend: remove them with it.
+        process.once("exit", () => rmSync(this.prefix, { recursive: true, force: true }));
+        this.#cleanupRegistered = true;
+      }
       mkdirSync(this.prefix, { recursive: true });
       writeFileSync(path, code);
     } catch {

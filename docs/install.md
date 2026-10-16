@@ -123,12 +123,10 @@ refilled on next use.
 | Cache | Location | What's in it |
 | --- | --- | --- |
 | Runtime files | `${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/runtime/<version>-<hash>/` | The kernel's runtime modules, copied here for a JSR install and for a Deno target of an npm install. One directory per version. |
-| npm packages | `~/.cache/cdp-kernel/npm/` | `npm:` and `jsr:` imports on Node and workerd. `CDPK_CACHE_DIR` moves it. |
-| Bun packages | `~/.cache/cdp-kernel/bun/` | `npm:` and `jsr:` imports on Bun. |
+| npm packages | `${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/npm/` | `npm:` and `jsr:` imports on Node and workerd. `CDPK_CACHE_DIR` moves it. |
+| Bun packages | `${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/bun/` | `npm:` and `jsr:` imports on Bun. |
 
-The npm and Bun caches don't follow `XDG_CACHE_HOME` yet
-([#163](https://github.com/tlockney/cdp-kernel/issues/163)). On Deno,
-imports use Deno's own cache. See [Writing notebooks](notebooks.md#language-and-imports)
+On Deno, imports use Deno's own cache. See [Writing notebooks](notebooks.md#language-and-imports)
 for how the package caches behave.
 
 Environment variables the kernel reads:
@@ -137,7 +135,7 @@ Environment variables the kernel reads:
 | --- | --- |
 | `JUPYTER_DATA_DIR` | Where `install` writes the kernelspec (see above). |
 | `XDG_DATA_HOME` | Base of the Linux kernels directory when `JUPYTER_DATA_DIR` isn't set. |
-| `XDG_CACHE_HOME` | Base of the runtime-file cache. |
+| `XDG_CACHE_HOME` | Base of all three caches. |
 | `CDPK_CACHE_DIR` | Directory of the npm package cache. |
 | `ESBUILD_BINARY_PATH` | The esbuild binary used to compile imported `.ts` and `.tsx` files on Node, when the one installed with the package can't be found or shouldn't be used. |
 | `CDPK_DEBUG_TRACE` | `1` logs the [debugger](debugger.md)'s protocol traffic to the server log. |

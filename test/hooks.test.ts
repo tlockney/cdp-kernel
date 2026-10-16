@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { aliasFor, installCommand, jsrToNpm, parsePackageSpecifier, spawnCommand } from "../runtime/node-hooks.mjs";
+import { aliasFor, cacheDirPath, installCommand, jsrToNpm, parsePackageSpecifier, spawnCommand } from "../runtime/node-hooks.mjs";
 import { hasBun } from "./bun.ts";
 
 test("parsePackageSpecifier: plain, range, subpath", () => {
@@ -72,4 +72,14 @@ test("node-hooks.mjs loads in Bun, which has no module.registerHooks", { skip: !
   const url = new URL("../runtime/node-hooks.mjs", import.meta.url).href;
   const script = `const m = await import(${JSON.stringify(url)}); console.log(typeof m.ensureInstalled)`;
   assert.equal(execFileSync("bun", ["-e", script], { encoding: "utf8" }).trim(), "function");
+});
+
+test("the npm and bun caches follow XDG_CACHE_HOME, and CDPK_CACHE_DIR overrides npm's", () => {
+  const home = "/home/u";
+  assert.equal(cacheDirPath("npm", {}, home), "/home/u/.cache/cdp-kernel/npm");
+  assert.equal(cacheDirPath("bun", { XDG_CACHE_HOME: "" }, home), "/home/u/.cache/cdp-kernel/bun");
+  assert.equal(cacheDirPath("npm", { XDG_CACHE_HOME: "/xdg" }, home), "/xdg/cdp-kernel/npm");
+  assert.equal(cacheDirPath("bun", { XDG_CACHE_HOME: "/xdg" }, home), "/xdg/cdp-kernel/bun");
+  assert.equal(cacheDirPath("npm", { XDG_CACHE_HOME: "/xdg", CDPK_CACHE_DIR: "/c" }, home), "/c");
+  assert.equal(cacheDirPath("bun", { CDPK_CACHE_DIR: "/c" }, home), "/home/u/.cache/cdp-kernel/bun");
 });

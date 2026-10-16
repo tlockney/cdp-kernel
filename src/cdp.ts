@@ -66,7 +66,6 @@ export class CdpSession {
   #nextId = 0;
   #pending = new Map<number, Pending>();
   #listeners = new Map<string, ((params: CdpParams) => void)[]>();
-  readonly closed: Promise<void>;
 
   private constructor(ws: WebSocket) {
     this.#ws = ws;
@@ -85,14 +84,11 @@ export class CdpSession {
         for (const listener of this.#listeners.get(msg.method) ?? []) listener(msg.params);
       }
     });
-    this.closed = new Promise((resolve) => {
-      ws.addEventListener("close", () => {
-        for (const pending of this.#pending.values()) {
-          pending.reject(new Error("CDP connection closed"));
-        }
-        this.#pending.clear();
-        resolve();
-      });
+    ws.addEventListener("close", () => {
+      for (const pending of this.#pending.values()) {
+        pending.reject(new Error("CDP connection closed"));
+      }
+      this.#pending.clear();
     });
   }
 
@@ -135,6 +131,23 @@ export class CdpSession {
   }
 }
 
+export function isRecord(value: unknown): value is CdpParams {
+  return typeof value === "object" && value !== null;
+}
+
+export function isRemoteObject(value: unknown): value is RemoteObject {
+  return isRecord(value) && typeof value.type === "string";
+}
+
+/**
+ * A Runtime.evaluate-shaped reply, checked: a value, or exceptionDetails.
+ * The Bun and workerd drivers send no `result` with a thrown exception.
+ */
 export function asEvaluateResult(raw: CdpParams): EvaluateResult {
-  return raw as unknown as EvaluateResult;
+  const details = raw.exceptionDetails;
+  if (details !== undefined ? !isRecord(details) || typeof details.text !== "string" : !isRemoteObject(raw.result)) {
+    throw new Error(`the target sent a malformed evaluate result: ${JSON.stringify(raw).slice(0, 200)}`);
+  }
+  const result = isRemoteObject(raw.result) ? raw.result : { type: "undefined" };
+  return details === undefined ? { result } : { result, exceptionDetails: details as unknown as ExceptionDetails };
 }

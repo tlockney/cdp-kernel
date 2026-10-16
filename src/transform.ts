@@ -6,7 +6,7 @@
 // TypeScript/JSX part and acorn finds the module syntax that a script can't
 // contain:
 //   import x, { y as z } from "m"  ->  var __cdpk_m0 = await __cdpk.import("m");
-//                                     var x = __cdpk_m0.default, z = __cdpk_m0.y;
+//                                     var x = __cdpk_m0["default"], z = __cdpk_m0["y"];
 //   import("m")                    ->  __cdpk.import("m")
 //   import.meta                    ->  __cdpk.meta
 //   export const a = 1             ->  const a = 1
@@ -144,7 +144,8 @@ function rewriteImport(code: string, node: ImportDeclarationNode, index: number)
     ? `, { with: { ${node.attributes.map((a) => code.slice(a.start, a.end)).join(", ")} } }`
     : "";
   const load = `await ${SHIM}.import(${source}${attrs})`;
-  if (node.specifiers.length === 0) return `${load};`;
+  // `void`: as a cell's last statement, the import isn't its result (#139).
+  if (node.specifiers.length === 0) return `void ${load};`;
   const ns = `${SHIM}_m${index}`;
   const bindings = node.specifiers.map((spec) => {
     const local = String(spec.local.name);

@@ -12,10 +12,11 @@ import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type Evalua
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 
 /** Targets driven over CDP. */
 export type CdpRuntime = "node" | "deno";
-/** Bun and workerd have their own backends: src/bun-target.ts, src/workerd-target.ts. */
+/** Bun, workerd and celld have their own backends: src/bun-target.ts, src/workerd-target.ts, src/celld-target.ts. */
 export type RuntimeName = CdpRuntime | "bun" | "workerd" | "celld";
 
 /** What the kernel needs from a target runtime. */
@@ -401,6 +402,7 @@ export class Target implements KernelTarget {
     if (esbuild !== null) env.CDPK_ESBUILD_BINARY = esbuild;
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
+    killOnExit(child);
     // A start that fails or stalls must not leave the runtime running: its
     // pipes and inspector sockets would keep this process alive (#52).
     const sessions: CdpSession[] = [];
@@ -676,7 +678,8 @@ export class Target implements KernelTarget {
   #evaluatePure(expression: string): Promise<EvaluateResult | null> {
     return this.#shell
       .send("Runtime.evaluate", { expression, contextId: this.#contextId, throwOnSideEffect: true })
-      .then(asEvaluateResult, () => null);
+      .then(asEvaluateResult)
+      .catch(() => null);
   }
 
   async propertyNames(expression: string): Promise<string[]> {

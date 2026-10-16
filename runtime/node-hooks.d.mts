@@ -8,6 +8,12 @@ export function parsePackageSpecifier(spec: string): PackageSpecifier;
 export function jsrToNpm(spec: string): PackageSpecifier;
 export function aliasFor(name: string, range: string): string;
 export type Installer = "npm" | "bun";
+/** Where `installer` keeps its packages: $XDG_CACHE_HOME/cdp-kernel/<installer>, or CDPK_CACHE_DIR for npm. */
+export function cacheDirPath(
+  installer: Installer,
+  env?: { [name: string]: string | undefined },
+  home?: string,
+): string;
 export function installCommand(
   installer: Installer,
   alias: string,

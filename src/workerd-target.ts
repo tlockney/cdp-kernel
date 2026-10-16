@@ -25,9 +25,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
@@ -284,12 +285,19 @@ export class RawWorkerd implements WorkerHost {
     const child = spawn(workerd, ["serve", "config.capnp", "--experimental"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });
     child.once("exit", () => rmSync(dir, { recursive: true, force: true }));
     if (child.pid !== undefined) writeFileSync(join(dir, OWNER_FILE), JSON.stringify({ host: process.pid, workerd: child.pid }));
+    killOnExit(child, () => {
+      child.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    });
 
     // Cell output is captured inside the Worker; what workerd itself prints
     // (its own warnings, errors from background work) goes to the server log.
+    // `early` keeps that output for a startup error only, and stops growing
+    // once the session is open.
     let early = "";
+    let starting = true;
     const log = (chunk: Buffer) => {
-      early += chunk.toString();
+      if (starting) early += chunk.toString();
       process.stderr.write(`[cdp-kernel workerd] ${chunk}`);
     };
     child.stdout?.on("data", log);
@@ -311,7 +319,10 @@ export class RawWorkerd implements WorkerHost {
       }
     })();
     try {
-      return new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      const host = new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      starting = false;
+      early = "";
+      return host;
     } catch (err) {
       child.kill();
       throw err;
@@ -319,7 +330,15 @@ export class RawWorkerd implements WorkerHost {
   }
 
   stop(now: boolean): void {
-    this.#child.kill(now ? "SIGKILL" : "SIGTERM");
+    if (now) {
+      this.#child.kill("SIGKILL");
+      return;
+    }
+    this.#child.kill("SIGTERM");
+    // A busy isolate keeps workerd's event loop from ever seeing SIGTERM (#128).
+    setTimeout(() => {
+      if (this.#child.exitCode === null && this.#child.signalCode === null) this.#child.kill("SIGKILL");
+    }, 3000).unref();
   }
 
   onExit(listener: (code: number | null) => void): void {
@@ -477,7 +496,7 @@ export class WorkerdTarget implements KernelTarget {
     const { failedModules, ...reply } = await this.#interruptibly("eval", { code: script, modules }, "Execution");
     // A module that threw while loading is rebuilt for its next import (#147).
     if (Array.isArray(failedModules)) for (const specifier of failedModules) this.#sent.delete(specifier);
-    return reply as unknown as EvaluateResult;
+    return asEvaluateResult(reply);
   }
 
   /**
