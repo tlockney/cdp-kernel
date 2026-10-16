@@ -66,13 +66,13 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
         <code>Symbol.for("Jupyter.display")</code> for your own types.</p>
     </div>
     <figure class="nb">
-      <div class="nb-head"><span>[1]</span><span>TypeScript (cdp-kernel, node)</span></div>
-      <pre class="cell"><code><span class="k">import</span> { format } <span class="k">from</span> <span class="s">"npm:date-fns@4"</span>;
+      <div class="nb-code"><span class="nb-lang">ts</span>
+      <pre><code><span class="k">import</span> { format } <span class="k">from</span> <span class="s">"npm:date-fns@4"</span>;
 
 <span class="k">const</span> now: <span class="t">Date</span> = <span class="k">new</span> <span class="t">Date</span>();
 <span class="k">await</span> jupyter.display(
   jupyter.md<span class="s">`**Today** is ${</span>format(now, <span class="s">"PPPP"</span>)<span class="s">}`</span>,
-);</code></pre>
+);</code></pre></div>
       <div class="nb-out"><strong>Today</strong> is Friday, October 16th, 2026</div>
       <figcaption>The cell's output: Markdown rendered under the cell, and saved with the notebook.</figcaption>
     </figure>

@@ -15,7 +15,7 @@
   --inline-code-bg: rgba(142, 150, 170, 0.14);
   --lvl-intro: #18794e;
   --lvl-intro-bg: rgba(24, 121, 78, 0.14);
-  --lvl-guide-bg: rgba(46, 110, 100, 0.14);
+  --accent-soft: rgba(46, 110, 100, 0.14);
   --lvl-adv: #6f42c1;
   --lvl-adv-bg: rgba(111, 66, 193, 0.14);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -42,7 +42,7 @@
     --inline-code-bg: rgba(101, 117, 133, 0.16);
     --lvl-intro: #3dd68c;
     --lvl-intro-bg: rgba(16, 185, 129, 0.16);
-    --lvl-guide-bg: rgba(90, 168, 155, 0.16);
+    --accent-soft: rgba(90, 168, 155, 0.16);
     --lvl-adv: #c8abfa;
     --lvl-adv-bg: rgba(159, 122, 234, 0.16);
   }
@@ -63,7 +63,7 @@
   --inline-code-bg: rgba(101, 117, 133, 0.16);
   --lvl-intro: #3dd68c;
   --lvl-intro-bg: rgba(16, 185, 129, 0.16);
-  --lvl-guide-bg: rgba(90, 168, 155, 0.16);
+  --accent-soft: rgba(90, 168, 155, 0.16);
   --lvl-adv: #c8abfa;
   --lvl-adv-bg: rgba(159, 122, 234, 0.16);
 }
@@ -160,18 +160,13 @@ pre code { font-size: inherit; }
 .rt tr:last-child td { border-bottom: 0; }
 .more { margin-top: 16px; }
 
-.nb { margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
-.nb-head {
-  display: flex;
-  justify-content: space-between;
-  padding: 6px 14px;
-  font: 0.75rem var(--mono);
-  color: var(--code-comment);
-  background: var(--code-bg);
-}
-.nb pre.cell { border-radius: 0; padding-top: 4px; }
-.nb-out { padding: 14px 18px; border-top: 1px solid var(--line); }
-.nb figcaption { padding: 0 18px 12px; font-size: 0.8rem; color: var(--fg-soft); }
+/* A notebook cell as the docs show one: a code block with its output under
+   it, behind a tinted rule (docs/.vitepress/theme/custom.css, .nb-*). */
+.nb { margin: 0; }
+.nb-code { position: relative; }
+.nb-lang { position: absolute; top: 2px; right: 8px; font: 0.75rem var(--mono); color: var(--code-comment); }
+.nb-out { margin-top: 12px; padding: 4px 0 4px 16px; border-left: 3px solid var(--accent-soft); }
+.nb figcaption { margin-top: 12px; font-size: 0.8rem; color: var(--fg-soft); }
 
 .paths .path { display: block; border: 1px solid var(--line); border-radius: 8px; padding: 20px; background: var(--bg); color: var(--fg); text-decoration: none; }
 .paths .path:hover { border-color: var(--accent); }
@@ -187,7 +182,7 @@ pre code { font-size: inherit; }
 }
 /* The docs' level badges (docs/.vitepress/theme/custom.css). */
 .lvl.intro { color: var(--lvl-intro); background: var(--lvl-intro-bg); }
-.lvl.guide { color: var(--accent); background: var(--lvl-guide-bg); }
+.lvl.guide { color: var(--accent); background: var(--accent-soft); }
 .lvl.adv { color: var(--lvl-adv); background: var(--lvl-adv-bg); }
 .diagram { display: block; width: 100%; height: auto; margin: 0 0 24px; border-radius: 8px; }
 
