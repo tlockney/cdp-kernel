@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { type DapMessage, type DebugChannel, Debugger, HASH_SEED } from "../src/debugger.ts";
 import { murmur2 } from "../src/murmur2.ts";
 import { Target, type TargetEvents } from "../src/target.ts";
@@ -190,3 +190,19 @@ for (const runtime of ["node", "deno"] as const) {
     assert.equal((await request("source", { source: { path: sourcePath } })).content, "1 + 1");
   });
 }
+
+test("the debugger's cell files are removed when the kernel exits", () => {
+  const script = `
+    import { existsSync } from "node:fs";
+    import { Debugger } from ${JSON.stringify(new URL("../src/debugger.ts", import.meta.url).href)};
+    const dbg = new Debugger(() => {});
+    dbg.cellScript("1 + 1", "1 + 1");
+    if (!existsSync(dbg.pathFor("1 + 1"))) throw new Error("no cell file");
+    console.log(dbg.prefix);
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  const prefix = child.stdout.trim();
+  assert.ok(prefix.includes("cdp-kernel_"));
+  assert.equal(existsSync(prefix), false);
+});
