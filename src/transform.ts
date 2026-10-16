@@ -64,8 +64,15 @@ function jsxSettings(jsx: JsxOptions | undefined): TransformOptions {
   return { jsx: "transform", jsxFactory: jsx?.factory, jsxFragment: jsx?.fragment };
 }
 
+// esbuild compiles `import x = require("m")` to a `require` call, which a
+// cell doesn't have (#143); `import type x = require("m")` is erased.
+const IMPORT_REQUIRE = /^\s*(?:export\s+)?import\s+(?!type\s)[\w$]+\s*=\s*require\s*\(/m;
+
 /** esbuild's output, with its source map's `mappings` when asked for. */
 function stripTypesMapped(code: string, options: CellTransformOptions, sourcemap: boolean): { code: string; mappings: string } {
+  if (IMPORT_REQUIRE.test(code)) {
+    throw new CellSyntaxError('import x = require("m") is not supported in a cell; use import x from "m"');
+  }
   const compilerOptions = {
     verbatimModuleSyntax: true,
     ...(options.experimentalDecorators ? { experimentalDecorators: true } : {}),
@@ -206,7 +213,12 @@ export function rewriteModuleSyntax(js: string): string {
       }
       case "ExportDefaultDeclaration": {
         const decl = node as ExportDefaultNode;
-        edits.push({ start: decl.start, end: decl.declaration.start, text: "" });
+        const anonymous = (decl.declaration.type === "FunctionDeclaration" || decl.declaration.type === "ClassDeclaration") &&
+          (decl.declaration as Node & { id: unknown }).id === null;
+        // An anonymous `function () {}` or `class {}` isn't a statement on
+        // its own; parenthesized, it's an expression and the cell's result (#143).
+        edits.push({ start: decl.start, end: decl.declaration.start, text: anonymous ? "(" : "" });
+        if (anonymous) edits.push({ start: decl.declaration.end, end: decl.declaration.end, text: ");" });
         break;
       }
       case "ExportAllDeclaration":

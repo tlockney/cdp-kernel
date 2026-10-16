@@ -93,6 +93,19 @@ test("export declarations are stripped to plain declarations", () => {
   assert.equal(rewriteModuleSyntax("export class K {}"), "class K {}");
 });
 
+test("an anonymous export default function or class becomes an expression (#143)", () => {
+  assert.equal(rewriteModuleSyntax("export default class {\n}\n[1];"), "(class {\n});\n[1];");
+  assert.equal(rewriteModuleSyntax("export default function () {\n}"), "(function () {\n});");
+  assert.equal(rewriteModuleSyntax("export default function f() {}"), "function f() {}");
+});
+
+test("import x = require() is rejected with a clear error (#143)", () => {
+  assert.throws(() => transformCell('import fs = require("node:fs");'), (err: unknown) =>
+    err instanceof CellSyntaxError && /import x = require/.test(err.message));
+  assert.throws(() => transformCell('export import fs = require("node:fs");'), CellSyntaxError);
+  assert.doesNotThrow(() => transformCell('import type fs = require("node:fs");\nlet a: fs.Stats;'));
+});
+
 test("export default keeps just the expression", () => {
   assert.equal(rewriteModuleSyntax("export default 1 + 2;"), "1 + 2;");
 });

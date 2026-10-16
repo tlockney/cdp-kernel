@@ -149,6 +149,14 @@ test("a trailing sequence expression's value is its last (#140)", async () => {
   assert.deepEqual(await s.cell("let n = 0; n++, n++, n"), [2]);
 });
 
+test("a cell ending in an anonymous export default shows it (#143)", async () => {
+  const s = session();
+  const [fn] = (await s.cell("export default function () { return 7; }"))!;
+  assert.equal((fn as () => number)(), 7);
+  const [cls] = (await s.cell("export default class { x = 1 }"))!;
+  assert.equal(new (cls as new () => { x: number })().x, 1);
+});
+
 test("the cell starts on line 2 whether or not it declares anything (#150)", async () => {
   const line = (code: string) => transformCellForEval(code).split("\n").findIndex((l) => l.includes("marker")) + 1;
   assert.equal(line('throw new Error("marker")'), 2);
