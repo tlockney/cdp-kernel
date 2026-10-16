@@ -142,3 +142,11 @@ test("TypeScript enums and annotations survive", async () => {
 test("syntax errors throw CellSyntaxError", () => {
   assert.throws(() => transformCellForEval("const = ;"), CellSyntaxError);
 });
+
+test("a cell ending in an anonymous export default shows it (#143)", async () => {
+  const s = session();
+  const [fn] = (await s.cell("export default function () { return 7; }"))!;
+  assert.equal((fn as () => number)(), 7);
+  const [cls] = (await s.cell("export default class { x = 1 }"))!;
+  assert.equal(new (cls as new () => { x: number })().x, 1);
+});
