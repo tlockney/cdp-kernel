@@ -59,14 +59,19 @@ await jupyter.display(jupyter.md`**Today** is ${format(now, "PPPP")}`);
 
 ## Documentation
 
-- [Writing notebooks](https://cdp-kernel.org/docs/notebooks)
-- [Runtimes: Bun, workerd, celld](https://cdp-kernel.org/docs/runtimes)
-- [Debugger](https://cdp-kernel.org/docs/debugger)
-- [Widgets and comms](https://cdp-kernel.org/docs/widgets)
-- [Editor types](https://cdp-kernel.org/docs/editor-types)
-- [Known gaps](https://cdp-kernel.org/docs/known-gaps)
-- [Architecture](https://cdp-kernel.org/docs/architecture)
-- [Development: tests and releasing](https://cdp-kernel.org/docs/development)
+New to Jupyter? Start with
+[Getting started](https://cdp-kernel.org/docs/getting-started).
+
+- Guides: [Writing notebooks](https://cdp-kernel.org/docs/notebooks),
+  [The `jupyter` namespace](https://cdp-kernel.org/docs/jupyter-api),
+  [Runtimes](https://cdp-kernel.org/docs/runtimes),
+  [Widgets and comms](https://cdp-kernel.org/docs/widgets),
+  [Debugger](https://cdp-kernel.org/docs/debugger)
+- Reference: [Editor types](https://cdp-kernel.org/docs/editor-types),
+  [Known gaps](https://cdp-kernel.org/docs/known-gaps)
+- Internals: [Architecture](https://cdp-kernel.org/docs/architecture),
+  [Runtime integrations](https://cdp-kernel.org/docs/integrations)
+- Contributing: [Development](https://cdp-kernel.org/docs/development)
 
 The [feasibility study](https://cdp-kernel.org/study.html)
 behind the project covers the design, the alternatives considered (workerd,
