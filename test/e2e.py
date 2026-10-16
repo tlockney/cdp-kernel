@@ -523,6 +523,12 @@ def checks(runtime, workdir, offline):
     def deno_namespace(s):
         _, out = s.run("typeof Deno !== 'undefined' && Deno.jupyter === jupyter")
         assert strip_ansi(result_of(out)["text/plain"]) == "true", out
+        # Completion and Shift-Tab reach the real namespace (#132).
+        s.kc.complete("Deno.readT", 10)
+        reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+        assert "readTextFile" in reply["matches"], reply
+        tip = inspect_reply(s, "Deno.readTextFile")
+        assert tip["found"] and "Type: function" in tip["data"]["text/plain"], tip
 
     def deno_file_apis(s):
         reply, out = s.run(

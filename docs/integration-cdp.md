@@ -236,9 +236,11 @@ from npm, its `runtime/` files are in one, so the host copies them out to
 `~/.cache/cdp-kernel/runtime/` before launching a Deno target.
 
 **`Deno.jupyter`.** Outside `deno jupyter`, `Deno.jupyter` is a getter
-that throws. `bootstrap.mjs` replaces the `Deno` global with a proxy that
-answers `jupyter` with cdp-kernel's own namespace and forwards everything
-else, so existing notebooks that use `Deno.jupyter.display` keep working.
+that throws. `bootstrap.mjs` replaces the `Deno` global with an object
+whose own `jupyter` is cdp-kernel's namespace and whose prototype is the
+real `Deno`, so existing notebooks that use `Deno.jupyter.display` keep
+working, and completion and Shift-Tab on `Deno.` find the real namespace's
+members. `Object.keys(Deno)` and `console.log(Deno)` show only `jupyter`.
 
 ## The debugger
 

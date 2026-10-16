@@ -199,14 +199,19 @@ globalThis.confirm = jupyter.confirm;
 if (isDeno) {
   // Existing Deno notebooks use Deno.jupyter, but outside `deno jupyter`
   // that is a non-configurable getter that throws. The global binding
-  // itself is configurable, so swap in a proxy that answers `jupyter` and
-  // forwards everything else to the real namespace.
+  // itself is configurable, so swap in an object with its own `jupyter`
+  // that inherits everything else from the real namespace. Not a Proxy:
+  // completion can't list a Proxy's properties, and Shift-Tab's
+  // side-effect-free evaluation can't read through one (#132). So
+  // Object.keys(Deno) and console.log(Deno) show only `jupyter`, and
+  // Deno's functions are called with `this` set to this object (they
+  // don't use it).
   const real = globalThis.Deno;
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Deno");
-  const proxy = new Proxy(real, {
-    get: (target, key) => (key === "jupyter" ? jupyter.namespace : Reflect.get(target, key, target)),
+  const shim = Object.create(real, {
+    jupyter: { value: jupyter.namespace, enumerable: true, configurable: true, writable: true },
   });
-  Object.defineProperty(globalThis, "Deno", { ...descriptor, value: proxy });
+  Object.defineProperty(globalThis, "Deno", { ...descriptor, value: shim });
 } else if (process.env.CDPK_DENO_COMPAT === "1" && globalThis.Deno === undefined) {
   // Opt-in (install --deno-compat): a Deno namespace for notebooks written
   // against `deno jupyter`. See runtime/deno-compat.mjs for the trade-off.
