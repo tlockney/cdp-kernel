@@ -42,6 +42,10 @@ export class SocketReader {
     waiter?.();
   }
 
+  // Each call joins every buffered chunk, so a reader that keeps a large
+  // backlog while small chunks trickle in recopies it per call (quadratic).
+  // Jupyter traffic over loopback arrives in few, large chunks; a chunk
+  // list with an offset would avoid the copies if that ever changes.
   async readExact(n: number): Promise<Uint8Array> {
     while (this.#buffered < n) {
       if (this.#error) throw this.#error;
@@ -191,7 +195,11 @@ export interface RoutedMessage {
   frames: Uint8Array[];
 }
 
-/** ROUTER socket: each TCP connection is one peer with a generated identity. */
+/**
+ * ROUTER socket: each TCP connection is one peer with a generated identity.
+ * Writes ignore socket.write's backpressure signal: node:net buffers the
+ * rest, which is fine for loopback peers that read promptly.
+ */
 export class RouterSocket {
   readonly incoming = new Queue<RoutedMessage>();
   readonly peers = new Map<string, Socket>();
