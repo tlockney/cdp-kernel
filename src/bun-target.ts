@@ -14,7 +14,7 @@ import type { Duplex } from "node:stream";
 import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
-import { Gates, Interrupted, isTargetMessage, type KernelTarget, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
+import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
 
 /**
  * How long an interrupted target has to answer a ping. A cell waiting on a
@@ -57,6 +57,7 @@ export class BunTarget implements KernelTarget {
   readonly #gates = new Gates();
   readonly #pending = new Map<number, Pending>();
   #nextId = 0;
+  #exitedOnce = false;
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
   #stopNote: string | undefined;
@@ -113,7 +114,8 @@ export class BunTarget implements KernelTarget {
     this.#channel.on("data", (chunk: string) => {
       buffer += chunk;
       for (let nl = buffer.indexOf("\n"); nl !== -1; nl = buffer.indexOf("\n")) {
-        const msg: unknown = JSON.parse(buffer.slice(0, nl));
+        // Cells can write here through __cdpk_send too (#122).
+        const msg = parseJson(buffer.slice(0, nl));
         buffer = buffer.slice(nl + 1);
         if (isTargetMessage(msg)) this.#deliver(msg, events);
         else if (isRecord(msg) && msg.kind === "reply") this.#settle(msg);
@@ -134,6 +136,7 @@ export class BunTarget implements KernelTarget {
   }
 
   #exited(code: number | null, events: TargetEvents): void {
+    this.#exitedOnce = true;
     this.#gates.openAll();
     this.#stdout.close();
     this.#stderr.close();
@@ -157,6 +160,8 @@ export class BunTarget implements KernelTarget {
   }
 
   #request(op: string, params: CdpParams = {}): Promise<CdpParams> {
+    // Bun is gone; a write to its channel would never be answered.
+    if (this.#exitedOnce) return Promise.reject(new Abandoned("the bun session is closed"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });

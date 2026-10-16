@@ -63,6 +63,7 @@ export function groups(site: string): Group[] {
         { text: "Editor types", link: "/editor-types" },
         { text: "Known gaps", link: "/known-gaps" },
         { text: "Troubleshooting", link: "/troubleshooting" },
+        { text: "Changelog", link: "/changelog" },
       ],
     },
     {

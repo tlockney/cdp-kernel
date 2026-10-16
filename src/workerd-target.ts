@@ -31,7 +31,7 @@ import { runtimeDir } from "./package.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
-import { ensureInstalled, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
+import { ensureInstalledAsync, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
 
 /** The driver Worker's modules; the first is its main module. */
 export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "widget.mjs", "evaluator.mjs", "introspect.mjs"];
@@ -133,7 +133,8 @@ export async function bundleModule(specifier: string, cwd: string): Promise<stri
       ? jsrToNpm(specifier.slice(4))
       : null;
     if (pkg) {
-      const { dir, alias } = ensureInstalled(pkg, "npm", { lockFile: findLockFile(cwd) });
+      // Async: a sync install would stall the heartbeat and interrupts (#149).
+      const { dir, alias } = await ensureInstalledAsync(pkg, "npm", { lockFile: findLockFile(cwd) });
       entry = alias + pkg.subpath;
       resolveDir = dir;
     }
@@ -381,6 +382,8 @@ export class WorkerdTarget implements KernelTarget {
   }
 
   #request(op: string, params: CdpParams = {}, interruptible = false): Promise<CdpParams> {
+    // The channel drops writes after it closes, so nothing would answer.
+    if (this.#exitedOnce) return Promise.reject(new Abandoned("the workerd session is closed"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });

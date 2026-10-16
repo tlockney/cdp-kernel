@@ -37,6 +37,7 @@ Reference pages to look things up in:
 - [Known gaps](known-gaps.md): what doesn't work yet, per runtime.
 - [Troubleshooting](troubleshooting.md): a missing kernel, startup
   failures, `KernelError`, restarts, and which cache to clear.
+- [Changelog](changelog.md): what changed in each release.
 
 ## How it works
 

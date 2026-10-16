@@ -35,7 +35,10 @@ CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
 ## Releasing
 
 One version number lives in three places: `package.json`, `deno.jsonc` and
-`src/package.ts`. `test/package.test.ts` fails if they disagree. To release:
+`src/package.ts`. `test/package.test.ts` fails if they disagree, or if
+[`CHANGELOG.md`](changelog.md) has no `## <version> (<RELEASE_DATE>)`
+entry for it: move the "Unreleased" items under a heading for the new version as
+part of the bump. To release:
 
 1. Bump all three, and set `RELEASE_DATE` in `src/package.ts` to today
    (UTC). Commit, and merge to `main`.
@@ -57,6 +60,10 @@ Both registries authenticate the workflow through GitHub OIDC, so no tokens
 are stored:
 - **npm:** a trusted publisher for `tlockney/cdp-kernel` + `publish.yml`.
 - **JSR:** the package is linked to this repo in its JSR settings.
+
+Once both registries have the version, a `release` job creates the
+GitHub release for the tag, with the version's `CHANGELOG.md` entry as
+its notes.
 
 Neither registry lets a version be republished. Each job skips a version
 its registry already has, so re-running a release only fills in the half
