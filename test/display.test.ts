@@ -151,6 +151,22 @@ test("image accepts bytes or a path and rejects other data", async () => {
   assert.throws(() => image(new Uint8Array([1, 2, 3])), TypeError);
 });
 
+test("image of a path that can't be read throws Deno's TypeError", () => {
+  const host: DisplayHost = {
+    inspect: String,
+    base64: () => "",
+    readFile: (path) => {
+      throw Object.assign(new Error(`ENOENT: no such file or directory, open '${path}'`), { code: "ENOENT" });
+    },
+    send: () => {},
+    input: () => null,
+  };
+  assert.throws(() => createJupyter(host).namespace.image("/missing.png"), {
+    name: "TypeError",
+    message: /not a valid image or a path to an image/,
+  });
+});
+
 test("display sends display_data with an empty transient by default", async () => {
   const { jupyter, sent } = setup();
   await jupyter.namespace.display(7);

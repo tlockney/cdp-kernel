@@ -100,7 +100,8 @@ The two added lines solve problems with that call:
 - **The trailing tick** lets the script settle with nothing queued ahead
   of the inspector's own callback. The inspector holds the result promise
   only weakly until that callback runs; a garbage collection in between
-  fails the call with "Promise was collected" (#55). A declaration has no
+  fails the call with "Promise was collected"
+  ([#55](https://github.com/tlockney/cdp-kernel/issues/55)). A declaration has no
   completion value, so the cell's value is unchanged.
 
 The reply is a `RemoteObject` or `exceptionDetails`. The host then:
@@ -120,7 +121,8 @@ Calls that return a promise go through `__cdpk.hold()`, which keeps the
 promise referenced until a macrotask after it settles, for the same
 garbage-collection reason as the trailing tick. Calls that return a plain
 value use plain `Runtime.evaluate` or `callFunctionOn` without
-`awaitPromise`, for the same reason (#50).
+`awaitPromise`, for the same reason
+([#50](https://github.com/tlockney/cdp-kernel/issues/50)).
 
 ## Messages back to the host
 
@@ -236,9 +238,11 @@ from npm, its `runtime/` files are in one, so the host copies them out to
 `~/.cache/cdp-kernel/runtime/` before launching a Deno target.
 
 **`Deno.jupyter`.** Outside `deno jupyter`, `Deno.jupyter` is a getter
-that throws. `bootstrap.mjs` replaces the `Deno` global with a proxy that
-answers `jupyter` with cdp-kernel's own namespace and forwards everything
-else, so existing notebooks that use `Deno.jupyter.display` keep working.
+that throws. `bootstrap.mjs` replaces the `Deno` global with an object
+whose own `jupyter` is cdp-kernel's namespace and whose prototype is the
+real `Deno`, so existing notebooks that use `Deno.jupyter.display` keep
+working, and completion and Shift-Tab on `Deno.` find the real namespace's
+members. `Object.keys(Deno)` and `console.log(Deno)` show only `jupyter`.
 
 ## The debugger
 

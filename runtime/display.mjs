@@ -180,7 +180,14 @@ export function createJupyter(host) {
   }
 
   function image(obj) {
-    if (typeof obj === "string") obj = host.readFile(obj);
+    if (typeof obj === "string") {
+      // As Deno does: a path that can't be read gets the TypeError below.
+      try {
+        obj = host.readFile(obj);
+      } catch {
+        // fall through
+      }
+    }
     if (isJpg(obj)) return { [$display]: () => ({ "image/jpeg": host.base64(obj) }) };
     if (isPng(obj)) return { [$display]: () => ({ "image/png": host.base64(obj) }) };
     throw new TypeError(

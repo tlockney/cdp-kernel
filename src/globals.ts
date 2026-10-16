@@ -2,9 +2,9 @@
  * Ambient types for notebook cells run by cdp-kernel: the `jupyter` display
  * namespace and the stdin-backed `prompt`/`confirm`.
  *
- * Load it once per project, for example
- * `/// <reference types="@tlockney/cdp-kernel/globals" />` (npm) or
- * `import type {} from "jsr:@tlockney/cdp-kernel/globals";` (Deno).
+ * Load it once per project, for example with
+ * `/// <reference types="@tlockney/cdp-kernel/globals" />`. It ships in the
+ * npm package only: Deno notebooks use `Deno.jupyter`, which Deno types.
  *
  * A custom display is a class with a `[jupyter.$display]()` method returning
  * a media bundle. At runtime that key is `Symbol.for("Jupyter.display")`, but

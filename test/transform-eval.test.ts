@@ -156,3 +156,10 @@ test("a cell ending in an anonymous export default shows it (#143)", async () =>
   const [cls] = (await s.cell("export default class { x = 1 }"))!;
   assert.equal(new (cls as new () => { x: number })().x, 1);
 });
+
+test("a cell ending in a side-effect or type-only import has no result (#139)", async () => {
+  const s = session({ side: { x: 1 } });
+  assert.deepEqual(await s.cell('import "side"'), [undefined]);
+  assert.deepEqual(await s.cell('import { type X } from "side"'), [undefined]);
+  assert.deepEqual(s.imports, ["side", "side"]);
+});

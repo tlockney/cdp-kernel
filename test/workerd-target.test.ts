@@ -178,6 +178,21 @@ test("a relative import is bundled by the host", { skip }, async (t) => {
   assert.match((await target.describeError(missing.exceptionDetails.exception)).message, /Cannot import "\.\/nope\.ts"/);
 });
 
+test("a module that throws while loading shows its error each time, and loads once fixed", { skip }, async (t) => {
+  const dir = scratch(t);
+  writeFileSync(join(dir, "boom.ts"), 'throw new Error("boom at load");\n');
+  const { target, run } = await launch(t, dir);
+  for (let i = 0; i < 2; i++) {
+    const { exceptionDetails } = await run('import "./boom.ts"');
+    assert.ok(exceptionDetails?.exception, `import ${i + 1} fails`);
+    assert.match((await target.describeError(exceptionDetails.exception)).message, /boom at load/, `import ${i + 1}`);
+  }
+  writeFileSync(join(dir, "boom.ts"), "export const fixed: boolean = true;\n");
+  const { result, exceptionDetails } = await run('import { fixed } from "./boom.ts"; fixed');
+  assert.equal(exceptionDetails, undefined);
+  assert.equal(result.type, "boolean");
+});
+
 test("I/O objects and pending work carry over between cells: one session", { skip }, async (t) => {
   const { events, run } = await launch(t);
   // A Response body is an I/O object, tied to the request that made it.
@@ -223,6 +238,17 @@ test("interrupting a busy cell stops workerd, reporting the exit before the cell
   assert.ok((await outcome) instanceof Interrupted);
   assert.ok(exitedFirst, "the restart note is published inside the cell");
   assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE });
+});
+
+test("kill during a busy cell stops workerd", { skip }, async (t) => {
+  const { target, events, run } = await launch(t);
+  run("while (true) {}").catch(() => {});
+  await new Promise((r) => setTimeout(r, 200));
+  // SIGTERM never reaches a spinning isolate's event loop, so kill() must
+  // follow up with SIGKILL (#128).
+  target.kill();
+  for (let i = 0; i < 120 && !events.some((e) => "exit" in e); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(events.some((e) => "exit" in e), "workerd exited within 6 s");
 });
 
 test("comm messages reach registered targets inside a request", { skip }, async (t) => {
