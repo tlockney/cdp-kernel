@@ -155,12 +155,30 @@ async function answer(req) {
   return await handle(req);
 }
 
+const encoder = new TextEncoder();
+
+/**
+ * Compares in constant time: under celld and Miniflare the driver listens on
+ * loopback TCP, where any local user can try tokens. The length (fixed by
+ * the host) is not secret.
+ */
+function tokenMatches(token, expected) {
+  if (typeof token !== "string" || typeof expected !== "string") return false;
+  const a = encoder.encode(token);
+  const b = encoder.encode(expected);
+  if (a.byteLength !== b.byteLength) return false;
+  if (typeof crypto.subtle.timingSafeEqual === "function") return crypto.subtle.timingSafeEqual(a, b);
+  let diff = 0;
+  for (let i = 0; i < a.byteLength; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 export default {
   async fetch(request, env) {
     // A header, or the query string for a WebSocket client that can't set
     // headers (celld's session uses the host's built-in WebSocket).
     const token = request.headers.get("x-cdpk-token") ?? new URL(request.url).searchParams.get("token");
-    if (token !== env.TOKEN) return new Response("forbidden", { status: 403 });
+    if (!tokenMatches(token, env.TOKEN)) return new Response("forbidden", { status: 403 });
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected a WebSocket", { status: 426 });
     evaluate ??= install(env);
 

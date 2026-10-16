@@ -4,7 +4,8 @@
 // end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -20,6 +21,7 @@ import {
   WorkerdTarget,
 } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
+import { connectUnixWebSocket } from "../src/ws-client.ts";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 const WORKERD = join(REPO, "node_modules", ".bin", "workerd");
@@ -232,4 +234,34 @@ test("comm messages reach registered targets inside a request", { skip }, async 
     handled: true,
   });
   assert.deepEqual(await target.dispatchComm("comm_msg", { comm_id: "c1", data: {} }, {}, []), { handled: true });
+});
+
+test("the driver Worker refuses a session without the right token", { skip }, async (t) => {
+  const dir = scratch(t);
+  const socket = join(dir, "sock");
+  for (const name of WORKER_MODULES) copyFileSync(join(REPO, "runtime", name), join(dir, name));
+  const compatibilityDate = compatibilityDateOf(execFileSync(WORKERD, ["--version"], { encoding: "utf8" }));
+  writeFileSync(join(dir, "config.capnp"), workerdConfig({ socket, compatibilityDate }));
+  const token = "a".repeat(64);
+  const child = spawn(WORKERD, ["serve", "config.capnp", "--experimental"], {
+    cwd: dir,
+    stdio: "ignore",
+    env: { ...process.env, CDPK_TOKEN: token, CDPK_META: "{}" },
+  });
+  t.after(() => child.kill("SIGKILL"));
+  const open = async (headers: { [name: string]: string }) => {
+    for (let i = 0;; i++) {
+      try {
+        return await connectUnixWebSocket(socket, { headers });
+      } catch (err) {
+        if (i >= 200 || !/ENOENT|ECONNREFUSED/.test(String(err))) throw err;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+  };
+  const wrongs: { [name: string]: string }[] = [{}, { "x-cdpk-token": "a" }, { "x-cdpk-token": "b".repeat(64) }];
+  for (const wrong of wrongs) {
+    await assert.rejects(open(wrong), /handshake failed: HTTP\/1\.1 403/);
+  }
+  (await open({ "x-cdpk-token": token })).close();
 });
