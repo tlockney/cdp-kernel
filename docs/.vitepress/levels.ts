@@ -73,7 +73,7 @@ export function groups(site: string): Group[] {
         { text: "Node and Deno", link: "/integration-cdp" },
         { text: "Bun", link: "/integration-bun" },
         { text: "workerd and celld", link: "/integration-workers" },
-        { text: "Feasibility study (2026)", link: `${site}/study.html`, target: "_self" },
+        { text: "Feasibility study", link: "/feasibility-study" },
       ],
     },
     {

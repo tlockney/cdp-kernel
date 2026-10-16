@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 380" width="860" height="380" role="img" aria-label="Deno 2.9 runs a kernel isolate and a REPL isolate in one process, joined by 13 Rust ops. cdp-kernel runs a host (Node or Deno) and a target runtime as two processes, joined by CDP over the inspector WebSocket plus stdout and stderr pipes.">
+  <title>Deno 2.9's two isolates and 13 ops, and cdp-kernel's two processes joined by CDP</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .h { font: 600 12px system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.06em; fill: #57606a; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .la { stroke: #3b6fd8; stroke-width: 1.8; fill: none; }
+    .rule { stroke: #d0d7de; stroke-width: 1; }
+    .ah { fill: #6e7781; }
+    .aa { fill: #3b6fd8; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .h, .s, .l { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .la { stroke: #6b9bff; }
+      .rule { stroke: #3a3f47; }
+      .ah { fill: #a0a7b0; }
+      .aa { fill: #6b9bff; }
+    }
+  </style>
+  <defs>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="aa" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="380" rx="8"/>
+
+  <!-- Deno 2.9 -->
+  <text class="h" x="24" y="34">DENO 2.9: ONE PROCESS, TWO ISOLATES</text>
+  <rect class="box" x="24" y="48" width="270" height="110" rx="6"/>
+  <text class="t" x="159" y="80" text-anchor="middle">Kernel isolate</text>
+  <text class="m" x="159" y="104" text-anchor="middle">jupyter_kernel.js</text>
+  <text class="s" x="159" y="124" text-anchor="middle">ZMTP, Jupyter protocol, HMAC</text>
+  <text class="s" x="159" y="142" text-anchor="middle">plain JS over Deno.listen</text>
+
+  <line class="ln" x1="294" y1="103" x2="566" y2="103" marker-start="url(#g)" marker-end="url(#g)"/>
+  <text class="s" x="430" y="92" text-anchor="middle">13 Rust ops over channels</text>
+  <text class="l" x="430" y="122" text-anchor="middle">nearly all thin wrappers over CDP calls</text>
+
+  <rect class="box" x="566" y="48" width="270" height="110" rx="6"/>
+  <text class="t" x="701" y="80" text-anchor="middle">REPL isolate</text>
+  <text class="m" x="701" y="104" text-anchor="middle">Runtime.evaluate, replMode</text>
+  <text class="s" x="701" y="124" text-anchor="middle">swc transpile</text>
+  <text class="s" x="701" y="142" text-anchor="middle">Deno's module loader, npm: and jsr:</text>
+
+  <line class="rule" x1="24" y1="190" x2="836" y2="190"/>
+
+  <!-- cdp-kernel -->
+  <text class="h" x="24" y="222">CDP-KERNEL: TWO PROCESSES</text>
+  <rect class="ok" x="24" y="236" width="270" height="120" rx="6"/>
+  <text class="t" x="159" y="266" text-anchor="middle">Host (Node or Deno)</text>
+  <text class="m" x="159" y="290" text-anchor="middle">zmtp.ts · wire.ts · kernel.ts</text>
+  <text class="s" x="159" y="310" text-anchor="middle">ported from jupyter_kernel.js</text>
+  <text class="s" x="159" y="330" text-anchor="middle">esbuild + acorn cell transform</text>
+
+  <line class="la" x1="294" y1="276" x2="566" y2="276" marker-end="url(#b)"/>
+  <text class="s" x="430" y="266" text-anchor="middle">CDP over the --inspect WebSocket</text>
+  <line class="ln" x1="566" y1="318" x2="294" y2="318" marker-end="url(#g)"/>
+  <text class="s" x="430" y="308" text-anchor="middle">stdout and stderr pipes</text>
+  <text class="l" x="430" y="338" text-anchor="middle">with barrier markers to keep output in order</text>
+
+  <rect class="acc" x="566" y="236" width="270" height="120" rx="6"/>
+  <text class="t" x="701" y="266" text-anchor="middle">Target runtime</text>
+  <text class="m" x="701" y="290" text-anchor="middle">bootstrap.mjs · display.mjs</text>
+  <text class="s" x="701" y="310" text-anchor="middle">node or deno</text>
+  <text class="s" x="701" y="330" text-anchor="middle">resolve hooks for npm: and jsr:</text>
+</svg>

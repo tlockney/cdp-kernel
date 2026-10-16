@@ -16,7 +16,8 @@ concurrency:
 jobs:
   # The landing page is plain HTML and CSS in site/, served at /. The topic
   # docs are Markdown in docs/, built by VitePress into /docs/
-  # (docs/.vitepress/config.mts). The study is served at /study.html.
+  # (docs/.vitepress/config.mts). site/study.html redirects the study's old
+  # address to its docs page.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -33,7 +34,6 @@ jobs:
           cp -R site/. "$RUNNER_TEMP/site/"
           cp -R docs/.vitepress/dist "$RUNNER_TEMP/site/docs"
           cp -R docs/images "$RUNNER_TEMP/site/images"
-          cp docs/life-after-deno-jupyter.html "$RUNNER_TEMP/site/study.html"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ runner.temp }}/site

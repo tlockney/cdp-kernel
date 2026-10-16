@@ -1,7 +1,7 @@
 # Probes
 
-The one-off scripts behind the findings in
-[`docs/life-after-deno-jupyter.html`](../docs/life-after-deno-jupyter.html).
+The one-off scripts behind the findings in the
+[feasibility study](../docs/feasibility-study.md).
 They're kept as evidence and for re-checking against new runtime versions;
 they aren't tests. Results noted below are from 2026-10-14 on macOS arm64.
 

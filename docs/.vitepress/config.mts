@@ -15,13 +15,12 @@ const docsDir = path.resolve(import.meta.dirname, "..");
 const repoDir = path.resolve(docsDir, "..");
 
 // Pages link to each other as `install.md`, which VitePress resolves. Links
-// to anything else (the study, probes/, src/) point at files VitePress doesn't
-// publish, so send them to the published study or to GitHub.
+// to anything else (probes/, src/) point at files VitePress doesn't publish,
+// so send them to GitHub.
 function externalHref(href: string, page: string): string | undefined {
   if (/^[a-z][a-z0-9+.-]*:|^#|^\//i.test(href)) return;
   const [target, hash = ""] = href.split(/(?=#)/);
   const abs = path.resolve(path.dirname(page), target);
-  if (abs === path.join(docsDir, "life-after-deno-jupyter.html")) return `${site}/study.html${hash}`;
   if (abs.startsWith(docsDir + path.sep) && abs.endsWith(".md")) return;
   const rel = path.relative(repoDir, abs).split(path.sep).join("/");
   return `${repo}/${target.endsWith("/") ? "tree" : "blob"}/main/${rel}${hash}`;

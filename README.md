@@ -73,7 +73,7 @@ New to Jupyter? Start with
   [Runtime integrations](https://cdp-kernel.org/docs/integrations)
 - Contributing: [Development](https://cdp-kernel.org/docs/development)
 
-The [feasibility study](https://cdp-kernel.org/study.html)
+The [feasibility study](https://cdp-kernel.org/docs/feasibility-study)
 behind the project covers the design, the alternatives considered (workerd,
 Bun, rusty_v8, FFI), and the evidence.
 
