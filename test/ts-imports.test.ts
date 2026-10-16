@@ -72,6 +72,17 @@ test("imported .tsx and .jsx files compile their JSX as cells do", async (t) => 
   assert.equal(await run(`(await import("./pragma.tsx")).el`), "P");
 });
 
+test("a query or fragment on an imported .ts or .tsx URL doesn't skip the compile (#145)", async (t) => {
+  const cwd = notebookDir({
+    "plain.ts": NEEDS_CODEGEN,
+    "view.tsx": "const React = { createElement: (t: string) => t };\nexport const el = <b />;\n",
+  });
+  const run = await launch(t, cwd);
+  assert.equal(await run(`(await import("./plain.ts?v=2")).Color.Green`), 1);
+  assert.equal(await run(`(await import("./plain.ts#x")).Shapes.sides`), 4);
+  assert.equal(await run(`(await import("./view.tsx?v=2")).el`), "b");
+});
+
 test("a .ts file Node can strip keeps its line numbers", async (t) => {
   const cwd = notebookDir({
     "strip.ts": "type T = {\n  a: number;\n};\n\nexport function where(): string {\n  return new Error().stack!.split(\"\\n\")[1];\n}\n",
@@ -101,4 +112,17 @@ test("compileTypeScript passes the source on stdin and reports esbuild's error",
     () => compileTypeScript("x", "/n/x.ts", "/esbuild", () => ({ status: 1, stdout: "", stderr: "✘ [ERROR] Unexpected\n" })),
     { name: "SyntaxError", message: "/n/x.ts: ✘ [ERROR] Unexpected" },
   );
+});
+
+test("a cell ending in a side-effect or type-only import has no result (#139)", async (t) => {
+  const cwd = notebookDir({ "side.ts": "export type X = number;\n(globalThis as any).sideRan = true;\n" });
+  const target = await Target.launch("node", events, { cwd });
+  t.after(() => target.kill());
+  for (const code of ['import "./side.ts"', 'import { type X } from "./side.ts"']) {
+    const res = await target.evaluate(target.transform(code, {}));
+    assert.equal(res.exceptionDetails, undefined, JSON.stringify(res.exceptionDetails));
+    assert.equal(res.result.type, "undefined", code);
+  }
+  const res = await target.evaluate(target.transform("sideRan", {}));
+  assert.equal(res.result.value, true);
 });

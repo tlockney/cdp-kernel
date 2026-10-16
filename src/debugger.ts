@@ -9,7 +9,7 @@
 // Lines go through the cell's source map (src/sourcemap.ts), since esbuild
 // rewrites TypeScript.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import process from "node:process";
@@ -115,6 +115,7 @@ export class Debugger {
   readonly #pauseWaiters: (() => void)[] = [];
   readonly #emit: (event: DapMessage) => void;
   readonly #transformOptions: () => CellTransformOptions;
+  #cleanupRegistered = false;
 
   constructor(emit: (event: DapMessage) => void, transformOptions: () => CellTransformOptions = () => ({})) {
     this.#emit = emit;
@@ -545,6 +546,11 @@ export class Debugger {
 
   #writeCell(path: string, code: string): void {
     try {
+      if (!this.#cleanupRegistered) {
+        // The files only serve this kernel's frontend: remove them with it.
+        process.once("exit", () => rmSync(this.prefix, { recursive: true, force: true }));
+        this.#cleanupRegistered = true;
+      }
       mkdirSync(this.prefix, { recursive: true });
       writeFileSync(path, code);
     } catch {
