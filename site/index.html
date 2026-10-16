@@ -14,7 +14,7 @@
     <nav>
       <a href="#features">Features</a>
       <a href="#runtimes">Runtimes</a>
-      <a href="https://github.com/tlockney/cdp-kernel/tree/main/docs">Docs</a>
+      <a href="docs/">Docs</a>
       <a href="https://github.com/tlockney/cdp-kernel">GitHub</a>
     </nav>
   </div>
@@ -40,7 +40,7 @@ cdp-kernel install --runtime node   <span class="c"># or deno, bun, workerd, cel
 deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
     </div>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/tlockney/cdp-kernel/blob/main/docs/install.md">Install guide</a>
+      <a class="btn primary" href="docs/install">Install guide</a>
       <a class="btn" href="https://github.com/tlockney/cdp-kernel">View on GitHub</a>
     </div>
   </div>
@@ -120,8 +120,8 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
         <tr><td>celld</td><td>The same driver Worker on celld, with the project's bindings copied in.</td><td>No</td></tr>
       </tbody>
     </table>
-    <p class="more"><a href="https://github.com/tlockney/cdp-kernel/blob/main/docs/runtimes.md">How each runtime works</a> ·
-      <a href="https://github.com/tlockney/cdp-kernel/blob/main/docs/known-gaps.md">Known gaps</a></p>
+    <p class="more"><a href="docs/runtimes">How each runtime works</a> ·
+      <a href="docs/known-gaps">Known gaps</a></p>
   </div>
 </section>
 
@@ -133,7 +133,7 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
         isolate driven by CDP calls. cdp-kernel ports the protocol half to <code>node:net</code> and
         <code>node:crypto</code>, and points the CDP half at another runtime's inspector.
         esbuild and acorn replace what Deno's module loader did.</p>
-      <p><a href="https://github.com/tlockney/cdp-kernel/blob/main/docs/architecture.md">Architecture</a> ·
+      <p><a href="docs/architecture">Architecture</a> ·
         <a href="study.html">Feasibility study</a></p>
     </div>
     <div class="note">
