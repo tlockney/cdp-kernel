@@ -4,6 +4,8 @@ This page assumes you know some TypeScript or JavaScript, but nothing about
 Jupyter or Deno. It covers what a notebook is, how to install cdp-kernel
 and run a first notebook, and a few kinds of work it suits.
 
+<!-- notebook: public/notebooks/getting-started.ipynb -->
+
 ## Notebooks and kernels
 
 A Jupyter notebook is a file (`.ipynb`) made of **cells**. A code cell holds
@@ -73,7 +75,7 @@ the same name under Jupyter Kernels.
 
 Type into the first cell and press **Shift-Enter** to run it:
 
-```ts
+```ts cell
 const greeting: string = "Hello";
 greeting + ", notebook"
 ```
@@ -81,7 +83,7 @@ greeting + ", notebook"
 The cell's last expression is shown as its result: `'Hello, notebook'`.
 Then, in the next cell:
 
-```ts
+```ts cell
 console.log(greeting.length);
 await new Promise((resolve) => setTimeout(resolve, 500));
 jupyter.md`**${greeting}** from a _Markdown_ result`
@@ -118,9 +120,9 @@ record of what you did, or mix explanation with code. Some examples:
 ### Analysing data
 
 Load a file once, then ask it questions cell by cell without reloading.
-With `orders.csv` next to the notebook:
+With `orders.csv` next to the notebook ([sample data](public/notebooks/orders.csv)):
 
-```ts
+```ts cell
 import { readFile } from "node:fs/promises";
 
 const [header, ...rows] = (await readFile("orders.csv", "utf8")).trim().split("\n");
@@ -131,7 +133,7 @@ const orders = rows.map((line) => {
 orders.length
 ```
 
-```ts
+```ts cell
 const byRegion = Object.groupBy(orders, (o) => o.region);
 const totals = Object.entries(byRegion).map(([region, list]) => ({
   region,
@@ -184,12 +186,12 @@ Save the notebook after a run and it doubles as the incident log.
 When you're learning an HTTP API or a library, a notebook lets you make one
 call, look at the response, and write the next call against what you saw.
 
-```ts
+```ts cell
 const repo = await (await fetch("https://api.github.com/repos/tlockney/cdp-kernel")).json();
 Object.keys(repo)
 ```
 
-```ts
+```ts cell
 const { full_name, stargazers_count, open_issues_count, license } = repo;
 ({ full_name, stargazers_count, open_issues_count, license: license?.name })
 ```
@@ -203,7 +205,7 @@ function to see its signature before calling it.
 Notebooks keep the code, the numbers and your notes together, which makes
 them a good place for a quick measurement:
 
-```ts
+```ts cell
 const data = Array.from({ length: 1_000_000 }, (_, i) => i);
 
 function time(label: string, fn: () => unknown) {
@@ -227,7 +229,7 @@ A notebook is a quicker place than a scratch project to check how a
 language feature behaves or what a package does. Cells accept TypeScript,
 with no `tsconfig.json` or build step:
 
-```ts
+```ts cell
 type Point = { x: number; y: number };
 const origin = { x: 0, y: 0 } satisfies Point;
 
@@ -235,7 +237,7 @@ enum Direction { Up = "UP", Down = "DOWN" }
 [origin, Direction.Up, [3, 1, 2].toSorted()]
 ```
 
-```ts
+```ts cell
 import { z } from "npm:zod@3";
 
 const User = z.object({ name: z.string(), age: z.number().int() });

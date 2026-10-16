@@ -52,6 +52,7 @@
     "check": "tsc -p tsconfig.json",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
+    "docs:notebooks": "node docs/.vitepress/run-notebooks.ts",
     "install:node": "node src/main.ts install --runtime node",
     "install:deno": "node src/main.ts install --runtime deno",
     "install:node-deno": "node src/main.ts install --runtime node --deno-compat",
