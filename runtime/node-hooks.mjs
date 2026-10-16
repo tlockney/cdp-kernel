@@ -19,7 +19,7 @@
 // Not a named import: Bun, which loads this file for its npm:/jsr: helpers,
 // has no registerHooks, and a missing named export fails at link time.
 import module from "node:module";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -133,15 +133,13 @@ function holderAlive(lockDir) {
   }
 }
 
-/** Runs `fn` holding the cache's install lock. Synchronous, like the resolve hook. */
-export function withInstallLock(dir, fn, { timeoutMs = STALE_MS } = {}) {
-  const lockDir = join(dir, LOCK_DIR);
-  const deadline = Date.now() + timeoutMs;
+/** Takes the install lock at `lockDir` if it's free: false means wait and try again. */
+function tryLock(lockDir, deadline) {
   for (;;) {
     try {
       mkdirSync(lockDir);
       writeFileSync(join(lockDir, "pid"), String(process.pid));
-      break;
+      return true;
     } catch (err) {
       if (err?.code !== "EEXIST") throw err;
       let age = 0;
@@ -156,11 +154,30 @@ export function withInstallLock(dir, fn, { timeoutMs = STALE_MS } = {}) {
         continue;
       }
       if (Date.now() > deadline) throw new Error(`timed out waiting for the install lock ${lockDir}`);
-      sleep(100);
+      return false;
     }
   }
+}
+
+/** Runs `fn` holding the cache's install lock. Synchronous, like the resolve hook. */
+export function withInstallLock(dir, fn, { timeoutMs = STALE_MS } = {}) {
+  const lockDir = join(dir, LOCK_DIR);
+  const deadline = Date.now() + timeoutMs;
+  while (!tryLock(lockDir, deadline)) sleep(100);
   try {
     return fn();
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true });
+  }
+}
+
+/** withInstallLock for a caller that mustn't block its event loop while it waits. */
+export async function withInstallLockAsync(dir, fn, { timeoutMs = STALE_MS } = {}) {
+  const lockDir = join(dir, LOCK_DIR);
+  const deadline = Date.now() + timeoutMs;
+  while (!tryLock(lockDir, deadline)) await new Promise((resolve) => setTimeout(resolve, 100));
+  try {
+    return await fn();
   } finally {
     rmSync(lockDir, { recursive: true, force: true });
   }
@@ -189,8 +206,47 @@ export function spawnCommand(cmd, args, platform = process.platform) {
 }
 
 function spawnInstall(cmd, args, cwd, env = {}) {
-  const spawn = spawnCommand(cmd, args);
-  return spawnSync(spawn.cmd, spawn.args, { cwd, encoding: "utf8", env: { ...process.env, ...env }, shell: spawn.shell });
+  const spawned = spawnCommand(cmd, args);
+  return spawnSync(spawned.cmd, spawned.args, { cwd, encoding: "utf8", env: { ...process.env, ...env }, shell: spawned.shell });
+}
+
+/** spawnInstall without blocking: the kernel host keeps answering while it runs (#149). */
+function spawnInstallAsync(cmd, args, cwd, env = {}) {
+  const spawned = spawnCommand(cmd, args);
+  return new Promise((resolve) => {
+    let stderr = "";
+    const child = spawn(spawned.cmd, spawned.args, {
+      cwd,
+      env: { ...process.env, ...env },
+      shell: spawned.shell,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
+    child.on("error", (error) => resolve({ status: null, stderr, error }));
+    child.on("close", (status) => resolve({ status, stderr }));
+  });
+}
+
+/** The version to install for `name@range`: the locked one, if the lockfile has it. */
+function lockedRequest(name, range, lockFile) {
+  const lock = lockFile ? readLock(lockFile) : null;
+  const locked = lock?.packages[`${name}@${range}`];
+  const version = typeof locked === "string" ? locked : range;
+  return { lock, locked: typeof locked === "string", version, alias: aliasFor(name, version) };
+}
+
+/** Records an unlocked request's installed version in the lockfile. */
+function recordLock(dir, name, range, lockFile, { lock, locked, alias }) {
+  if (!lock || locked) return;
+  const resolved = installedVersion(dir, alias);
+  if (resolved !== null) {
+    lock.packages[`${name}@${range}`] = resolved;
+    writeLock(lockFile, lock);
+  }
+}
+
+function checkInstall(result, installer, name, version) {
+  if (result.status !== 0) throw new Error(`${installer} install ${name}@${version} failed:\n${result.stderr || result.error}`);
 }
 
 /**
@@ -201,27 +257,28 @@ function spawnInstall(cmd, args, cwd, env = {}) {
  */
 export function ensureInstalled({ name, range }, installer = "npm", { lockFile = null, run = spawnInstall } = {}) {
   const dir = cacheDir(installer);
-  const key = `${name}@${range}`;
   return withInstallLock(dir, () => {
-    const lock = lockFile ? readLock(lockFile) : null;
-    const locked = lock?.packages[key];
-    const version = typeof locked === "string" ? locked : range;
-    const alias = aliasFor(name, version);
-    if (installedVersion(dir, alias) === null) {
-      const { cmd, args, env } = installCommand(installer, alias, name, version);
-      const result = run(cmd, args, dir, env);
-      if (result.status !== 0) {
-        throw new Error(`${installer} install ${name}@${version} failed:\n${result.stderr || result.error}`);
-      }
+    const request = lockedRequest(name, range, lockFile);
+    if (installedVersion(dir, request.alias) === null) {
+      const { cmd, args, env } = installCommand(installer, request.alias, name, request.version);
+      checkInstall(run(cmd, args, dir, env), installer, name, request.version);
     }
-    if (lock && typeof locked !== "string") {
-      const resolved = installedVersion(dir, alias);
-      if (resolved !== null) {
-        lock.packages[key] = resolved;
-        writeLock(lockFile, lock);
-      }
+    recordLock(dir, name, range, lockFile, request);
+    return { dir, alias: request.alias };
+  });
+}
+
+/** ensureInstalled for the kernel host (workerd's bundler), which mustn't block (#149). */
+export function ensureInstalledAsync({ name, range }, installer = "npm", { lockFile = null, run = spawnInstallAsync } = {}) {
+  const dir = cacheDir(installer);
+  return withInstallLockAsync(dir, async () => {
+    const request = lockedRequest(name, range, lockFile);
+    if (installedVersion(dir, request.alias) === null) {
+      const { cmd, args, env } = installCommand(installer, request.alias, name, request.version);
+      checkInstall(await run(cmd, args, dir, env), installer, name, request.version);
     }
-    return { dir, alias };
+    recordLock(dir, name, range, lockFile, request);
+    return { dir, alias: request.alias };
   });
 }
 
