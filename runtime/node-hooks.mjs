@@ -290,9 +290,11 @@ export function ensureInstalledAsync({ name, range }, installer = "npm", { lockF
 // may have been copied away from any node_modules (src/package.ts), and the
 // esbuild binary, unlike its JavaScript API, works from anywhere.
 
-const TS_FILE = /^file:.*\.[cm]?ts$/;
+// Both match a file: URL's path, so a query or fragment (`./x.ts?v=2`, the
+// cache-busting idiom for a module being edited) doesn't hide the extension (#145).
+const TS_FILE = /\.[cm]?ts$/;
 // Node has no format for these extensions, so its loader is never asked.
-const JSX_FILE = /^file:.*\.([jt]sx)$/;
+const JSX_FILE = /\.([jt]sx)$/;
 const TS_FORMATS = { "module-typescript": "module", "commonjs-typescript": "commonjs" };
 
 function isUnsupportedSyntax(err) {
@@ -338,14 +340,15 @@ export function compileTypeScript(source, filename, binary, run = spawnSync, loa
 
 /** The load hook: Node's result unless it would reject the file's TypeScript. */
 export function loadTypeScript(url, context, nextLoad, binary) {
-  const jsx = JSX_FILE.exec(url);
+  const path = url.startsWith("file:") ? new URL(url).pathname : "";
+  const jsx = JSX_FILE.exec(path);
   if (binary && jsx) {
     // Notebooks import ES modules, so it's compiled as one.
     const filename = fileURLToPath(url);
     const source = compileTypeScript(readFileSync(filename, "utf8"), filename, binary, spawnSync, jsx[1]);
     return { format: "module", source, shortCircuit: true };
   }
-  if (!binary || !TS_FILE.test(url)) return nextLoad(url, context);
+  if (!binary || !TS_FILE.test(path)) return nextLoad(url, context);
   let result;
   try {
     result = nextLoad(url, context);
