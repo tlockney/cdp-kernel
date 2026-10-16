@@ -23,8 +23,8 @@ Guides for day-to-day use, once you've run a first notebook.
 - [The `jupyter` namespace](jupyter-api.md): rich output (Markdown, HTML,
   SVG, images, charts, tables), custom display, `prompt` and `confirm`,
   and running notebooks written for Deno.
-- [Runtimes](runtimes.md): what's different on Bun, workerd and celld,
-  and Workers projects.
+- [Choosing a runtime](runtimes.md): what differs between the runtimes,
+  and Workers and celld projects.
 - [Widgets and comms](widgets.md): interactive anywidget-style widgets and
   the comm API.
 - [Debugger](debugger.md): breakpoints and stepping in JupyterLab on Node

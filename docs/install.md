@@ -64,16 +64,5 @@ Windows build).
 
 ## From a checkout
 
-For working on the kernel itself:
-
-```sh
-npm ci
-npm run install:node        # kernelspec cdp-node
-npm run install:deno        # kernelspec cdp-deno
-npm run install:node-deno   # kernelspec cdp-node-deno
-npm run install:bun         # kernelspec cdp-bun
-npm run install:workerd     # kernelspec cdp-workerd
-npm run install:celld       # kernelspec cdp-celld
-```
-
-These kernelspecs point at the checkout, so don't move it after installing.
+To run the kernel from a clone of the repository, for working on it, see
+[Development › Running from a checkout](development.md#running-from-a-checkout).

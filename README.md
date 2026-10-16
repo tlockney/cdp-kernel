@@ -64,7 +64,7 @@ New to Jupyter? Start with
 
 - Guides: [Writing notebooks](https://cdp-kernel.org/docs/notebooks),
   [The `jupyter` namespace](https://cdp-kernel.org/docs/jupyter-api),
-  [Runtimes](https://cdp-kernel.org/docs/runtimes),
+  [Choosing a runtime](https://cdp-kernel.org/docs/runtimes),
   [Widgets and comms](https://cdp-kernel.org/docs/widgets),
   [Debugger](https://cdp-kernel.org/docs/debugger)
 - Reference: [Editor types](https://cdp-kernel.org/docs/editor-types),

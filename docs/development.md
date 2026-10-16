@@ -1,6 +1,20 @@
 # Development
 
-To install kernelspecs that run from a checkout, see [Install › From a checkout](install.md#from-a-checkout).
+## Running from a checkout
+
+```sh
+npm ci
+npm run install:node        # kernelspec cdp-node
+npm run install:deno        # kernelspec cdp-deno
+npm run install:node-deno   # kernelspec cdp-node-deno
+npm run install:bun         # kernelspec cdp-bun
+npm run install:workerd     # kernelspec cdp-workerd
+npm run install:celld       # kernelspec cdp-celld
+```
+
+These kernelspecs point at the checkout, so don't move it after installing.
+The target runtimes need to be installed as for a released kernel
+([Install › Target runtimes](install.md#target-runtimes)).
 
 ## Tests
 
