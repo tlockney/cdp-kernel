@@ -102,6 +102,12 @@ export class Kernel {
   #parent: JsonObject = {};
   #allowStdin = false;
   #executing = false;
+  /**
+   * stop_on_error (#123): how many of the shell messages queued when a cell
+   * failed are still to come, and whether the one being handled is one.
+   */
+  #abortQueued = 0;
+  #aborting = false;
   // Open comms, for comm_info_request: comm_id -> target_name (#9).
   readonly #comms = new Map<string, string>();
   #shuttingDown = false;
@@ -303,6 +309,10 @@ export class Kernel {
   async #loop(socket: RouterSocket, handle: (msg: Message, peer: string) => Promise<void>): Promise<void> {
     while (!this.#shuttingDown) {
       const { peer, frames } = await socket.recv();
+      if (socket === this.#shell) {
+        this.#aborting = this.#abortQueued > 0;
+        if (this.#aborting) this.#abortQueued--;
+      }
       try {
         const msg = decodeMessage(frames);
         // Unsigned or forged messages are dropped, as in Deno.
@@ -531,6 +541,13 @@ export class Kernel {
 
   async #execute(msg: Message, peer: string): Promise<void> {
     const parent = msg.header;
+    if (this.#aborting) {
+      // Queued behind a failed cell: not run, not counted (#123).
+      this.#status("busy", parent);
+      this.#reply(this.#shell, peer, msg, "execute_reply", { status: "aborted" });
+      this.#status("idle", parent);
+      return;
+    }
     const code = String(msg.content.code ?? "");
     const silent = msg.content.silent === true;
     if (!silent && msg.content.store_history !== false) {
@@ -589,6 +606,13 @@ export class Kernel {
     }
 
     if (error) {
+      if (!silent && msg.content.stop_on_error !== false) {
+        // Abort what was queued behind this cell (JupyterLab's Run All sends
+        // every cell at once), but nothing sent after the client sees the
+        // error. A macrotask first lets bytes already received be parsed.
+        await new Promise((r) => setTimeout(r, 0));
+        this.#abortQueued = this.#shell.incoming.size;
+      }
       this.#publish("error", error);
       this.#reply(this.#shell, peer, msg, "execute_reply", { status: "error", execution_count: count, ...error });
     } else {

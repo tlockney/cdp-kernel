@@ -117,8 +117,7 @@ a + 1
 
 ```js
 // What the evaluator runs
-var a, K;
-(async () => { 'use strict';
+var a, K; (async () => { 'use strict';
 ({ a } = await load());
 K = class K {};
 return [a + 1];
@@ -137,6 +136,10 @@ So:
   as in Deno.
 - **Functions keep their hoisting** and are copied to `globalThis` on
   entry.
+- **The cell starts on line 2** of the script, as after the one-line
+  prelude on Node and Deno. On every target a stack trace's line number
+  is one more than the line in the cell as esbuild compiled it (which
+  mostly keeps the cell's lines). Nothing remaps it.
 
 The difference from Node and Deno is that `const` doesn't stay constant
 across cells, and these names are global properties rather than lexical

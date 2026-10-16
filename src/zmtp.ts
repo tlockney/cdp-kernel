@@ -185,6 +185,10 @@ function listen(port: number, host: string, onConn: (socket: Socket) => void): S
 export class Queue<T> {
   #items: T[] = [];
   #waiters: ((item: T) => void)[] = [];
+  /** Items waiting to be popped. */
+  get size(): number {
+    return this.#items.length;
+  }
   push(item: T): void {
     const waiter = this.#waiters.shift();
     if (waiter) waiter(item);

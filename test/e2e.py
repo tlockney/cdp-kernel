@@ -314,6 +314,26 @@ def checks(runtime, workdir, offline):
             assert time.time() < deadline, "kernel still running after shutdown_request on shell"
             time.sleep(0.1)
 
+    def stop_on_error(s):
+        # Run All sends every cell at once; after a failing one the kernel
+        # aborts the rest of what's queued (#123).
+        def replies(*requests):
+            ids = [s.kc.execute(code, stop_on_error=stop) for code, stop in requests]
+            got = {}
+            deadline = time.time() + TIMEOUT
+            while len(got) < len(ids):
+                assert time.time() < deadline, f"replies: {got}"
+                r = s.kc.get_shell_msg(timeout=TIMEOUT)
+                if r["parent_header"].get("msg_id") in ids:
+                    got[r["parent_header"]["msg_id"]] = r["content"]["status"]
+            return [got[i] for i in ids]
+
+        assert replies(("throw new Error('x')", True), ("globalThis.ranAfter = 1", True), ("2", True)) == [
+            "error", "aborted", "aborted"]
+        _, out = s.run("typeof ranAfter")
+        assert "undefined" in result_of(out)["text/plain"], out
+        assert replies(("throw new Error('x')", False), ("3", True)) == ["error", "ok"]
+
     def interrupt(s):
         s.run("globalThis.kept = 'state'")
         msg_id = s.kc.execute("let spins = 0; while (true) { spins++ }")
@@ -790,6 +810,7 @@ def checks(runtime, workdir, offline):
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
         silent_publishes_only_status, control_status_and_shell_interrupt,
+        stop_on_error,
     ]
     if runtime in ("workerd", "celld"):
         # A request can't block on stdin, and workerd has no cwd of its own.
