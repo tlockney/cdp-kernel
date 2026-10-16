@@ -53,6 +53,7 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:notebooks": "node docs/.vitepress/run-notebooks.ts",
+    "docs:widgets": "uv run --with jupyterlab --with anywidget --with playwright --with nbformat python test/widget_screenshots.py",
     "install:node": "node src/main.ts install --runtime node",
     "install:deno": "node src/main.ts install --runtime deno",
     "install:node-deno": "node src/main.ts install --runtime node --deno-compat",
