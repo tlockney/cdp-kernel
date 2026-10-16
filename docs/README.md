@@ -35,6 +35,8 @@ Reference pages to look things up in:
 - [Editor types](editor-types.md): type declarations for the notebook
   globals, for type-checking in your editor.
 - [Known gaps](known-gaps.md): what doesn't work yet, per runtime.
+- [Troubleshooting](troubleshooting.md): a missing kernel, startup
+  failures, `KernelError`, restarts, and which cache to clear.
 - [Changelog](changelog.md): what changed in each release.
 
 ## How it works
