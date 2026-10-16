@@ -42,7 +42,7 @@ export function groups(site: string): Group[] {
       items: [
         { text: "Writing notebooks", link: "/notebooks" },
         { text: "The jupyter namespace", link: "/jupyter-api" },
-        { text: "Runtimes", link: "/runtimes" },
+        { text: "Choosing a runtime", link: "/runtimes" },
         { text: "Widgets and comms", link: "/widgets" },
         { text: "Debugger", link: "/debugger" },
       ],

@@ -13,8 +13,8 @@ detail:
   WebSocket session.
 
 For what each runtime supports from a notebook's point of view, see
-[Runtimes](runtimes.md) and [Known gaps](known-gaps.md). For how a cell's
-TypeScript becomes something a runtime can run, see
+[Choosing a runtime](runtimes.md) and [Known gaps](known-gaps.md). For how a
+cell's TypeScript becomes something a runtime can run, see
 [Cells and module loading](architecture.md#cells-and-module-loading).
 
 ## Background: what a Jupyter kernel is

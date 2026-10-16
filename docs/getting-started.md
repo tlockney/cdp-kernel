@@ -222,7 +222,7 @@ time("reduce", () => data.reduce((s, x) => s + x, 0));
 
 cdp-kernel runs the same notebook on different runtimes. Install the
 `deno` and `bun` kernels too, then switch with **Kernel › Change Kernel**
-and rerun to compare. [Runtimes](runtimes.md) and
+and rerun to compare. [Choosing a runtime](runtimes.md) and
 [Known gaps](known-gaps.md) list where the runtimes behave differently.
 
 ### Trying out syntax or a library
@@ -253,8 +253,8 @@ For type errors in your editor, see [Editor types](editor-types.md).
 
 - [Writing notebooks](notebooks.md): the display API, imports, pinning
   package versions with a lockfile, and Deno projects.
-- [Runtimes](runtimes.md): when to use Bun, workerd or celld, and how they
-  differ.
+- [Choosing a runtime](runtimes.md): when to use Bun, workerd or celld,
+  and how they differ.
 - [Debugger](debugger.md): breakpoints in JupyterLab on Node and Deno.
 - [Widgets and comms](widgets.md): interactive output.
 - [Known gaps](known-gaps.md): what doesn't work yet.
