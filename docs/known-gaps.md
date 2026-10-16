@@ -15,6 +15,10 @@
     real name from it;
   - a project's own `package.json` doesn't decide an `npm:` import's version
     (bare imports do use its `node_modules`).
+- On Node, a `.ts` file a cell imports is loaded with Node's own type
+  stripping, which rejects `enum`, `namespace` with values and parameter
+  properties. Cells themselves accept them. See
+  [Architecture › Imported TypeScript files](architecture.md#imported-typescript-files).
 - No type checking. Deno doesn't type-check REPL cells either.
 - Results are formatted by each runtime's own inspector: `util.inspect` on
   Node, Bun, workerd and celld, and `Deno.inspect` on Deno. On a fixture of

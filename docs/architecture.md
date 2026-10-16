@@ -21,7 +21,106 @@ So the extraction is:
   `src/target.ts`, `src/cdp.ts`.
 - Replace what Deno's module loader did with esbuild + acorn
   (`src/transform.ts`) and Node resolve hooks (`runtime/node-hooks.mjs`).
+  See [Cells and module loading](#cells-and-module-loading).
 - Port `Deno.jupyter` (`40_jupyter.js`) to `runtime/display.mjs`.
+
+## Cells and module loading
+
+A cell is written as a TypeScript module, but CDP's `Runtime.evaluate` runs
+scripts. Deno closes that gap in two places:
+
+- Its REPL transpiles each cell with deno_ast (swc) and
+  `var_decl_imports: true` (`cli/tools/repl/session.rs`,
+  `evaluate_ts_expression`): one pass strips types and turns `import`
+  declarations into `var` bindings over dynamic imports.
+- Its module loader then resolves and compiles whatever the cell imports:
+  relative files, import maps, `npm:`, `jsr:`.
+
+Neither exists on Node, Bun or workerd, so the kernel does the same work in
+three pieces.
+
+### esbuild: TypeScript to JavaScript
+
+`transformSync` strips types and compiles JSX in the cell's text
+(`stripTypesMapped` in `src/transform.ts`). As in Deno, it tries the `tsx`
+loader first and falls back to `ts` for `<T>x` assertions. A Deno project's
+`compilerOptions` (JSX mode and import source, `experimentalDecorators`)
+are mapped onto esbuild's options by `src/deno-config.ts`. The output keeps
+`import` and `export` as written (`verbatimModuleSyntax`), and esbuild's
+source map is what the debugger uses to map lines back to the cell
+([Debugger](debugger.md)).
+
+### acorn: module syntax to script syntax
+
+A script can't contain `import` or `export`, so acorn parses esbuild's output
+and `rewriteModuleSyntax` edits the text:
+
+| Cell | Script |
+|---|---|
+| `import x, { y as z } from "m"` | `var __cdpk_m0 = await __cdpk.import("m"); var x = __cdpk_m0["default"], z = __cdpk_m0["y"];` |
+| `import * as ns from "m"` | `var __cdpk_m0 = await __cdpk.import("m"); var ns = __cdpk_m0;` |
+| `import "m"` | `await __cdpk.import("m");` |
+| `import("m")` | `__cdpk.import("m")` |
+| `import.meta.url` | `__cdpk.meta.url` |
+| `export const a = 1` | `const a = 1` |
+
+This is the same shape as Deno's `var_decl_imports` output, with one
+difference: every import goes through `__cdpk.import`, a function that
+`runtime/bootstrap.mjs` installs in the target. Code evaluated over the
+inspector has no module referrer, so Node rejects a bare `import()` ("A
+dynamic import callback was not specified"). In Deno, its loader supplies
+the referrer. Calling `import()` from the bootstrap module gives every cell
+import a referrer, and `import.meta` describes the notebook rather than the
+bootstrap module.
+
+Edits keep line numbers: a multi-line import rewritten to one line is padded
+with the newlines it replaced (`applyEdits`), so the cell's lines still match
+esbuild's source map (#18).
+
+On Bun, workerd and celld, cells don't run through replMode, so acorn has a
+second job there: `hoistForEval` declares each top-level name with `var` in
+the surrounding script and runs the cell inside an async function, which
+gives top-level `await` and lets later cells see earlier declarations.
+
+### Resolution: where imports go
+
+esbuild and acorn only rewrite the cell's text. Resolution happens when
+`__cdpk.import` runs, and differs per target:
+
+- **Node.** `runtime/node-hooks.mjs` registers a synchronous resolve hook
+  (`module.registerHooks`). Imports whose parent is the bootstrap module are
+  re-parented to the notebook's directory, so `./x.ts` and bare package names
+  resolve as the user expects. `npm:name@range` installs on first use into
+  `~/.cache/cdp-kernel/npm`, under an alias per request so two ranges of one
+  package can coexist. `jsr:@scope/name` maps onto JSR's npm registry
+  (`npm.jsr.io`) as `@jsr/scope__name`.
+- **Bun.** Bun has no `registerHooks`, so `bootstrap.mjs` resolves `npm:` and
+  `jsr:` itself with the same helpers, installing with `bun add`, and
+  resolves everything else from the notebook's directory.
+- **Deno.** Deno's own resolution applies (import maps, `npm:`, `jsr:`, its
+  global cache). In a Deno project, a bare name Deno can't place is retried
+  from the project's `node_modules` (`runtime/node-modules-resolve.mjs`).
+  Only the cell transform comes from esbuild and acorn.
+- **workerd and celld.** These can't load modules at runtime beyond their
+  builtins, so the host bundles whatever a cell imports with esbuild's
+  `build()` and sends the bundle with the cell (`src/workerd-target.ts`,
+  `src/celld-target.ts`). In a Workers project, the project's `main` is
+  bundled the same way (`src/workers-project.ts`).
+
+### Imported TypeScript files
+
+esbuild transforms only the cell. A `.ts` file the cell imports is loaded
+by the target runtime itself:
+
+- Node strips its types natively (strip-only mode). Syntax that needs
+  code generation, such as `enum`, `namespace` with values, or parameter
+  properties, is rejected with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`, though
+  the same syntax works in a cell.
+- Bun and Deno transpile TypeScript fully.
+- On workerd and celld, esbuild's bundle compiles it.
+
+In Deno, the loader compiles every module the same way, so a cell and an
+imported file accept the same syntax.
 
 ## How the tricky parts work
 
