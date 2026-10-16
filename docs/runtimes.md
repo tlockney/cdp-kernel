@@ -104,6 +104,36 @@ work as on workerd. State stays in `.celld/cdp-kernel` across kernels,
 beside `celld dev`'s own `.celld/dev`. `assets`, `triggers`, `containers`
 and `.dev.vars` aren't copied.
 
+## On a shared machine
+
+Cells run as you, with your full permissions: a notebook can read and
+write anything you can, on every runtime (workerd and celld included, since
+they serve a local driver rather than isolate the machine). Only open
+notebooks you trust, as with any Jupyter kernel.
+
+Each runtime is reached in a way other users on the machine can't use:
+
+- **Jupyter's own ports.** The frontend and kernel talk over the ports
+  and address in the connection file Jupyter writes (loopback by
+  default), and the kernel checks every message's HMAC signature against
+  that file's key.
+- **Node and Deno.** The kernel drives them over the Chrome DevTools
+  Protocol, on an inspector port bound to `127.0.0.1`. The inspector has no
+  authentication, so the kernel keeps its address private: the runtime
+  prints it only to the kernel, and doesn't list it at `/json/list`, which
+  leaves a random id no other process can learn.
+- **Bun.** Over pipes between the two processes; there is no port.
+- **workerd.** Over a Unix socket in a directory only you can open, plus
+  a random per-launch token.
+- **celld, and workerd in a Workers project.** Over a loopback TCP port,
+  which any local process can connect to, so a random per-launch token is
+  what keeps others out. celld's generated config, which holds the
+  token, is readable only by you.
+
+Someone with your account, or root, can still reach all of these. The
+internals pages ([Node and Deno](integration-cdp.md),
+[workerd and celld](integration-workers.md)) give the details.
+
 ## How they work
 
 [Runtime integrations](integrations.md) explains how the kernel drives
