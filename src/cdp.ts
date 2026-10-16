@@ -132,6 +132,23 @@ export class CdpSession {
   }
 }
 
+export function isRecord(value: unknown): value is CdpParams {
+  return typeof value === "object" && value !== null;
+}
+
+export function isRemoteObject(value: unknown): value is RemoteObject {
+  return isRecord(value) && typeof value.type === "string";
+}
+
+/**
+ * A Runtime.evaluate-shaped reply, checked: a value, or exceptionDetails.
+ * The Bun and workerd drivers send no `result` with a thrown exception.
+ */
 export function asEvaluateResult(raw: CdpParams): EvaluateResult {
-  return raw as unknown as EvaluateResult;
+  const details = raw.exceptionDetails;
+  if (details !== undefined ? !isRecord(details) || typeof details.text !== "string" : !isRemoteObject(raw.result)) {
+    throw new Error(`the target sent a malformed evaluate result: ${JSON.stringify(raw).slice(0, 200)}`);
+  }
+  const result = isRemoteObject(raw.result) ? raw.result : { type: "undefined" };
+  return details === undefined ? { result } : { result, exceptionDetails: details as unknown as ExceptionDetails };
 }

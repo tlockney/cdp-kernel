@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
@@ -412,7 +412,7 @@ export class WorkerdTarget implements KernelTarget {
       // A failed bundle is rebuilt next time, after the user fixes it.
       if (!modules[specifier].startsWith("Promise.reject(")) this.#sent.add(specifier);
     }
-    return (await this.#interruptibly("eval", { code: script, modules }, "Execution")) as unknown as EvaluateResult;
+    return asEvaluateResult(await this.#interruptibly("eval", { code: script, modules }, "Execution"));
   }
 
   /**

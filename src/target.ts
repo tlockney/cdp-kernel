@@ -596,7 +596,8 @@ export class Target implements KernelTarget {
   #evaluatePure(expression: string): Promise<EvaluateResult | null> {
     return this.#shell
       .send("Runtime.evaluate", { expression, contextId: this.#contextId, throwOnSideEffect: true })
-      .then(asEvaluateResult, () => null);
+      .then(asEvaluateResult)
+      .catch(() => null);
   }
 
   async propertyNames(expression: string): Promise<string[]> {
