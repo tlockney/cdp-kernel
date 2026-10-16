@@ -6,22 +6,32 @@ runs notebooks on Node and on Deno**, and on Bun, workerd and celld through
 backends of their own.
 
 This is the design document the project started from. It was written while
-cdp-kernel was a spike and revised after the 0.4.0 release. The
+cdp-kernel was a spike and revised as the project shipped. The
 [last section](#where-it-landed) compares what it predicted with what was
-built.
+built. For how the kernel works today, read [Architecture](architecture.md)
+and [Runtime integrations](integrations.md); for current limits, read
+[Known gaps](known-gaps.md).
 
 <dl class="study-meta">
-  <div><dt>Subject</dt><dd>Deno's Jupyter kernel, after Deno winds down</dd></div>
+  <div><dt>Subject</dt><dd>Deno's Jupyter kernel, once Deno is maintenance-only</dd></div>
   <div><dt>Targets weighed</dt><dd>Node, Deno, workerd, Bun, rusty_v8, FFI</dd></div>
-  <div><dt>Evidence</dt><dd>Released as 0.4.0; 275/275 e2e checks across five runtimes; 310 unit tests; CI on Linux and macOS</dd></div>
+  <div><dt>Evidence</dt><dd>Released as 0.4.0; 275/275 e2e checks across five runtimes; 322 unit tests; CI on Linux and macOS</dd></div>
   <div><dt>Sources</dt><dd><code>deno jupyter</code> v2.9.6 (commit <code>e518fbd</code>); live probes of Node 26.8.1, Deno 2.9.6, workerd 2026-09-30, Bun 1.4.0</dd></div>
-  <div><dt>Compiled</dt><dd>2026-10-14, revised 2026-10-15</dd></div>
+  <div><dt>Compiled</dt><dd>2026-10-14, revised 2026-10-15 and 2026-10-16</dd></div>
   <div class="study-verdict"><dt>Verdict</dt><dd>Extract the JS halves; drive any runtime over CDP</dd></div>
 </dl>
 
 ## Bottom line
 
-::: info Revised 2026-10-15
+::: info Revised 2026-10-16
+Deno has since said the runtime stays on a 2.9.x LTS line until October
+2027 ([What changed](#what-changed)), and the weakly held promise issue
+found after release is fixed. Both, and the current test counts, are
+folded in below. Each section links to the docs page that now covers its
+topic in more depth.
+:::
+
+::: details Revision of 2026-10-15
 The study was first compiled on 2026-10-14, when cdp-kernel was a spike.
 It has since been released (`@tlockney/cdp-kernel` 0.4.0 on npm and JSR),
 and most of the [next steps](#recommended-next-steps) are done. The verdict
@@ -75,7 +85,8 @@ Ryan Dahl's post of 2026-10-09 ([deno.com/blog/cloudflare](https://deno.com/blog
 moves the Deno team to Cloudflare.
 
 - **The runtime** gets about a year of monthly bug-fix and security
-  releases, then development ends.
+  releases, then development ends. *Revised below:* that year is a 2.9.x
+  LTS line, running until October 2027.
 - **Deploy** shuts down in six months.
 - **JSR** stays up, with its infrastructure moving to Cloudflare.
 - **rusty_v8** is the one piece with a stated future: "We will continue
@@ -88,6 +99,21 @@ folded back in. Neither post mentions deno_core, notebooks, or Jupyter.
 
 *Revised:* celld is usable now. cdp-kernel gained a celld target on celld
 0.6.2, alongside workerd.
+
+*Revised 2026-10-16:* the Deno team's [state of Deno](https://github.com/denoland/deno/issues/37030)
+(denoland/deno#37030, 2026-10-15) makes the year concrete:
+
+- a 2.9.x LTS release every month, with bug fixes and security updates,
+  until October 2027;
+- no new features: feature pull requests are closed, and canary-only
+  features are reverted so `main` matches 2.9;
+- well-written bug-fix pull requests are still reviewed and merged.
+
+It doesn't mention `deno jupyter`. For cdp-kernel this settles what the
+Deno target is: a fixed target. Deno 2.9's kernel, module loader and
+`Deno.*` APIs won't change under it, and the CI matrix's "Deno 2.9" and
+"latest 2.x" should in practice test the same line. After October 2027 the Deno target is
+only as alive as whichever fork carries the runtime on.
 
 On the community side, denoland/deno#36995 collects fork announcements:
 *rjs*, *dodo*, and one maintainer's planned conservative fork. Nobody has
@@ -127,6 +153,9 @@ process:
   duck-typed JavaScript with four Deno-internal dependencies:
   `inspectArgs`, base64, `readFileSync`, and WebGPU.
 
+[Architecture](architecture.md) describes how cdp-kernel maps onto these
+pieces.
+
 ![Deno 2.9 runs a kernel isolate and a REPL isolate in one process, joined by 13 Rust ops. cdp-kernel runs a host (Node or Deno) and a target runtime as two processes, joined by CDP over the inspector WebSocket plus stdout and stderr pipes.](images/study/two-halves.svg)
 
 The 13 ops are already CDP in disguise, so swapping the in-process channel
@@ -136,7 +165,7 @@ for an `--inspect` WebSocket is the whole trick.
 
 The spike was about 2,350 lines of TypeScript and plain ESM, plus about
 1,500 lines of tests. It now lives in its own repository,
-`tlockney/cdp-kernel`, at about 6,700 lines plus 5,200 lines of tests, and
+`tlockney/cdp-kernel`, at about 6,900 lines plus 5,700 lines of tests, and
 is published to npm and JSR as `@tlockney/cdp-kernel`. The host runs on
 Node 24+ with native type stripping, or on Deno when installed from JSR. Its
 runtime dependencies are still esbuild and acorn (with `acorn-walk`). The
@@ -182,7 +211,12 @@ kernel host and the target runtime are separate processes:
   - JupyterLab's visual debugger on Node and Deno targets, over CDP's
     `Debugger` domain (#18);
   - Bun, workerd and celld targets (#7, #8, #25), and Workers project
-    bindings in `env` (#26).
+    bindings in `env` (#26);
+  - on Node, `.ts`, `.tsx` and `.jsx` files imported by a cell compiled
+    with esbuild when Node's own type stripping can't run them (#73, #91).
+
+[Runtime integrations](integrations.md) explains the host/target split and
+how each runtime is driven, with diagrams.
 
 ### The four problems that weren't mechanical
 
@@ -250,8 +284,9 @@ Conformance suite, CI on main, 2026-10-15 (Ubuntu, Node 26, Deno 2.9):
 | workerd and celld, in a Workers project | Project bindings in `env`, a Durable Object stub across cells, the project's own `worker.fetch` | 20/20 |
 | **Total** | | **275/275** |
 
-Counts include the shutdown check. The unit suite has grown from 112 to
-**310 tests**, covering the original areas plus comms, widgets, the
+Counts include the shutdown check. The same 275 pass on main on
+2026-10-16. The unit suite has grown from 112 to **322 tests** (310 at
+0.4.0), covering the original areas plus comms, widgets, the
 debugger, source maps, introspection, history, the lockfile, Deno project
 config, and each of the Bun, workerd and celld backends. `tsc --strict` is
 clean. A separate CI job drives JupyterLab in Chromium through Playwright to
@@ -275,19 +310,22 @@ produced the same output types cell for cell on the Deno target ("Running on
 **Node 26.8.1**, V8 14.6"). The executed copies sit next to the source
 notebook. A second example, `examples/moma-collection.ipynb`, adds `jsr:`
 imports, Observable Plot, widgets and server-rendered HTML, executed on Node
-and on Deno.
+and on Deno. Both are on the docs site with their real output:
+[A Deno-style notebook](example-deno-style.md) and
+[MoMA's collection](example-moma.md).
 
 ## Options compared
 
 Seven routes, ranked by how much of the Deno experience they keep for the
 effort, and by how well they survive Deno going quiet. *Revised:* the status
 and effort columns now show what was built; the ranking is unchanged, and
-celld is added.
+celld is added. [Choosing a runtime](runtimes.md) compares the targets for
+day-to-day use.
 
 | Route | Status | Fidelity to `deno jupyter` | Effort from here | Durability |
 | --- | --- | --- | --- | --- |
 | **cdp-kernel, Node target** | Released in 0.1 | High: TS, `npm:`/`jsr:`, display API, interrupt, stdin, widgets, debugger. `util.inspect` formatting | Maintenance; Windows (#32) | Node and V8's inspector, both long-lived |
-| **cdp-kernel, Deno target** | Released in 0.1 | Highest: Deno's own loader and project config, permissions model off, real `Deno.*` | None beyond the above | Rides the frozen runtime; fine while it lasts |
+| **cdp-kernel, Deno target** | Released in 0.1 | Highest: Deno's own loader and project config, permissions model off, real `Deno.*` | None beyond the above | Rides the frozen runtime: 2.9.x LTS fixes until October 2027, then a fork's |
 | cdp-kernel, workerd target | Released in 0.3 | Medium: cells hoisted onto `globalThis`; a busy-cell interrupt restarts workerd; no debugger or stdin | Maintenance | Cloudflare's stated direction |
 | cdp-kernel, celld target | Released in 0.3 | Medium: as workerd, without `--experimental` | Maintenance; celld is young (0.6.2) | Depends on celld's future inside workerd |
 | Bun backend | Released in 0.3 | Medium: cells hoisted onto `globalThis`; a busy-cell interrupt restarts Bun; no debugger or compat namespace | Maintenance | Depends on Bun |
@@ -452,8 +490,10 @@ New since the first compile:
   V8's inspector holds the result promise only weakly until its callback
   runs, so a GC in that window fails the call with "Promise was collected".
   It broke Deno target startup intermittently (#50, fixed by using plain
-  evaluates there). Cell evaluation, several `callFunctionOn` helpers, comms
-  and the debugger still use those flags (#55).
+  evaluates there). *Resolved (#55):* cells end by yielding one macrotask,
+  so the promise settles before anything else can run; synchronous helpers
+  drop `awaitPromise`, async ones return a promise the target holds, and
+  side-effect-free lookups use plain evaluates.
 - **The in-process backends are less faithful.** On Bun, workerd and celld,
   a busy-cell interrupt restarts the runtime and loses state, top-level
   declarations are `globalThis` properties, and only a trailing expression
@@ -462,12 +502,20 @@ New since the first compile:
   one request that never ends, so production limits don't apply. A Workers
   project's `main` is bundled with esbuild directly, not with wrangler's
   build.
-- **Windows isn't supported** (#32). Unit tests were made portable, but the
-  workerd target needs Unix sockets, the e2e suite has never run there,
-  `npm:` installs spawn bare `npm` (#51), and celld has no Windows build.
-  The Windows CI job was removed until the work is taken up.
+- **Windows isn't supported** (#32). Unit tests were made portable and
+  `npm:` installs now run through `cmd.exe` (#51), but the workerd target
+  needs Unix sockets, the e2e suite has never run there, and celld has no
+  Windows build. There is no Windows CI job, so the rest waits for a way to
+  test on Windows.
+- **The Deno target is frozen** (added 2026-10-16). Deno 2.9 gets fixes
+  until October 2027 and no features. That is good for stability now, and a
+  question for later: past October 2027 the Deno target depends on a fork.
+  The Node target, which runs the same notebooks with `--deno-compat`, is
+  the long-term home.
 - **Little real-world use yet.** The suites are broad, but the kernel is
   new.
+
+[Known gaps](known-gaps.md) keeps the current list of limits.
 
 ## Recommended next steps
 
@@ -485,19 +533,23 @@ New since the first compile:
 5. **Only then** consider the workerd hybrid backend or a Bun backend.
    *Done, ahead of step 4:* Bun, workerd and celld targets (#7, #8, #25).
 
-What's next from here:
+What's next from here (revised 2026-10-16):
 
-1. **Offer it upstream**, as above (#16).
-2. **Close the weak-promise exposure** in cell evaluation, comms and the
-   debugger (#55).
+1. **Offer it upstream**, as above (#16). Deno's LTS announcement doesn't
+   change the pitch: `deno jupyter` gets fixes, not a successor.
+2. ~~Close the weak-promise exposure~~ in cell evaluation, comms and the
+   debugger. *Done (#55).*
 3. **Get real notebooks run on it**, and treat what breaks as the next
-   priority list.
-4. **Windows**, if users ask for it (#32, #51).
+   priority list. The fixes for imported TypeScript on Node (#73, #91)
+   came this way.
+4. **Windows**, if users ask for it and it can be tested (#32).
+5. **Plan for the Deno target after October 2027.** Keep Node with
+   `--deno-compat` able to run `deno jupyter` notebooks, and follow which
+   fork, if any, carries the runtime on.
 
 ## Where it landed
 
-Added 2026-10-15. How the study's predictions held up, one day and 0.4.0
-later:
+Added 2026-10-15, revised 2026-10-16. How the study's predictions held up:
 
 | Prediction | Outcome |
 | --- | --- |
@@ -507,7 +559,8 @@ later:
 | Bun needs an in-process backend; host, transformer and display carry over | Held, as described under [Bun](#bun). |
 | Comms are the largest missing protocol feature | Built on every target, with anywidget-style widgets checked in JupyterLab. |
 | Formatting differences on Node are small | Measured: 23 of 30 typical values match; kept as is. |
-| The remaining risks are known | Not quite. V8's weakly held inspector promises (#50, #55) and Windows (#32) weren't foreseen. |
+| The remaining risks are known | Not quite. V8's weakly held inspector promises (#50, #55, both fixed) and Windows (#32) weren't foreseen. |
+| The Deno runtime gets about a year of fixes, then development ends | Confirmed and dated: 2.9.x LTS until October 2027, no new features (denoland/deno#37030). |
 | Bun and workerd backends are optional extras | They were built anyway, plus celld, which the study mentioned only as part of Cloudflare's plans. |
 
 The verdict stands: extract the JS halves and drive the runtime over CDP,
