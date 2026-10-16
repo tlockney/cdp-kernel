@@ -150,11 +150,29 @@ export async function recvMultipart(reader: SocketReader): Promise<Uint8Array[]>
   }
 }
 
+/** How long a port from the connection file may stay taken before the kernel gives up. */
+const LISTEN_RETRY_MS = 5000;
+const LISTEN_RETRY_INTERVAL_MS = 100;
+
 function listen(port: number, host: string, onConn: (socket: Socket) => void): Server {
   const server = createServer((socket) => {
     socket.setNoDelay(true);
     onConn(socket);
   });
+  // The frontend picks these ports by binding and releasing them, so another
+  // socket can take one before the kernel binds it. Wait for it to be freed
+  // rather than die before kernel_info.
+  const deadline = Date.now() + LISTEN_RETRY_MS;
+  const onError = (err: Error & { code?: string }) => {
+    if (err.code !== "EADDRINUSE" || Date.now() >= deadline) {
+      server.off("error", onError);
+      server.emit("error", err);
+      return;
+    }
+    setTimeout(() => server.listen(port, host), LISTEN_RETRY_INTERVAL_MS);
+  };
+  server.on("error", onError);
+  server.once("listening", () => server.off("error", onError));
   server.listen(port, host);
   return server;
 }
