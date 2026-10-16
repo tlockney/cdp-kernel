@@ -16,14 +16,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 /** Kept equal to package.json and deno.jsonc by test/package.test.ts. */
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 /**
  * The UTC day this version was released, set with VERSION. The publish
  * workflow refuses a tag unless it's today or yesterday, so it can't go
  * stale: see dependencyCutoff.
  */
-export const RELEASE_DATE = "2026-10-15";
+export const RELEASE_DATE = "2026-10-16";
 
 /**
  * Deno blocks packages less than 24 hours old (minimum dependency age), so
