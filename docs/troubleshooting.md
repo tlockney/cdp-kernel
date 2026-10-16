@@ -93,7 +93,7 @@ interrupted in place, so it was stopped". See [Known gaps](known-gaps.md).
 ## Packages: wrong version, or a broken install
 
 `npm:` and `jsr:` imports install into a cache shared by every notebook
-([Files and environment](install.md) lists where). Deleting a cache is
+([Install › Files and environment](install.md#files-and-environment) lists where). Deleting a cache is
 always safe; it's refilled on next use.
 
 | Symptom | Clear |
