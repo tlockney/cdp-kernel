@@ -11,3 +11,29 @@
   --vp-c-brand-3: #3a8578;
   --vp-c-brand-soft: rgba(90, 168, 155, 0.16);
 }
+
+/* Reading level, shown above each page's title (Level.vue). */
+.level {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--vp-c-text-2);
+}
+.level-label {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--level-fg);
+  background: var(--level-bg);
+}
+.level-intro { --level-fg: var(--vp-c-green-1); --level-bg: var(--vp-c-green-soft); }
+.level-guide { --level-fg: var(--vp-c-brand-1); --level-bg: var(--vp-c-brand-soft); }
+.level-reference { --level-fg: var(--vp-c-text-2); --level-bg: var(--vp-c-default-soft); }
+.level-advanced { --level-fg: var(--vp-c-purple-1); --level-bg: var(--vp-c-purple-soft); }
+.level-contributor { --level-fg: var(--vp-c-yellow-1); --level-bg: var(--vp-c-yellow-soft); }

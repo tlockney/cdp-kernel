@@ -1,19 +1,57 @@
 # cdp-kernel documentation
 
-- [Getting started](getting-started.md): Jupyter basics, a first notebook, and what to use it for.
-- [Install](install.md): npm, JSR, or a checkout; what each target runtime needs.
-- [Writing notebooks](notebooks.md): display API, imports, `npm:`/`jsr:`, the lockfile, Deno projects, input, inspection.
-- [The `jupyter` namespace](jupyter-api.md): rich output, custom display, `prompt`/`confirm`, and `Deno.jupyter`, with examples.
-- [Runtimes](runtimes.md): how the Bun, workerd and celld targets work, and Workers projects.
-- [Debugger](debugger.md): JupyterLab's visual debugger on Node and Deno targets.
-- [Widgets and comms](widgets.md): anywidget-style widgets and the comm API.
-- [Editor types](editor-types.md): type declarations for the notebook globals.
-- [Known gaps](known-gaps.md): what doesn't work yet, per runtime.
-- [Architecture](architecture.md): how the kernel was extracted from Deno, and how the tricky parts work.
-- [Runtime integrations](integrations.md): how the kernel drives each runtime, with diagrams: [Node and Deno](integration-cdp.md), [Bun](integration-bun.md), [workerd and celld](integration-workers.md).
-- [Development](development.md): tests and releasing.
+cdp-kernel lets you write TypeScript and JavaScript in Jupyter notebooks
+and run them on Node, Deno, Bun, workerd or celld. These docs are grouped
+by how much you already know. Each page shows its level under the title.
 
-The [feasibility study](life-after-deno-jupyter.html) behind the project
-covers the design, the other options considered, and the evidence. It was
-written while the project was a spike and revised after 0.4.0; its last
-section compares what it predicted with what was built.
+## New to notebooks
+
+Start here if you haven't used Jupyter, or haven't used it with
+TypeScript. No Deno background is needed.
+
+1. [Getting started](getting-started.md): what notebooks and kernels are,
+   installing, a first notebook, and what notebooks are good for.
+2. [Install](install.md): every install route (npm, JSR) and what each
+   target runtime needs.
+
+## Using cdp-kernel
+
+Guides for day-to-day use, once you've run a first notebook.
+
+- [Writing notebooks](notebooks.md): imports, `npm:` and `jsr:` packages,
+  the lockfile, Deno projects, interrupt and inspection.
+- [The `jupyter` namespace](jupyter-api.md): rich output (Markdown, HTML,
+  SVG, images, charts, tables), custom display, `prompt` and `confirm`,
+  and running notebooks written for Deno.
+- [Runtimes](runtimes.md): what's different on Bun, workerd and celld,
+  and Workers projects.
+- [Widgets and comms](widgets.md): interactive anywidget-style widgets and
+  the comm API.
+- [Debugger](debugger.md): breakpoints and stepping in JupyterLab on Node
+  and Deno.
+
+Reference pages to look things up in:
+
+- [Editor types](editor-types.md): type declarations for the notebook
+  globals, for type-checking in your editor.
+- [Known gaps](known-gaps.md): what doesn't work yet, per runtime.
+
+## How it works
+
+Advanced material on the kernel's internals. You don't need it to use
+cdp-kernel.
+
+- [Architecture](architecture.md): how the kernel was extracted from Deno,
+  and how cells become runnable code.
+- [Runtime integrations](integrations.md): how the kernel drives each
+  runtime, with diagrams: [Node and Deno](integration-cdp.md),
+  [Bun](integration-bun.md), [workerd and celld](integration-workers.md).
+- The [feasibility study](life-after-deno-jupyter.html) is the design
+  document the project started from. It was written while the project was
+  a spike and revised after 0.4.0; its last section compares what it
+  predicted with what was built.
+
+## Contributing
+
+- [Development](development.md): running from a checkout, tests, and
+  releasing.

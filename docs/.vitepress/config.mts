@@ -4,6 +4,7 @@
 // that leave docs/.
 import path from "node:path";
 import { defineConfig } from "vitepress";
+import { groups } from "./levels.ts";
 
 const repo = "https://github.com/tlockney/cdp-kernel";
 const site = "https://cdp-kernel.org";
@@ -45,39 +46,12 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: "Home", link: `${site}/`, target: "_self" },
-      { text: "Install", link: "/install" },
-      { text: "Notebooks", link: "/notebooks" },
-      { text: "Architecture", link: "/architecture" },
+      { text: "Get started", link: "/getting-started" },
+      { text: "Guides", link: "/notebooks" },
+      { text: "Reference", link: "/known-gaps" },
+      { text: "Internals", link: "/architecture" },
     ],
-    sidebar: [
-      {
-        text: "Using cdp-kernel",
-        items: [
-          { text: "Overview", link: "/" },
-          { text: "Getting started", link: "/getting-started" },
-          { text: "Install", link: "/install" },
-          { text: "Writing notebooks", link: "/notebooks" },
-          { text: "The jupyter namespace", link: "/jupyter-api" },
-          { text: "Runtimes", link: "/runtimes" },
-          { text: "Debugger", link: "/debugger" },
-          { text: "Widgets and comms", link: "/widgets" },
-          { text: "Editor types", link: "/editor-types" },
-          { text: "Known gaps", link: "/known-gaps" },
-        ],
-      },
-      {
-        text: "How it works",
-        items: [
-          { text: "Architecture", link: "/architecture" },
-          { text: "Runtime integrations", link: "/integrations" },
-          { text: "Node and Deno", link: "/integration-cdp" },
-          { text: "Bun", link: "/integration-bun" },
-          { text: "workerd and celld", link: "/integration-workers" },
-          { text: "Development", link: "/development" },
-          { text: "Feasibility study", link: `${site}/study.html`, target: "_self" },
-        ],
-      },
-    ],
+    sidebar: groups(site).map(({ text, items }) => ({ text, items })),
     outline: [2, 3],
     search: { provider: "local" },
     editLink: { pattern: `${repo}/edit/main/docs/:path`, text: "Edit this page on GitHub" },
