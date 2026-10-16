@@ -669,6 +669,21 @@ def checks(runtime, workdir, offline):
         assert reply["status"] == "ok", reply
         assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "from the import map", out
 
+    def replies_when_runtime_missing(s):
+        # The runtime can't launch, so every request that talks to it fails;
+        # each still gets its reply (#125).
+        for msg_id in (s.kc.complete("Math.", 5), s.kc.inspect("Math", 4)):
+            deadline = time.time() + TIMEOUT
+            while True:
+                assert time.time() < deadline, "no reply"
+                r = s.kc.get_shell_msg(timeout=TIMEOUT)
+                if r["parent_header"].get("msg_id") == msg_id:
+                    break
+            assert r["content"]["status"] == "error", r
+            assert "ENOENT" in r["content"]["evalue"], r
+        reply, _ = s.run("1")
+        assert reply["status"] == "error" and reply["ename"] == "KernelError", reply
+
     def broken_project_warns_once(s):
         reply, out = s.run("1 + 1")
         assert reply["status"] == "ok", reply
@@ -683,6 +698,8 @@ def checks(runtime, workdir, offline):
                 relative_ts_import, interrupt]
     if runtime == "deno-broken-project":
         return [broken_project_warns_once, typescript, relative_ts_import]
+    if runtime == "deno-missing":
+        return [replies_when_runtime_missing, kernel_info]
     if runtime in ("workerd-project", "celld-project"):
         # The busy interrupt restarts workerd, so it goes last.
         return [project_notice_once, kernel_info, project_bindings, durable_object_stub_across_cells,
@@ -734,6 +751,8 @@ VARIANTS = {
     "deno-project": ("deno", False, True),
     # ... and one whose deno.json is broken: the kernel runs without it.
     "deno-broken-project": ("deno", False, "broken"),
+    # ... and one with no deno on PATH, so the runtime never launches.
+    "deno-missing": ("deno", False, "missing"),
     # Bun, evaluating cells in-process rather than over an inspector (#7).
     "bun": ("bun", False, False),
     # workerd, evaluating each cell inside a request to a driver Worker (#8).
@@ -854,10 +873,12 @@ def main():
                 (workdir / "deno.json").write_text("{ this is not json")
             elif project == "workers":
                 write_workers_project(workdir)
-            elif project:
+            elif project is True:
                 write_deno_project(workdir)
             km = KernelManager(kernel_name=f"cdp-{base}{'-deno' if compat else ''}")
-            km.start_kernel(cwd=str(workdir))
+            # The kernelspec runs the host by absolute path; only the target needs PATH.
+            env = {**os.environ, "PATH": str(workdir)} if project == "missing" else None
+            km.start_kernel(cwd=str(workdir), **({"env": env} if env else {}))
             kc = km.client()
             kc.start_channels()
             kc.wait_for_ready(timeout=TIMEOUT)
