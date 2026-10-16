@@ -124,6 +124,15 @@ export type TargetMessage =
   | { kind: "iopub"; msg_type: string; content: CdpParams; metadata: CdpParams; buffers: string[]; barrier: number }
   | { kind: "input_request"; prompt: string; password: boolean; barrier: number };
 
+/** The parsed value, or undefined for text that isn't JSON. */
+export function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 export function isTargetMessage(value: unknown): value is TargetMessage {
   if (typeof value !== "object" || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
@@ -403,7 +412,9 @@ export class Target implements KernelTarget {
     const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
     shell.on("Runtime.bindingCalled", (params) => {
       if (params.name !== BINDING || typeof params.payload !== "string") return;
-      const msg: unknown = JSON.parse(params.payload);
+      // __cdpk_send is an ordinary global, so a cell can call it with
+      // anything; that mustn't take the host down (#122).
+      const msg = parseJson(params.payload);
       if (isTargetMessage(msg)) target.#deliver(msg, events);
     });
 

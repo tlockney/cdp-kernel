@@ -14,7 +14,7 @@ import type { Duplex } from "node:stream";
 import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
-import { Gates, Interrupted, isTargetMessage, type KernelTarget, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
+import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
 
 /**
  * How long an interrupted target has to answer a ping. A cell waiting on a
@@ -113,7 +113,8 @@ export class BunTarget implements KernelTarget {
     this.#channel.on("data", (chunk: string) => {
       buffer += chunk;
       for (let nl = buffer.indexOf("\n"); nl !== -1; nl = buffer.indexOf("\n")) {
-        const msg: unknown = JSON.parse(buffer.slice(0, nl));
+        // Cells can write here through __cdpk_send too (#122).
+        const msg = parseJson(buffer.slice(0, nl));
         buffer = buffer.slice(nl + 1);
         if (isTargetMessage(msg)) this.#deliver(msg, events);
         else if (isRecord(msg) && msg.kind === "reply") this.#settle(msg);
