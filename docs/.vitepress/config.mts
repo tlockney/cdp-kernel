@@ -3,6 +3,7 @@
 // keeps working on GitHub; this file only adds navigation and rewrites links
 // that leave docs/.
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { groups } from "./levels.ts";
 import fs from "node:fs";
@@ -57,6 +58,18 @@ export default defineConfig({
     fs.mkdirSync(path.join(outDir, "notebooks"), { recursive: true });
     for (const [name, file] of published) fs.copyFileSync(file, path.join(outDir, "notebooks", name));
   },
+  // Swap in a theme component that folds the "On this page" outline; see
+  // theme/OutlineItem.vue.
+  vite: {
+    resolve: {
+      alias: [
+        {
+          find: /^.*\/VPDocOutlineItem\.vue$/,
+          replacement: fileURLToPath(new URL("./theme/OutlineItem.vue", import.meta.url)),
+        },
+      ],
+    },
+  },
   themeConfig: {
     nav: [
       { text: "Home", link: `${site}/`, target: "_self", noIcon: true },
@@ -65,7 +78,8 @@ export default defineConfig({
       { text: "Reference", link: "/known-gaps" },
       { text: "Internals", link: "/architecture" },
     ],
-    sidebar: groups(site).map(({ text, items }) => ({ text, items })),
+    // Groups start folded; VitePress opens the one holding the current page.
+    sidebar: groups(site).map(({ text, items }) => ({ text, items, collapsed: true })),
     outline: [2, 3],
     search: { provider: "local" },
     editLink: { pattern: `${repo}/edit/main/docs/:path`, text: "Edit this page on GitHub" },
