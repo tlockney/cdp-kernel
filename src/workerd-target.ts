@@ -382,6 +382,8 @@ export class WorkerdTarget implements KernelTarget {
   }
 
   #request(op: string, params: CdpParams = {}, interruptible = false): Promise<CdpParams> {
+    // The channel drops writes after it closes, so nothing would answer.
+    if (this.#exitedOnce) return Promise.reject(new Abandoned("the workerd session is closed"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
