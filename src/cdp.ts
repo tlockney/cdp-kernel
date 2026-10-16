@@ -66,7 +66,6 @@ export class CdpSession {
   #nextId = 0;
   #pending = new Map<number, Pending>();
   #listeners = new Map<string, ((params: CdpParams) => void)[]>();
-  readonly closed: Promise<void>;
 
   private constructor(ws: WebSocket) {
     this.#ws = ws;
@@ -85,14 +84,11 @@ export class CdpSession {
         for (const listener of this.#listeners.get(msg.method) ?? []) listener(msg.params);
       }
     });
-    this.closed = new Promise((resolve) => {
-      ws.addEventListener("close", () => {
-        for (const pending of this.#pending.values()) {
-          pending.reject(new Error("CDP connection closed"));
-        }
-        this.#pending.clear();
-        resolve();
-      });
+    ws.addEventListener("close", () => {
+      for (const pending of this.#pending.values()) {
+        pending.reject(new Error("CDP connection closed"));
+      }
+      this.#pending.clear();
     });
   }
 
