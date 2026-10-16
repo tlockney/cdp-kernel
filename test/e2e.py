@@ -524,6 +524,14 @@ def checks(runtime, workdir, offline):
         _, out = s.run("typeof Deno !== 'undefined' && Deno.jupyter === jupyter")
         assert strip_ansi(result_of(out)["text/plain"]) == "true", out
 
+    def deno_compat_missing(s):
+        # A member the shim lacks says so (#172), and feature checks still work.
+        _, out = s.run("typeof Deno.serve")
+        assert "undefined" in result_of(out)["text/plain"], out
+        reply, _ = s.run("Deno.serve(() => new Response())")
+        assert reply["status"] == "error", reply
+        assert "not implemented by cdp-kernel's --deno-compat namespace" in "\n".join(reply["traceback"]), reply
+
     def deno_file_apis(s):
         reply, out = s.run(
             'await Deno.writeTextFile("note.txt", "hi");\n'
@@ -686,6 +694,8 @@ def checks(runtime, workdir, offline):
     if runtime in ("deno", "node-deno"):
         tests.append(deno_namespace)
         tests.append(deno_file_apis)
+    if runtime == "node-deno":
+        tests.append(deno_compat_missing)
     return tests
 
 

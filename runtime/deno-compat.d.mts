@@ -114,3 +114,5 @@ export interface DenoShim {
 
 export function denoError<E>(err: E): E | NotFound | AlreadyExists | PermissionDenied | IsADirectory | NotADirectory;
 export function createDenoShim(options: { jupyter: unknown }): DenoShim;
+/** Adds the cause to "Deno.x is not a function" when `shim` lacks `x`. */
+export function explainMissing(message: string, shim: object): string;
