@@ -24,12 +24,18 @@ export interface Header extends JsonObject {
   version: string;
 }
 
+/** A header as received: the fields the kernel relies on, plus whatever else came. */
+export interface ReceivedHeader extends JsonObject {
+  msg_id: string;
+  msg_type: string;
+}
+
 export interface Message {
   identities: Uint8Array[];
   sig: string;
   /** Raw bytes of header, parent_header, metadata, content as received. */
   signedParts: Uint8Array[];
-  header: Header;
+  header: ReceivedHeader;
   parentHeader: JsonObject;
   metadata: JsonObject;
   content: JsonObject;
@@ -110,7 +116,9 @@ function parseObject(frame: Uint8Array): JsonObject {
   return value as JsonObject;
 }
 
-function isHeader(value: JsonObject): value is Header {
+// Only msg_id and msg_type are required of a received header; nothing
+// reads the rest, so a client that leaves them out still works.
+function isHeader(value: JsonObject): value is ReceivedHeader {
   return typeof value.msg_id === "string" && typeof value.msg_type === "string";
 }
 

@@ -270,6 +270,50 @@ def checks(runtime, workdir, offline):
         reply, _ = s.run("1")
         assert reply["status"] == "ok", reply
 
+    def silent_publishes_only_status(s):
+        msg_id = s.kc.execute("1 + 1", silent=True)
+        types = []
+        while True:
+            msg = s.kc.get_iopub_msg(timeout=TIMEOUT)
+            if msg["parent_header"].get("msg_id") != msg_id:
+                continue
+            types.append(msg["msg_type"])
+            if msg["msg_type"] == "status" and msg["content"]["execution_state"] == "idle":
+                break
+        assert types == ["status", "status"], types
+
+    def control_status_and_shell_interrupt(s):
+        # Control requests are wrapped in busy/idle too, and interrupt_request
+        # is still accepted on shell (#124).
+        msg = s.kc.session.msg("kernel_info_request", {})
+        s.kc.control_channel.send(msg)
+        states = []
+        while len(states) < 2:
+            got = s.kc.get_iopub_msg(timeout=TIMEOUT)
+            if got["parent_header"].get("msg_id") == msg["header"]["msg_id"] and got["msg_type"] == "status":
+                states.append(got["content"]["execution_state"])
+        assert states == ["busy", "idle"], states
+        msg_id, _ = s.send_shell("interrupt_request", {})
+        while True:
+            r = s.kc.get_shell_msg(timeout=TIMEOUT)
+            if r["parent_header"].get("msg_id") == msg_id:
+                break
+        assert r["msg_type"] == "interrupt_reply" and r["content"]["status"] == "ok", r
+
+    def shutdown_on_shell(s):
+        # Last: the kernel exits after replying.
+        msg = s.kc.session.msg("shutdown_request", {"restart": False})
+        s.kc.shell_channel.send(msg)
+        while True:
+            r = s.kc.get_shell_msg(timeout=TIMEOUT)
+            if r["parent_header"].get("msg_id") == msg["header"]["msg_id"]:
+                break
+        assert r["msg_type"] == "shutdown_reply" and r["content"]["status"] == "ok", r
+        deadline = time.time() + 10
+        while s.km.is_alive():
+            assert time.time() < deadline, "kernel still running after shutdown_request on shell"
+            time.sleep(0.1)
+
     def interrupt(s):
         s.run("globalThis.kept = 'state'")
         msg_id = s.kc.execute("let spins = 0; while (true) { spins++ }")
@@ -698,6 +742,7 @@ def checks(runtime, workdir, offline):
         complete, is_complete, inspect_tooltips, inspect_runs_nothing, history_tail, kernelspec_debugger,
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
+        silent_publishes_only_status, control_status_and_shell_interrupt,
     ]
     if runtime in ("workerd", "celld"):
         # A request can't block on stdin, and workerd has no cwd of its own.
@@ -721,6 +766,8 @@ def checks(runtime, workdir, offline):
     if runtime in ("deno", "node-deno"):
         tests.append(deno_namespace)
         tests.append(deno_file_apis)
+    if runtime == "node":
+        tests.append(shutdown_on_shell)
     return tests
 
 
