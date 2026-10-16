@@ -8,7 +8,49 @@ export type IsCompleteReply =
   | { status: "incomplete"; indent: string }
   | { status: "invalid" };
 
-/** Bracket/quote/comment scanner deciding whether a cell is finished. */
+// Keywords after which a `/` starts a regex literal rather than dividing.
+const REGEX_AFTER_WORD = new Set([
+  "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw",
+  "case", "do", "else", "yield", "await",
+]);
+
+/**
+ * Whether a `/` at `i` (not starting a comment) begins a regex literal: the
+ * usual heuristic, true unless the previous token can end an operand (a
+ * name, number, closing bracket or string). It can't tell `a++ / b` or a
+ * block's `} /re/` apart; those are rare enough in a console.
+ */
+function startsRegex(code: string, i: number): boolean {
+  let j = i - 1;
+  while (j >= 0 && /\s/.test(code[j])) j--;
+  if (j < 0) return true;
+  const prev = code[j];
+  if (/[\w$]/.test(prev)) {
+    const word = /[\w$]+$/.exec(code.slice(0, j + 1))?.[0] ?? "";
+    return REGEX_AFTER_WORD.has(word);
+  }
+  return !/[)\]}'"`]/.test(prev);
+}
+
+/** The index just past a regex literal starting at `i`, or -1 if it doesn't end on its line. */
+function regexEnd(code: string, i: number): number {
+  let inClass = false;
+  for (let j = i + 1; j < code.length; j++) {
+    const c = code[j];
+    if (c === "\n") return -1;
+    if (c === "\\") j++;
+    else if (c === "[") inClass = true;
+    else if (c === "]") inClass = false;
+    else if (c === "/" && !inClass) return j + 1;
+  }
+  return -1;
+}
+
+/**
+ * Bracket/quote/comment scanner deciding whether a cell is finished. Regex
+ * literals are recognised heuristically (see startsRegex), and a template's
+ * `${...}` is skipped like the rest of the template.
+ */
 export function checkIsComplete(code: string): IsCompleteReply {
   const stack: string[] = [];
   const closers: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
@@ -25,11 +67,18 @@ export function checkIsComplete(code: string): IsCompleteReply {
       i = end + 2;
       continue;
     }
+    if (ch === "/" && startsRegex(code, i)) {
+      const end = regexEnd(code, i);
+      if (end !== -1) {
+        i = end;
+        continue;
+      }
+    }
     if (ch === "'" || ch === '"' || ch === "`") {
       i++;
       let closed = false;
       while (i < code.length) {
-        if (code[i] === "\\" && ch !== "`") {
+        if (code[i] === "\\") {
           i += 2;
           continue;
         }
