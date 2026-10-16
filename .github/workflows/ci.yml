@@ -16,7 +16,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         node: [24, 26]
-        deno: [v2.9.x, v2.x]
+        # One Deno: v2.x and the 2.9.x LTS line resolve to the same release
+        # while Deno stays on 2.9 (denoland/deno#37030), so a second value
+        # would only repeat every cell (#146). Add one back when they diverge.
+        deno: [v2.x]
         include:
           # The runs against what would actually ship (the packed npm
           # tarball, and the CLI run by Deno: the JSR path) need only one cell.
@@ -38,7 +41,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.x
+          bun-version: 1.4.x # docs/install.md names the tested Bun
       # celld isn't on npm; its installer puts it in ~/.local/bin, where the
       # kernel looks first (#25).
       - name: celld
@@ -95,7 +98,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.x
+          bun-version: 1.4.x # docs/install.md names the tested Bun
       # celld isn't on npm; its installer puts it in ~/.local/bin, where the
       # kernel looks first (#25).
       - name: celld
