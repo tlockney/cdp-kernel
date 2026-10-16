@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createDenoShim, denoError, type DenoShim } from "../runtime/deno-compat.mjs";
+import { createDenoShim, denoError, type DenoShim, explainMissing } from "../runtime/deno-compat.mjs";
 
 function setup(t: TestContext): { deno: DenoShim; dir: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "deno-compat-test-"));
@@ -301,4 +301,17 @@ test("denoError maps errno codes to Deno error classes preserving code and cause
 test("reading a directory as a file throws IsADirectory", (t) => {
   const { deno, dir } = setup(t);
   assert.throws(() => deno.readTextFileSync(dir), deno.errors.IsADirectory);
+});
+
+test("explainMissing names a member the shim lacks, and leaves the rest alone (#172)", () => {
+  const deno = createDenoShim({ jupyter: null });
+  assert.ok(!("serve" in deno), "feature checks still see no Deno.serve");
+  assert.match(
+    explainMissing("Deno.serve is not a function", deno),
+    /^Deno\.serve is not a function: Deno\.serve is not implemented by cdp-kernel's --deno-compat namespace \(see https:\/\/cdp-kernel\.org\/docs\/jupyter-api#notebooks-written-for-deno\)$/,
+  );
+  assert.match(explainMissing("TypeError: Deno.Command is not a constructor\n    at <anonymous>", deno), /Deno\.Command is not implemented/);
+  for (const message of ["Deno.cwd is not a function", "Deno.env.nope is not a function", "x is not a function"]) {
+    assert.equal(explainMissing(message, deno), message);
+  }
 });

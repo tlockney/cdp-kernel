@@ -7,7 +7,8 @@
 // shim installed they take their Deno code paths, which may call APIs not
 // covered here (Deno.serve, Deno.Command, Deno.openKv, permissions...).
 // Uncovered APIs are simply absent rather than throwing on access, so
-// feature checks like `typeof Deno.serve === "function"` still work.
+// feature checks like `typeof Deno.serve === "function"` still work. The
+// error from calling one says so instead (explainMissing, #172).
 
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -99,6 +100,18 @@ const writeFlag = (options) => (options?.append ? "a" : options?.createNew ? "wx
 
 const OS_NAMES = { darwin: "darwin", linux: "linux", win32: "windows", freebsd: "freebsd" };
 const ARCH_NAMES = { arm64: "aarch64", x64: "x86_64" };
+
+const MEMBERS_DOC = "https://cdp-kernel.org/docs/jupyter-api#notebooks-written-for-deno";
+
+/**
+ * Adds the cause to V8's "Deno.serve is not a function" when `shim` lacks
+ * that member (#172), or returns `message` unchanged.
+ */
+export function explainMissing(message, shim) {
+  return message.replace(/\b(Deno\.([\w$]+)) is not a (?:function|constructor)\b/, (all, expr, name) =>
+    name in shim ? all : `${all}: ${expr} is not implemented by cdp-kernel's --deno-compat namespace (see ${MEMBERS_DOC})`
+  );
+}
 
 export function createDenoShim({ jupyter }) {
   return {

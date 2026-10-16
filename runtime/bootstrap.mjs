@@ -150,6 +150,10 @@ function hold(value) {
   return promise;
 }
 
+// Adds the cause to an error from a Deno member the --deno-compat shim
+// lacks (#172); the identity everywhere else.
+let explainError = (text) => text;
+
 globalThis.__cdpk = {
   // Cell code awaits this first; see PRELUDE in src/transform.ts.
   tick: () => new Promise((resolve) => setTimeout(resolve, 0)),
@@ -191,7 +195,9 @@ globalThis.__cdpk = {
   },
   describeError(value) {
     if (value instanceof Error) {
-      return JSON.stringify({ name: value.name, message: value.message, stack: stackOf(value) });
+      const message = explainError(value.message);
+      const stack = stackOf(value).replace(value.message, () => message);
+      return JSON.stringify({ name: value.name, message, stack });
     }
     return JSON.stringify({ name: "Error", message: inspect(value), stack: "" });
   },
@@ -222,8 +228,10 @@ if (isDeno) {
   // against `deno jupyter`. See runtime/deno-compat.mjs for the trade-off.
   // Absolute URL: the resolve hook re-parents this module's relative
   // imports to the notebook directory.
-  const { createDenoShim } = await import(new URL("./deno-compat.mjs", import.meta.url).href);
-  globalThis.Deno = createDenoShim({ jupyter: jupyter.namespace });
+  const { createDenoShim, explainMissing } = await import(new URL("./deno-compat.mjs", import.meta.url).href);
+  const shim = createDenoShim({ jupyter: jupyter.namespace });
+  globalThis.Deno = shim;
+  explainError = (text) => explainMissing(text, shim);
 }
 
 /**
@@ -243,7 +251,7 @@ function stackOf(err) {
 
 // An error thrown later by a cell's timer or promise must not kill the kernel.
 function reportUncaught(kind, err) {
-  writeErr(`${kind}: ${err instanceof Error ? (stackOf(err) || err.message) : inspect(err)}\n`);
+  writeErr(`${kind}: ${explainError(err instanceof Error ? (stackOf(err) || err.message) : inspect(err))}\n`);
 }
 if (isDeno) {
   globalThis.addEventListener("unhandledrejection", (e) => {
