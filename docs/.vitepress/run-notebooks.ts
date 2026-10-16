@@ -23,14 +23,16 @@ const kernelspec = { name: "cdp-node", display_name: "TypeScript (cdp-kernel, no
 // Links in the notebook point at the published docs, since the notebook
 // doesn't sit beside the pages once downloaded.
 function absoluteLinks(text: string, page: string): string {
-  return text.replace(/\]\((?![a-z][a-z0-9+.-]*:|#)([^)\s]+)\)/gi, (_, href: string) => {
+  return text.replace(/(!?)\[([^\]]*)\]\((?![a-z][a-z0-9+.-]*:|#)([^)\s]+)\)/gi, (_, image: string, label: string, href: string) => {
     const [target, hash = ""] = href.split(/(?=#)/);
     const abs = path.resolve(path.dirname(page), target);
+    const rel = path.relative(path.dirname(docsDir), abs);
+    if (image) return `![${label}](${repo.replace("github.com", "raw.githubusercontent.com")}/main/${rel})`;
     if (abs.startsWith(docsDir + path.sep) && abs.endsWith(".md")) {
       const name = path.relative(docsDir, abs).replace(/(^|\/)README\.md$/, "$1").replace(/\.md$/, "");
-      return `](${site}/docs/${name}${hash})`;
+      return `[${label}](${site}/docs/${name}${hash})`;
     }
-    return `](${repo}/blob/main/${path.relative(path.dirname(docsDir), abs)}${hash})`;
+    return `[${label}](${repo}/blob/main/${rel}${hash})`;
   });
 }
 
