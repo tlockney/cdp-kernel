@@ -42,9 +42,18 @@ export function groups(site: string): Group[] {
       items: [
         { text: "Writing notebooks", link: "/notebooks" },
         { text: "The jupyter namespace", link: "/jupyter-api" },
-        { text: "Runtimes", link: "/runtimes" },
+        { text: "Choosing a runtime", link: "/runtimes" },
         { text: "Widgets and comms", link: "/widgets" },
         { text: "Debugger", link: "/debugger" },
+      ],
+    },
+    {
+      text: "Examples",
+      level: "guide",
+      items: [
+        { text: "Example notebooks", link: "/examples" },
+        { text: "MoMA's collection", link: "/example-moma" },
+        { text: "A Deno-style notebook", link: "/example-deno-style" },
       ],
     },
     {

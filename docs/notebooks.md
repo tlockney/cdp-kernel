@@ -1,29 +1,21 @@
 # Writing notebooks
 
 What a cell can use, on every target unless noted. Per-runtime differences
-are in [Runtimes](runtimes.md) and [Known gaps](known-gaps.md).
+are in [Choosing a runtime](runtimes.md) and [Known gaps](known-gaps.md).
 
 ## Display
 
-`jupyter.display`, `jupyter.md`, `jupyter.html`, `jupyter.svg`,
-`jupyter.image`, `jupyter.format`, `jupyter.broadcast`, and
-`Symbol.for("Jupyter.display")`: the same API as `Deno.jupyter`.
+A cell's last expression is shown as its result. The global `jupyter`
+renders richer output: Markdown, HTML, SVG, images, charts and tables, and
+updates to output already shown.
 
 ```ts
 await jupyter.display(jupyter.md`# Hello, **notebook**`);
 ```
 
-Each of these is explained with examples in
-[The `jupyter` namespace](jupyter-api.md).
-
-`Deno.jupyter` also works:
-
-- On a Deno target it is a proxy over the real namespace. Deno's own
-  getter throws outside `deno jupyter`.
-- On Node it needs `--deno-compat`. That installs a `Deno` namespace for
-  file, env and process APIs (`runtime/deno-compat.mjs`).
-- The shim is opt-in because libraries detect Deno with `typeof Deno`, and
-  would take Deno code paths that call APIs it doesn't cover.
+It's the same API as Deno's `Deno.jupyter`.
+[The `jupyter` namespace](jupyter-api.md) explains it with examples,
+along with `prompt()`, `confirm()` and running notebooks written for Deno.
 
 ## Language and imports
 
@@ -78,13 +70,13 @@ reported in the first cell's output, and the kernel runs as in a plain
 directory. Outside a project, the target runs with
 `--node-modules-dir=none --no-lock`.
 
-For Workers and celld projects, see [Runtimes](runtimes.md#workers-projects).
+For Workers and celld projects, see [Choosing a runtime](runtimes.md#workers-projects).
 
-## Input and interrupt
+## Interrupt
 
-`prompt()` and `confirm()` work over the stdin channel, except on workerd.
-Interrupt keeps state, except for a busy cell on Bun, workerd or celld
-(see [Runtimes](runtimes.md)).
+**Kernel › Interrupt** (the ■ button) stops the running cell and keeps
+your variables, except for a busy cell on Bun, workerd or celld, which
+restarts the runtime (see [Choosing a runtime](runtimes.md)).
 
 ## Inspection, completion and history
 

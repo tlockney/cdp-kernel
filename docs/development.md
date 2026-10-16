@@ -1,6 +1,20 @@
 # Development
 
-To install kernelspecs that run from a checkout, see [Install › From a checkout](install.md#from-a-checkout).
+## Running from a checkout
+
+```sh
+npm ci
+npm run install:node        # kernelspec cdp-node
+npm run install:deno        # kernelspec cdp-deno
+npm run install:node-deno   # kernelspec cdp-node-deno
+npm run install:bun         # kernelspec cdp-bun
+npm run install:workerd     # kernelspec cdp-workerd
+npm run install:celld       # kernelspec cdp-celld
+```
+
+These kernelspecs point at the checkout, so don't move it after installing.
+The target runtimes need to be installed as for a released kernel
+([Install › Target runtimes](install.md#target-runtimes)).
 
 ## Tests
 
@@ -45,3 +59,30 @@ are stored:
 Neither registry lets a version be republished. Each job skips a version
 its registry already has, so re-running a release only fills in the half
 that failed.
+
+## Docs
+
+The docs site is built from `docs/` with VitePress: `npm run docs:dev` to
+preview, `npm run docs:build` to build. The groups in the sidebar, and the
+reading level each page shows, are in `docs/.vitepress/levels.ts`.
+
+A page can show its examples as notebook cells with their real output. It
+names a notebook in a comment, and marks each cell's code block with
+`cell`:
+
+````md
+<!-- notebook: public/notebooks/getting-started.ipynb -->
+
+```ts cell
+const greeting: string = "Hello";
+greeting + ", notebook"
+```
+````
+
+`npm run docs:notebooks` builds that notebook from the page (code blocks
+become cells, the prose around them Markdown cells) and runs it on the
+`cdp-node` kernel with [nb-cli](https://github.com/jupyter-ai-contrib/nb-cli),
+which saves the outputs. Commit the notebook with the page. Files beside it
+in `docs/public/notebooks/`, such as sample data, are the notebook's working
+directory and are published with it. If a `cell` block no longer matches
+the notebook, the docs build fails until the notebook is re-run.

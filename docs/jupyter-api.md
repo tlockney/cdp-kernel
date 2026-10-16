@@ -485,10 +485,18 @@ Notebooks written for `deno jupyter` use `Deno.jupyter` rather than
 | `cdp-node` | yes | no (`Deno` is undefined) |
 | `cdp-bun`, `cdp-workerd`, `cdp-celld` | yes | no |
 
+On a Deno target, Deno's own `Deno.jupyter` throws outside `deno jupyter`,
+so the kernel wraps the `Deno` namespace: `Deno.jupyter` returns `jupyter`,
+and everything else is Deno's.
+
 To run an existing Deno notebook on Node, install the `cdp-node-deno`
-kernel (`cdp-kernel install --runtime node --deno-compat`); see
-[Writing notebooks](notebooks.md#display) for what the shim covers. New
-notebooks should use `jupyter`, which works on every kernel.
+kernel (`cdp-kernel install --runtime node --deno-compat`). It adds a
+`Deno` namespace covering `Deno.jupyter` and Deno's file, environment and
+process APIs (`runtime/deno-compat.mjs`). It's a separate kernel rather
+than the default because libraries detect Deno with `typeof Deno`, and
+would take Deno code paths that call APIs the shim doesn't cover.
+
+New notebooks should use `jupyter`, which works on every kernel.
 
 ## Differences by runtime
 
@@ -503,4 +511,5 @@ Everything on this page works on every runtime, except:
 
 What counts as a cell's result also differs slightly on Bun, workerd and
 celld: only an expression statement at the very end of the cell is a
-result. See [Known gaps](known-gaps.md).
+result. [Choosing a runtime](runtimes.md) compares the runtimes, and
+[Known gaps](known-gaps.md) has the full list of differences.

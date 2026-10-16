@@ -1,107 +1,112 @@
-# Runtimes
+# Choosing a runtime
 
-Node and Deno targets run cells over the Chrome DevTools Protocol. Bun, workerd and celld can't be driven that way, so each has its own backend that evaluates cells in-process. This page covers those three. For how each integration works inside, see [Runtime integrations](integrations.md).
+cdp-kernel runs your cells in a separate **target** runtime, and each
+target is its own Jupyter kernel. Install one per runtime you want
+([Install](install.md)) and switch between them with **Kernel › Change
+Kernel**. The same notebook usually runs unchanged on all of them; this
+page covers what differs.
+
+## At a glance
+
+| Kernel | Runtime | Pick it for |
+|---|---|---|
+| `cdp-node` | Node | The default. Node's APIs and npm packages, the debugger. |
+| `cdp-deno` | Deno | Deno's APIs, `Deno.jupyter`, notebooks written for `deno jupyter`, Deno projects. |
+| `cdp-node-deno` | Node with a `Deno` namespace | Running a notebook written for Deno on Node. |
+| `cdp-bun` | Bun | Bun's APIs and its fast package installs. |
+| `cdp-workerd` | workerd | Trying Cloudflare Workers code and a Workers project's bindings. |
+| `cdp-celld` | celld | Workers and Durable Objects on celld, with a project's bindings. |
+
+| | Node, Deno | Bun | workerd, celld |
+|---|---|---|---|
+| [Debugger](debugger.md) | yes | no | no |
+| `prompt()`, `confirm()` | yes | yes | no: return `null` / `false` |
+| `jupyter.image(path)` | yes | yes | no file system: pass bytes |
+| Interrupt a waiting cell | keeps state | keeps state | keeps state |
+| Interrupt a busy cell (`while (true) {}`) | keeps state | restarts, state lost | restarts, state lost |
+| Packages with native add-ons | yes | yes | no |
+| `const` and global names | as in a module | `globalThis` properties | `globalThis` properties |
+
+[Known gaps](known-gaps.md) has the full list of differences.
+
+## Node and Deno
+
+Node and Deno run cells the way `deno jupyter` does, so they behave the
+most like an ordinary module: top-level `const` stays constant, any final
+expression is the cell's result, and interrupt never loses state. They're
+the only targets with JupyterLab's debugger.
+
+On Deno, `Deno.jupyter` is available alongside `jupyter`, and a
+`deno.json` at or above the notebook is used as `deno jupyter` uses it
+([Deno projects](notebooks.md#deno-projects)). To run a Deno notebook on
+Node instead, use `cdp-node-deno`; [Notebooks written for
+Deno](jupyter-api.md#notebooks-written-for-deno) covers what it supports.
 
 ## Bun
 
-Bun's `--inspect` speaks the WebKit Inspector Protocol, which lacks what the
-CDP backend relies on: `replMode`, `Runtime.addBinding`,
-`Runtime.terminateExecution`, and top-level `await` in `Runtime.evaluate`.
-So the Bun target has its own backend (`src/bun-target.ts`,
-`runtime/bun-channel.mjs`):
+Cells get Bun's globals (`Bun.file`, `Bun.serve`, …), and `npm:` imports
+install with `bun add`. Two things behave differently from Node:
 
-- **No inspector.** The host and Bun exchange JSON lines over a pipe on
-  fd 3, which only the host holds, so there is no port to discover.
-- **Cells run in-process.** Each cell becomes global code wrapped in an
-  async function (`transformCellForEval` in `src/transform.ts`). Its
-  top-level declarations become properties of `globalThis`, so later
-  cells, and closures from this one, see them. This is the
-  tslab/IJavascript technique.
-- **Same output ordering.** stdout and stderr stay pipes, ordered against
-  display messages by the same barrier markers as the CDP targets.
-- **Interrupt.** A cell that's waiting on a promise is interrupted in place,
-  keeping state. A busy one (`while (true) {}`) can't be reached, so Bun is
-  stopped and restarts on the next cell without the earlier state. The cell
-  output says so.
-
-What differs from the CDP targets is listed under [Known gaps](known-gaps.md).
+- Top-level declarations become properties of `globalThis`. A `const` can
+  be reassigned by a later cell, and declaring a global's name
+  (`const fetch = ...`) replaces that global. Only an expression statement
+  at the very end of a cell is shown as its result.
+- Interrupting a cell that's busy computing stops Bun. The next cell
+  starts a fresh Bun without the earlier state, and the cell output says
+  so. A cell that's waiting (on a timer, a fetch) is interrupted in place.
 
 ## workerd
 
-workerd's inspector can evaluate code, but outside a request there is no
-I/O context: timers, `fetch` and `crypto.randomUUID()` throw "Disallowed
-operation called within global scope". So the workerd target runs its
-cells inside a driver Worker (`src/workerd-target.ts`,
-`runtime/workerd-worker.mjs`):
+Cells run inside a Worker, so they get Workers' `fetch`, `Request`,
+`caches`, timers and `crypto`, and anything one cell creates carries over
+to the next. There is no file system, and `prompt()` and `confirm()`
+can't be answered. Imports are bundled before each cell runs, so packages
+with native add-ons don't load. Declarations, results and interrupts
+behave as on Bun.
 
-- **One session.** The host opens a single WebSocket to the driver, and
-  every cell runs inside that session's request. Cells get Workers'
-  `fetch`, `Request`, `caches`, timers and randomness, and anything one
-  cell makes carries over to the next: globals, a Durable Object stub, a
-  stream, a timer still pending.
-- **A private socket.** Outside a Workers project, the host writes a
-  workerd config into a private temporary directory and serves the driver
-  on a Unix socket there, opened with a per-launch token. There is no TCP
-  port and no inspector.
-- **Cells.** Cells are transformed as for Bun and run by workerd's
-  `UnsafeEval` binding (hence `--experimental`).
-- **Output.** `console` output and display messages come back over the
-  session as they happen, in order.
-- **Interrupt.** A cell that's waiting on something is abandoned in place,
-  keeping state, as on Bun. A busy one gets Bun's treatment too: workerd is
-  stopped and restarts on the next cell.
-
-What workerd's own process prints, such as its warnings, goes to the Jupyter
-server log, not the notebook.
+Unlike production Workers, the cells share one request that never ends, so
+there's no per-request CPU or duration limit and no `ctx.waitUntil`.
+workerd's own warnings go to the Jupyter server log, not the notebook.
 
 ### Workers projects
 
 If a `wrangler.jsonc`, `wrangler.json` or `wrangler.toml` sits in the
-notebook's directory or above it, the driver runs on the project's own
-Miniflare, the simulator `wrangler dev` uses, with the project's bindings
-(`src/workers-project.ts`):
+notebook's directory or above it, cells run on the project's own
+Miniflare, the simulator `wrangler dev` uses:
 
-- `env` holds the bindings: whatever wrangler translates for Miniflare.
-  Vars, KV, D1 and Durable Objects are tested; R2, Queues and the others
-  go through the same path but aren't.
-- The project's `main` is bundled into the driver, so its Durable Object
-  classes run, and `worker` is its default export:
+- `env` holds the project's bindings. Vars, KV, D1 and Durable Objects
+  are tested; R2, Queues and the others go through the same path but
+  aren't.
+- `worker` is the project's default export, with its Durable Object
+  classes loaded:
   `await worker.fetch(new Request("https://x/"), env)`.
-- State lives in the project's `.wrangler/state/cdp-kernel`, beside
-  `wrangler dev`'s own, so the two never open the same Durable Object.
 - The first cell's output names the bindings. If the project can't load,
   for example because wrangler isn't installed in it, the first cell says
   why and the kernel runs on plain workerd.
+- State lives in `.wrangler/state/cdp-kernel`, beside `wrangler dev`'s
+  own, so the two never open the same Durable Object.
 
-wrangler and Miniflare come from the project's `node_modules`, so they match
-its versions. Miniflare 4 and 5 both work. Miniflare listens on a loopback
-TCP port, so there the per-launch token is what keeps other local processes
-out.
+wrangler and Miniflare come from the project's `node_modules`, so they
+match its versions; Miniflare 4 and 5 both work. The project's `main` is
+bundled with esbuild, not wrangler's build, so custom `build` commands,
+`alias` and module `rules` aren't applied.
 
 ## celld
 
-[celld](https://github.com/denoland/celld) runs Workers and Durable Objects
-on your own storage. Like workerd it has no I/O outside a request, so the
-celld target runs the same driver Worker over the same WebSocket session
-(`src/celld-target.ts`). Cells, output, interrupts and host-bundled imports
-all work as on workerd. The differences:
+[celld](https://github.com/denoland/celld) runs Workers and Durable
+Objects on your own storage. Cells behave as on workerd.
 
-- **No `UnsafeEval` needed.** celld allows a plain global `eval`, so it runs
-  without workerd's `--experimental`.
-- **One module.** The host bundles the driver, and a project's `main`, into
-  a single module, and gives celld the result with `no_bundle`. celld
-  doesn't need its own esbuild.
-- **Loopback TCP.** celld listens only on TCP, so the session is a loopback
-  WebSocket opened with a per-launch token. The kernel picks a free port
-  and runs `celld dev --no-watch` on a generated config.
-- **Projects.** In a celld project (a `wrangler.jsonc` or `wrangler.json`
-  at or above the notebook), the generated config copies the project's
-  compatibility settings and bindings: vars, KV, D1, R2, Durable Objects,
-  Queues, Workflows, services, Worker Loaders. `env` and `worker` then work
-  as on workerd. The generated config is written to the project's
-  `.celld/cdp-kernel` and removed when the kernel stops. The state stays
-  there across kernels, beside `celld dev`'s own `.celld/dev`. celld rejects `wrangler.toml`; a project
-  that can't load is reported in the first cell, and the driver runs alone.
-- **Stopping.** `celld dev` runs its node in a separate process group and
-  waits for it to stop gracefully, which a busy cell never allows. So an
-  interrupt of a busy cell kills the node, then `celld dev`.
+In a project (a `wrangler.jsonc` or `wrangler.json` at or above the
+notebook; celld rejects `wrangler.toml`), the kernel copies the project's
+compatibility settings and bindings: vars, KV, D1, R2, Durable Objects,
+Queues, Workflows, services and Worker Loaders. `env` and `worker` then
+work as on workerd. State stays in `.celld/cdp-kernel` across kernels,
+beside `celld dev`'s own `.celld/dev`. `assets`, `triggers`, `containers`
+and `.dev.vars` aren't copied.
+
+## How they work
+
+[Runtime integrations](integrations.md) explains how the kernel drives
+each runtime, with diagrams: [Node and Deno](integration-cdp.md) over the
+Chrome DevTools Protocol, [Bun](integration-bun.md) over a private pipe,
+and [workerd and celld](integration-workers.md) through a driver Worker.
