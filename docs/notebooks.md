@@ -13,7 +13,8 @@ updates to output already shown.
 await jupyter.display(jupyter.md`# Hello, **notebook**`);
 ```
 
-It's the same API as Deno's `Deno.jupyter`.
+It's ported from Deno's `Deno.jupyter`, and on Deno targets `Deno.jupyter`
+is the same object.
 [The `jupyter` namespace](jupyter-api.md) explains it with examples,
 along with `prompt()`, `confirm()` and running notebooks written for Deno.
 

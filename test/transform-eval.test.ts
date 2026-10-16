@@ -143,6 +143,12 @@ test("syntax errors throw CellSyntaxError", () => {
   assert.throws(() => transformCellForEval("const = ;"), CellSyntaxError);
 });
 
+test("a trailing sequence expression's value is its last (#140)", async () => {
+  const s = session();
+  assert.deepEqual(await s.cell("1, 2"), [2]);
+  assert.deepEqual(await s.cell("let n = 0; n++, n++, n"), [2]);
+});
+
 test("standard decorators work in the eval path (#142)", async () => {
   const s = session();
   await s.cell([
