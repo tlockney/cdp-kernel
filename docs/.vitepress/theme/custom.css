@@ -167,3 +167,5 @@
   line-height: 1.5;
   letter-spacing: normal;
 }
+.nb-widget { margin: 0.25rem 0 0.5rem; }
+.nb-widget-failed { font-size: 0.875rem; color: var(--vp-c-danger-1); }

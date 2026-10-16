@@ -4,6 +4,7 @@ import DefaultTheme from "vitepress/theme";
 import Level from "./Level.vue";
 import { listenForUnfold } from "./unfold.ts";
 import { drawCharts } from "./vega.ts";
+import { runWidgets } from "./widgets.ts";
 import "./custom.css";
 
 export default {
@@ -11,10 +12,14 @@ export default {
   Layout: () => h(DefaultTheme.Layout, null, { "doc-before": () => h(Level) }),
   setup() {
     const route = useRoute();
-    onMounted(() => {
+    const draw = () => {
       drawCharts();
+      runWidgets();
+    };
+    onMounted(() => {
+      draw();
       listenForUnfold();
     });
-    watch(() => route.path, () => nextTick(() => drawCharts()));
+    watch(() => route.path, () => nextTick(draw));
   },
 };
