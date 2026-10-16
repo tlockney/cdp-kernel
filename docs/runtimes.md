@@ -1,6 +1,6 @@
 # Runtimes
 
-Node and Deno targets run cells over the Chrome DevTools Protocol. Bun, workerd and celld can't be driven that way, so each has its own backend that evaluates cells in-process. This page covers those three.
+Node and Deno targets run cells over the Chrome DevTools Protocol. Bun, workerd and celld can't be driven that way, so each has its own backend that evaluates cells in-process. This page covers those three. For how each integration works inside, see [Runtime integrations](integrations.md).
 
 ## Bun
 

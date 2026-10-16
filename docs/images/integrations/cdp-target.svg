@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 380" width="860" height="380" role="img" aria-label="Node and Deno targets: two CDP sessions over the inspector WebSocket, plus stdout, stderr and stdin pipes">
+  <title>Node and Deno targets: two CDP sessions over the inspector WebSocket, plus stdout, stderr and stdin pipes</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="380" rx="8"/>
+  <!-- Host -->
+  <rect class="box" x="20" y="30" width="200" height="335" rx="6"/>
+  <text class="t" x="120" y="54" text-anchor="middle">Kernel host · Target</text>
+  <rect class="acc" x="35" y="70" width="170" height="40" rx="4"/>
+  <text class="t" x="120" y="95" text-anchor="middle">shell session</text>
+  <rect class="acc" x="35" y="130" width="170" height="40" rx="4"/>
+  <text class="t" x="120" y="155" text-anchor="middle">control session</text>
+  <rect class="inner" x="35" y="210" width="170" height="40" rx="4"/>
+  <text class="m" x="120" y="235" text-anchor="middle">PipeDemux (stdout)</text>
+  <rect class="inner" x="35" y="260" width="170" height="40" rx="4"/>
+  <text class="m" x="120" y="285" text-anchor="middle">PipeDemux (stderr)</text>
+  <rect class="inner" x="35" y="310" width="170" height="40" rx="4"/>
+  <text class="m" x="120" y="335" text-anchor="middle">child stdin</text>
+
+  <!-- Runtime -->
+  <rect class="box" x="520" y="30" width="320" height="335" rx="6"/>
+  <text class="t" x="680" y="54" text-anchor="middle">node or deno process</text>
+  <rect class="inner" x="535" y="66" width="290" height="114" rx="4"/>
+  <text class="t" x="680" y="96" text-anchor="middle">V8 inspector</text>
+  <text class="m" x="680" y="120" text-anchor="middle">ws://127.0.0.1:&lt;port&gt;/&lt;uid&gt;</text>
+  <text class="l" x="680" y="142" text-anchor="middle">random port; the URL is printed</text>
+  <text class="l" x="680" y="158" text-anchor="middle">only on stderr, which only the host reads</text>
+  <rect class="inner" x="535" y="196" width="290" height="158" rx="4"/>
+  <text class="m" x="680" y="220" text-anchor="middle">runtime/bootstrap.mjs</text>
+  <text class="m" x="680" y="244" text-anchor="middle">globalThis.__cdpk</text>
+  <text class="l" x="680" y="266" text-anchor="middle">tick · import · barrier · hold · broadcastResult</text>
+  <text class="l" x="680" y="290" text-anchor="middle">jupyter namespace (display.mjs)</text>
+  <text class="l" x="680" y="310" text-anchor="middle">Node: resolve hooks (node-hooks.mjs)</text>
+  <text class="l" x="680" y="330" text-anchor="middle">Deno: Deno.jupyter proxy, project config</text>
+  <!-- Channels -->
+  <line class="ln" x1="205" y1="90" x2="535" y2="90" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="lm" x="370" y="82" text-anchor="middle">evaluate · callFunctionOn · Debugger.*</text>
+  <text class="lm" x="370" y="106" text-anchor="middle">Runtime.bindingCalled (__cdpk_send)</text>
+  <line class="ln" x1="205" y1="150" x2="535" y2="150" marker-end="url(#a)"/>
+  <text class="lm" x="370" y="142" text-anchor="middle">Runtime.terminateExecution</text>
+  <text class="l" x="370" y="166" text-anchor="middle">interrupt, while shell is blocked</text>
+  <line class="ln" x1="535" y1="230" x2="205" y2="230" marker-end="url(#a)"/>
+  <text class="l" x="370" y="222" text-anchor="middle">stdout, with barrier markers</text>
+  <line class="ln" x1="535" y1="280" x2="205" y2="280" marker-end="url(#a)"/>
+  <text class="l" x="370" y="272" text-anchor="middle">stderr, with barrier markers</text>
+  <line class="ln" x1="205" y1="330" x2="535" y2="330" marker-end="url(#a)"/>
+  <text class="l" x="370" y="322" text-anchor="middle">prompt() reply, one JSON line</text>
+
+</svg>

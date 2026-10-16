@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 400" width="860" height="400" role="img" aria-label="workerd and celld targets: the host bundles imports and talks to a driver Worker over one WebSocket session">
+  <title>workerd and celld targets: the host bundles imports and talks to a driver Worker over one WebSocket session</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="400" rx="8"/>
+  <!-- Host -->
+  <rect class="box" x="20" y="30" width="230" height="340" rx="6"/>
+  <text class="t" x="135" y="54" text-anchor="middle">Kernel host</text>
+  <rect class="acc" x="35" y="68" width="200" height="72" rx="4"/>
+  <text class="m" x="135" y="92" text-anchor="middle">WorkerdTarget</text>
+  <text class="l" x="135" y="112" text-anchor="middle">requests by id; stream, iopub</text>
+  <text class="l" x="135" y="128" text-anchor="middle">and replies in arrival order</text>
+  <rect class="inner" x="35" y="155" width="200" height="80" rx="4"/>
+  <text class="m" x="135" y="178" text-anchor="middle">bundleModule()</text>
+  <text class="l" x="135" y="198" text-anchor="middle">esbuild bundles each new import</text>
+  <text class="l" x="135" y="214" text-anchor="middle">(npm:, jsr:, files, packages)</text>
+  <text class="l" x="135" y="228" text-anchor="middle">and sends it with the cell</text>
+  <rect class="inner" x="35" y="250" width="200" height="105" rx="4"/>
+  <text class="m" x="135" y="274" text-anchor="middle">WorkerHost</text>
+  <text class="l" x="135" y="296" text-anchor="middle">starts the runtime and</text>
+  <text class="l" x="135" y="312" text-anchor="middle">opens the session; stops it</text>
+  <text class="l" x="135" y="328" text-anchor="middle">on a busy interrupt</text>
+
+  <!-- Driver -->
+  <rect class="box" x="600" y="30" width="240" height="340" rx="6"/>
+  <text class="t" x="720" y="56" text-anchor="middle">Driver Worker</text>
+  <text class="m" x="720" y="76" text-anchor="middle">runtime/workerd-worker.mjs</text>
+  <text class="s" x="616" y="146">fetch(): check the token, then</text>
+  <text class="s" x="616" y="163">accept a WebSocketPair session</text>
+  <text class="s" x="616" y="193">Every request runs in that one</text>
+  <text class="s" x="616" y="210">request's I/O context</text>
+  <text class="s" x="616" y="240">Cells: UNSAFE.eval on workerd,</text>
+  <text class="s" x="616" y="257">plain eval on celld</text>
+  <text class="s" x="616" y="287">Imports: the host's bundles,</text>
+  <text class="s" x="616" y="304">or node:, cloudflare:, workerd:</text>
+  <text class="s" x="616" y="334">env = bindings,</text>
+  <text class="s" x="616" y="351">worker = the project's export</text>
+  <!-- Session -->
+  <line class="ln" x1="235" y1="104" x2="600" y2="104" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="lm" x="420" y="94" text-anchor="middle">{id, op: eval, code, modules}</text>
+  <text class="lm" x="420" y="122" text-anchor="middle">{kind: reply | stream | iopub}</text>
+
+  <!-- Hosts -->
+  <text class="l" x="425" y="160" text-anchor="middle">the session runs through one of:</text>
+  <rect class="inner" x="310" y="170" width="230" height="58" rx="4"/>
+  <text class="m" x="425" y="192" text-anchor="middle">workerd serve</text>
+  <text class="l" x="425" y="212" text-anchor="middle">Unix socket in a 0700 temp dir</text>
+  <rect class="inner" x="310" y="240" width="230" height="58" rx="4"/>
+  <text class="m" x="425" y="262" text-anchor="middle">the project's Miniflare</text>
+  <text class="l" x="425" y="282" text-anchor="middle">wrangler project; dispatchFetch</text>
+  <rect class="inner" x="310" y="310" width="230" height="58" rx="4"/>
+  <text class="m" x="425" y="332" text-anchor="middle">celld dev --no-watch</text>
+  <text class="l" x="425" y="352" text-anchor="middle">loopback TCP port</text>
+  <path class="ln" d="M235,302 L310,199" marker-end="url(#a)"/>
+  <path class="ln" d="M235,302 L310,269" marker-end="url(#a)"/>
+  <path class="ln" d="M235,302 L310,339" marker-end="url(#a)"/>
+  <line class="ln" x1="540" y1="199" x2="600" y2="199" marker-end="url(#a)"/>
+  <line class="ln" x1="540" y1="269" x2="600" y2="269" marker-end="url(#a)"/>
+  <line class="ln" x1="540" y1="339" x2="600" y2="339" marker-end="url(#a)"/>
+
+</svg>

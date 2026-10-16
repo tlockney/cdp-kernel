@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 360" width="860" height="360" role="img" aria-label="How an interrupt reaches a running cell on each kind of target">
+  <title>How an interrupt reaches a running cell on each kind of target</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="360" rx="8"/>
+  <!-- CDP column -->
+  <text class="t" x="215" y="34" text-anchor="middle">Node, Deno (CDP)</text>
+  <rect class="inner" x="60" y="50" width="310" height="44" rx="4"/>
+  <text class="s" x="215" y="77" text-anchor="middle">Paused in the debugger? Debugger.resume</text>
+  <line class="ln" x1="215" y1="94" x2="215" y2="114" marker-end="url(#a)"/>
+  <rect class="acc" x="60" y="116" width="310" height="58" rx="4"/>
+  <text class="m" x="215" y="140" text-anchor="middle">Runtime.terminateExecution</text>
+  <text class="s" x="215" y="160" text-anchor="middle">on the control session</text>
+  <line class="ln" x1="215" y1="174" x2="215" y2="194" marker-end="url(#a)"/>
+  <rect class="inner" x="60" y="196" width="310" height="58" rx="4"/>
+  <text class="s" x="215" y="220" text-anchor="middle">Abandon the pending Runtime.evaluate</text>
+  <text class="s" x="215" y="240" text-anchor="middle">on the shell session</text>
+  <line class="ln" x1="215" y1="254" x2="215" y2="274" marker-end="url(#a)"/>
+  <rect class="ok" x="60" y="276" width="310" height="58" rx="4"/>
+  <text class="s" x="215" y="300" text-anchor="middle">Cell ends with "Interrupted";</text>
+  <text class="s" x="215" y="320" text-anchor="middle">busy or waiting, state is kept</text>
+
+  <!-- Divider -->
+  <line class="ln" x1="430" y1="30" x2="430" y2="340" stroke-dasharray="3 4"/>
+
+  <!-- Non-CDP column -->
+  <text class="t" x="645" y="34" text-anchor="middle">Bun, workerd, celld</text>
+  <rect class="acc" x="490" y="50" width="310" height="44" rx="4"/>
+  <text class="s" x="645" y="77" text-anchor="middle">Send a ping request</text>
+  <line class="ln" x1="645" y1="94" x2="645" y2="114" marker-end="url(#a)"/>
+  <polygon class="inner" points="645,116 775,150 645,184 515,150"/>
+  <text class="s" x="645" y="147" text-anchor="middle">Answered within</text>
+  <text class="s" x="645" y="163" text-anchor="middle">500 ms?</text>
+  <path class="ln" d="M515,150 H480 V214" marker-end="url(#a)"/>
+  <text class="l" x="472" y="140" text-anchor="end">yes</text>
+  <path class="ln" d="M775,150 H812 V214" marker-end="url(#a)"/>
+  <text class="l" x="820" y="140" text-anchor="start">no</text>
+  <rect class="ok" x="445" y="216" width="180" height="118" rx="4"/>
+  <text class="s" x="535" y="240" text-anchor="middle">The cell was waiting,</text>
+  <text class="s" x="535" y="258" text-anchor="middle">not busy. Abandon its</text>
+  <text class="s" x="535" y="276" text-anchor="middle">request; state is kept,</text>
+  <text class="s" x="535" y="294" text-anchor="middle">and its pending work</text>
+  <text class="s" x="535" y="312" text-anchor="middle">keeps running</text>
+  <rect class="warn" x="660" y="216" width="185" height="118" rx="4"/>
+  <text class="s" x="752" y="240" text-anchor="middle">The cell is busy and</text>
+  <text class="s" x="752" y="258" text-anchor="middle">can't be reached. Kill</text>
+  <text class="s" x="752" y="276" text-anchor="middle">the runtime; it restarts</text>
+  <text class="s" x="752" y="294" text-anchor="middle">on the next cell without</text>
+  <text class="s" x="752" y="312" text-anchor="middle">the earlier state</text>
+</svg>

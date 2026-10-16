@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 400" width="860" height="400" role="img" aria-label="The kernel host speaks Jupyter and drives one target runtime over one of three channels">
+  <title>The kernel host speaks Jupyter and drives one target runtime over one of three channels</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="400" rx="8"/>
+  <!-- Frontend -->
+  <rect class="box" x="20" y="150" width="130" height="100" rx="6"/>
+  <text class="t" x="85" y="192" text-anchor="middle">Jupyter</text>
+  <text class="t" x="85" y="210" text-anchor="middle">frontend</text>
+  <text class="l" x="85" y="230" text-anchor="middle">JupyterLab, VS Code</text>
+  <line class="ln" x1="150" y1="200" x2="230" y2="200" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="l" x="190" y="190" text-anchor="middle">ZeroMQ</text>
+  <text class="l" x="190" y="218" text-anchor="middle">5 sockets</text>
+
+  <!-- Host -->
+  <rect class="box" x="230" y="30" width="200" height="340" rx="6"/>
+  <text class="t" x="330" y="56" text-anchor="middle">Kernel host</text>
+  <text class="l" x="330" y="73" text-anchor="middle">Node 24+ or Deno</text>
+  <rect class="inner" x="245" y="88" width="170" height="56" rx="4"/>
+  <text class="m" x="330" y="111" text-anchor="middle">zmtp.ts · wire.ts</text>
+  <text class="l" x="330" y="130" text-anchor="middle">Jupyter wire protocol</text>
+  <rect class="inner" x="245" y="156" width="170" height="56" rx="4"/>
+  <text class="m" x="330" y="179" text-anchor="middle">kernel.ts</text>
+  <text class="l" x="330" y="198" text-anchor="middle">execute, complete, inspect, comms</text>
+  <rect class="inner" x="245" y="224" width="170" height="56" rx="4"/>
+  <text class="m" x="330" y="247" text-anchor="middle">transform.ts</text>
+  <text class="l" x="330" y="266" text-anchor="middle">cell → script (esbuild, acorn)</text>
+  <rect class="acc" x="245" y="294" width="170" height="60" rx="4"/>
+  <text class="m" x="330" y="319" text-anchor="middle">KernelTarget</text>
+  <text class="l" x="330" y="338" text-anchor="middle">one implementation per channel</text>
+
+  <!-- Fan-out -->
+  <path class="ln" d="M415,324 H470 V75 H620" marker-end="url(#a)"/>
+  <path class="ln" d="M470,200 H620" marker-end="url(#a)"/>
+  <path class="ln" d="M470,324 V325 H620" marker-end="url(#a)"/>
+  <text class="l" x="545" y="67" text-anchor="middle">CDP over the inspector</text>
+  <text class="l" x="545" y="91" text-anchor="middle">WebSocket + pipes</text>
+  <text class="l" x="545" y="192" text-anchor="middle">JSON lines on fd 3</text>
+  <text class="l" x="545" y="216" text-anchor="middle">+ stdout/stderr pipes</text>
+  <text class="l" x="545" y="317" text-anchor="middle">one WebSocket session</text>
+  <text class="l" x="545" y="341" text-anchor="middle">to a driver Worker</text>
+
+  <!-- Targets -->
+  <rect class="box" x="620" y="30" width="220" height="90" rx="6"/>
+  <text class="t" x="730" y="60" text-anchor="middle">Node · Deno</text>
+  <text class="m" x="730" y="82" text-anchor="middle">src/target.ts</text>
+  <text class="m" x="730" y="100" text-anchor="middle">runtime/bootstrap.mjs</text>
+  <rect class="box" x="620" y="155" width="220" height="90" rx="6"/>
+  <text class="t" x="730" y="185" text-anchor="middle">Bun</text>
+  <text class="m" x="730" y="207" text-anchor="middle">src/bun-target.ts</text>
+  <text class="m" x="730" y="225" text-anchor="middle">runtime/bun-channel.mjs</text>
+  <rect class="box" x="620" y="280" width="220" height="90" rx="6"/>
+  <text class="t" x="730" y="310" text-anchor="middle">workerd · celld</text>
+  <text class="m" x="730" y="332" text-anchor="middle">src/workerd-target.ts</text>
+  <text class="m" x="730" y="350" text-anchor="middle">runtime/workerd-worker.mjs</text>
+</svg>

@@ -24,6 +24,11 @@ So the extraction is:
   See [Cells and module loading](#cells-and-module-loading).
 - Port `Deno.jupyter` (`40_jupyter.js`) to `runtime/display.mjs`.
 
+Node and Deno are driven over CDP as described above. Bun, workerd and
+celld can't be, so each has its own channel. [Runtime integrations](integrations.md)
+explains the host/target split and how each runtime is driven, with
+diagrams.
+
 ## Cells and module loading
 
 A cell is written as a TypeScript module, but CDP's `Runtime.evaluate` runs
