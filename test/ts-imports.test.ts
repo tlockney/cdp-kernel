@@ -102,3 +102,16 @@ test("compileTypeScript passes the source on stdin and reports esbuild's error",
     { name: "SyntaxError", message: "/n/x.ts: ✘ [ERROR] Unexpected" },
   );
 });
+
+test("a cell ending in a side-effect or type-only import has no result (#139)", async (t) => {
+  const cwd = notebookDir({ "side.ts": "export type X = number;\n(globalThis as any).sideRan = true;\n" });
+  const target = await Target.launch("node", events, { cwd });
+  t.after(() => target.kill());
+  for (const code of ['import "./side.ts"', 'import { type X } from "./side.ts"']) {
+    const res = await target.evaluate(target.transform(code, {}));
+    assert.equal(res.exceptionDetails, undefined, JSON.stringify(res.exceptionDetails));
+    assert.equal(res.result.type, "undefined", code);
+  }
+  const res = await target.evaluate(target.transform("sideRan", {}));
+  assert.equal(res.result.value, true);
+});

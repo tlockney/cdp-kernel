@@ -144,7 +144,8 @@ function rewriteImport(code: string, node: ImportDeclarationNode, index: number)
     ? `, { with: { ${node.attributes.map((a) => code.slice(a.start, a.end)).join(", ")} } }`
     : "";
   const load = `await ${SHIM}.import(${source}${attrs})`;
-  if (node.specifiers.length === 0) return `${load};`;
+  // `void`: as a cell's last statement, the import isn't its result (#139).
+  if (node.specifiers.length === 0) return `void ${load};`;
   const ns = `${SHIM}_m${index}`;
   const bindings = node.specifiers.map((spec) => {
     const local = String(spec.local.name);
