@@ -39,17 +39,19 @@ One version number lives in three places: `package.json`, `deno.jsonc` and
 
 1. Bump all three, and set `RELEASE_DATE` in `src/package.ts` to today
    (UTC). Commit, and merge to `main`.
-2. Tag and push: `git tag v0.1.1 && git push origin v0.1.1`.
+2. Tag and push, for example `git tag v0.4.1 && git push origin v0.4.1`.
 
 The `publish` workflow then:
 
 1. Checks that the tag matches the version, and that `RELEASE_DATE` is
    today or yesterday. A JSR kernelspec's dependency cutoff comes from that
    date, so a stale one would block the release it ships in.
-2. Runs the type check, the unit tests, and the e2e suite against the packed
-   npm tarball and against a Deno host.
-3. Publishes to JSR (`deno publish`).
-4. Publishes to npm (`npm publish`).
+2. Runs the whole CI workflow (`ci.yml`): the type check, unit tests and
+   e2e suite on every matrix cell, the e2e suite against the packed npm
+   tarball and against a Deno host, `deno publish --dry-run`, and the
+   JupyterLab widget test (`lab`).
+3. Once both checks pass, publishes to JSR (`deno publish`) and to npm
+   (`npm publish`), in two jobs that run in parallel.
 
 Both registries authenticate the workflow through GitHub OIDC, so no tokens
 are stored:

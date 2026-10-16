@@ -55,8 +55,9 @@ that.
 ## Target runtimes
 
 Whichever way the host is installed, the target runtime must be present. A
-Node target needs `node` on `PATH`, and a Bun target needs `bun` (1.4 is what's
-been tested). A workerd target uses the `workerd` in the notebook
+Node target runs on the same `node` as an npm-installed host; under a Deno
+host (a JSR install) it needs `node` on `PATH`. A Bun target needs `bun`
+(1.4 is what's been tested). A workerd target uses the `workerd` in the notebook
 directory's `node_modules` (a Workers project has one through wrangler),
 or the one on `PATH` (`npm install -g workerd`; 2026-10-15 is what's been
 tested). A celld target uses `~/.local/bin/celld`, where celld's installer

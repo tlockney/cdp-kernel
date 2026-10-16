@@ -6,10 +6,10 @@ plain text. It is a port of `Deno.jupyter`, the API that Deno's built-in
 kernel (`deno jupyter`) gives notebooks, so notebooks and examples written
 for Deno work here, and what you learn here applies there.
 
-This page assumes no experience with Deno. The examples were run against
-the kernel on Node, Deno, Bun and workerd, and the output described is what
-they produced. Differences between runtimes are noted where they exist,
-and summarized at the end.
+This page assumes no experience with Deno. The output shown is what the
+examples produced on the `cdp-node` kernel when the docs were built.
+Differences on other runtimes are noted where they exist, and summarized
+at the end.
 
 <!-- notebook: public/notebooks/jupyter-api.ipynb -->
 

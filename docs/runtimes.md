@@ -98,8 +98,8 @@ Objects on your own storage. Cells behave as on workerd.
 
 In a project (a `wrangler.jsonc` or `wrangler.json` at or above the
 notebook; celld rejects `wrangler.toml`), the kernel copies the project's
-compatibility settings and bindings: vars, KV, D1, R2, Durable Objects,
-Queues, Workflows, services and Worker Loaders. `env` and `worker` then
+compatibility settings and bindings: vars, KV, D1, R2, Durable Objects
+and their `migrations`, Queues, Workflows, services and Worker Loaders. `env` and `worker` then
 work as on workerd. State stays in `.celld/cdp-kernel` across kernels,
 beside `celld dev`'s own `.celld/dev`. `assets`, `triggers`, `containers`
 and `.dev.vars` aren't copied.
