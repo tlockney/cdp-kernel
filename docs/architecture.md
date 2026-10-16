@@ -124,11 +124,14 @@ by the target runtime itself:
   generation, such as `enum`, `namespace` with values, or parameter
   properties, is compiled by esbuild instead, with an inline source map.
   The load hook in `runtime/node-hooks.mjs` runs the host's esbuild binary,
-  which the host passes in `CDPK_ESBUILD_BINARY`.
+  which the host passes in `CDPK_ESBUILD_BINARY`. Node can't load JSX, so
+  `.tsx` and `.jsx` files always go through esbuild, with the JSX settings
+  cells use on Node (classic `React.createElement`, unless the file has a
+  `@jsx` or `@jsxImportSource` pragma).
 - Bun and Deno transpile TypeScript fully.
 - On workerd and celld, esbuild's bundle compiles it.
 
-So on every runtime, a cell and an imported `.ts` file accept the same syntax.
+So on every runtime, a cell and an imported `.ts` or `.tsx` file accept the same syntax.
 
 ## How the tricky parts work
 

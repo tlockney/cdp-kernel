@@ -12,6 +12,7 @@
 //   - TypeScript files a cell imports load with Node's own type stripping
 //     where it can; syntax that needs code generation (enum, namespaces with
 //     values, parameter properties) is compiled by esbuild instead (#73).
+//     Node can't load JSX at all, so .tsx/.jsx files are always compiled (#91).
 // Uses module.registerHooks (synchronous, in-thread; Node >= 23.5), so the
 // install can run with spawnSync inside resolve.
 
@@ -233,6 +234,8 @@ export function ensureInstalled({ name, range }, installer = "npm", { lockFile =
 // esbuild binary, unlike its JavaScript API, works from anywhere.
 
 const TS_FILE = /^file:.*\.[cm]?ts$/;
+// Node has no format for these extensions, so its loader is never asked.
+const JSX_FILE = /^file:.*\.([jt]sx)$/;
 const TS_FORMATS = { "module-typescript": "module", "commonjs-typescript": "commonjs" };
 
 function isUnsupportedSyntax(err) {
@@ -253,10 +256,15 @@ function stripTypes(source) {
   }
 }
 
-/** Compiles one TypeScript file with the esbuild binary at `binary`, as cells are compiled. */
-export function compileTypeScript(source, filename, binary, run = spawnSync) {
+/**
+ * Compiles one TypeScript (or, with loader "tsx"/"jsx", JSX) file with the
+ * esbuild binary at `binary`, as cells are compiled. JSX takes esbuild's
+ * default, classic React.createElement, which is what cells use on Node
+ * (no project config there); a file's own @jsx/@jsxImportSource pragma wins.
+ */
+export function compileTypeScript(source, filename, binary, run = spawnSync, loader = "ts") {
   const args = [
-    "--loader=ts",
+    `--loader=${loader}`,
     "--target=esnext",
     "--sourcemap=inline",
     `--sourcefile=${filename}`,
@@ -273,6 +281,13 @@ export function compileTypeScript(source, filename, binary, run = spawnSync) {
 
 /** The load hook: Node's result unless it would reject the file's TypeScript. */
 export function loadTypeScript(url, context, nextLoad, binary) {
+  const jsx = JSX_FILE.exec(url);
+  if (binary && jsx) {
+    // Notebooks import ES modules, so it's compiled as one.
+    const filename = fileURLToPath(url);
+    const source = compileTypeScript(readFileSync(filename, "utf8"), filename, binary, spawnSync, jsx[1]);
+    return { format: "module", source, shortCircuit: true };
+  }
   if (!binary || !TS_FILE.test(url)) return nextLoad(url, context);
   let result;
   try {
