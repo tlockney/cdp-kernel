@@ -84,6 +84,9 @@ function stripTypesMapped(code: string, options: CellTransformOptions, sourcemap
       const result = transformSync(code, {
         loader,
         target: "esnext",
+        // Neither acorn nor V8 parses standard (TC39) decorators or
+        // `accessor` yet, so esbuild lowers them (#142).
+        supported: { decorators: false },
         ...jsxSettings(options.jsx),
         tsconfigRaw: { compilerOptions },
         logLevel: "silent",

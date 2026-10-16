@@ -42,7 +42,8 @@
   "files": [
     "dist/",
     "runtime/*.mjs",
-    "runtime/*.d.mts"
+    "runtime/*.d.mts",
+    "THIRD-PARTY-NOTICES"
   ],
   "publishConfig": {
     "access": "public"

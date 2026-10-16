@@ -187,7 +187,11 @@ and `unhandledRejection` handlers (in Deno, `error` and
 the error to stderr, so it shows up in whichever cell is running, and the
 kernel survives.
 
-A `setInterval` keeps the event loop alive between cells.
+A `setInterval` keeps the event loop alive between cells. Another checks
+every 2 seconds that the kernel is still there (the runtime's parent pid
+hasn't changed and still exists) and exits if not, so a runtime doesn't
+outlive a kernel that was killed with SIGKILL. A cell stuck in a busy loop
+never lets that check run.
 
 ## Node specifics
 
@@ -221,8 +225,10 @@ notebook's directory, the host launches Deno with `--config <path>`
 instead of `--node-modules-dir=none`, so the project's import map,
 `nodeModulesDir` and other settings apply as in `deno jupyter`. Its
 `compilerOptions` for JSX and decorators are passed to esbuild for the
-cell transform (`src/deno-config.ts`). A config that can't be read is
-reported in the first cell, and the kernel runs without it.
+cell transform (`src/deno-config.ts`). Standard decorators are always
+lowered by esbuild, since neither acorn nor V8 parses them yet. A config
+that can't be read is reported in the first cell, and the kernel runs
+without it.
 
 **Resolution.** Deno resolves `npm:`, `jsr:`, URLs and import maps itself.
 `bootstrap.mjs` only resolves relative specifiers against the notebook's

@@ -21,7 +21,7 @@
   "publish": {
     // runtime/*.mjs are loaded by the target runtime, not imported; a JSR
     // install copies them into a local cache (src/package.ts runtimeDir).
-    "include": ["src/", "runtime/*.mjs", "runtime/*.d.mts", "README.md", "LICENSE"],
+    "include": ["src/", "runtime/*.mjs", "runtime/*.d.mts", "README.md", "LICENSE", "THIRD-PARTY-NOTICES"],
     "exclude": ["src/globals.ts", "src/globals-deno-compat.ts"]
   }
 }

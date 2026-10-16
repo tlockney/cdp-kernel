@@ -157,6 +157,16 @@ test("a cell ending in an anonymous export default shows it (#143)", async () =>
   assert.equal(new (cls as new () => { x: number })().x, 1);
 });
 
+test("standard decorators work in the eval path (#142)", async () => {
+  const s = session();
+  await s.cell([
+    "function tag(cls: any, ctx: ClassDecoratorContext) { cls.prototype.tag = ctx.name; }",
+    "function twice(_: unknown, ctx: ClassAccessorDecoratorContext) { return { init: (v: number) => v * 2 }; }",
+    "@tag class A { @twice accessor x = 1; }",
+  ].join("\n"));
+  assert.deepEqual(await s.cell("[new A().x, new A().tag]"), [[2, "A"]]);
+});
+
 test("a cell ending in a side-effect or type-only import has no result (#139)", async () => {
   const s = session({ side: { x: 1 } });
   assert.deepEqual(await s.cell('import "side"'), [undefined]);

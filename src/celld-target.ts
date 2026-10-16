@@ -22,9 +22,10 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { build } from "esbuild";
-import type { CdpParams } from "./cdp.ts";
+import { type CdpParams, isRecord } from "./cdp.ts";
 import { parseJsonc } from "./deno-config.ts";
 import { runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 import type { TargetEvents } from "./target.ts";
 import type { WsChannel } from "./ws-client.ts";
 import { cellMeta, type WorkerHost, WorkerdTarget } from "./workerd-target.ts";
@@ -194,17 +195,21 @@ class CelldHost implements WorkerHost {
     if (projectConfig !== null) {
       if (projectConfig.endsWith(".toml")) throw new Error("celld reads wrangler.jsonc or wrangler.json, not wrangler.toml");
       const parsed = parseJsonc(readFileSync(projectConfig, "utf8"));
-      if (typeof parsed !== "object" || parsed === null) throw new Error(`${projectConfig} is not an object`);
-      project = parsed as CdpParams;
+      if (!isRecord(parsed) || Array.isArray(parsed)) throw new Error(`${projectConfig} is not an object`);
+      project = parsed;
       dir = join(dirname(projectConfig), ".celld", "cdp-kernel");
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     } else {
       dir = mkdtempSync(join(tmpdir(), "cdpk-celld-"));
     }
     const main = project && typeof project.main === "string" ? resolve(dirname(projectConfig ?? cwd), project.main) : undefined;
-    const define = project && typeof project.define === "object" && project.define !== null
-      ? project.define as { [name: string]: string }
-      : {};
+    const define: { [name: string]: string } = {};
+    if (project && isRecord(project.define)) {
+      for (const [name, value] of Object.entries(project.define)) {
+        if (typeof value !== "string") throw new Error(`define.${name} in ${projectConfig} must be a string`);
+        define[name] = value;
+      }
+    }
     const token = randomBytes(32).toString("hex");
     // 0600: the config carries this launch's token.
     writeFileSync(join(dir, "driver.mjs"), await bundleDriver(source, main, define));
@@ -216,15 +221,23 @@ class CelldHost implements WorkerHost {
     const child = spawn(celld, ["dev", dir, "--host", "127.0.0.1", "--port", String(port), "--no-watch"], {
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.once("exit", () => {
+    const removeFiles = () => {
       if (projectConfig === null) rmSync(dir, { recursive: true, force: true });
       else for (const name of ["driver.mjs", "wrangler.jsonc"]) rmSync(join(dir, name), { force: true });
+    };
+    child.once("exit", removeFiles);
+    killOnExit(child, () => {
+      killTree(child);
+      removeFiles();
     });
     // Cell output is captured in the driver; celld's own lines go to the
     // server log.
+    // `early` keeps that output for a startup error only, and stops growing
+    // once the session is open.
     let early = "";
+    let starting = true;
     const log = (chunk: Buffer) => {
-      early += chunk.toString();
+      if (starting) early += chunk.toString();
       process.stderr.write(`[cdp-kernel celld] ${chunk}`);
     };
     child.stdout?.on("data", log);
@@ -253,7 +266,10 @@ class CelldHost implements WorkerHost {
       return channelOf(ws);
     })();
     try {
-      return new CelldHost(child, await Promise.race([ready, exited]), `celld ${version}`.trim(), projectConfig ?? undefined);
+      const host = new CelldHost(child, await Promise.race([ready, exited]), `celld ${version}`.trim(), projectConfig ?? undefined);
+      starting = false;
+      early = "";
+      return host;
     } catch (err) {
       killTree(child);
       throw err;

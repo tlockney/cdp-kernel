@@ -69,6 +69,20 @@ test("a thrown error is described by name, message and stack", { skip }, async (
   assert.match(described.stack, /RangeError: out/);
 });
 
+test("every thrown error's stack names it, though Bun sometimes records a bare header", { skip }, async (t) => {
+  const { target, run } = await launch(t);
+  // Bun leaves out the name and message on about one throw in twenty (#216).
+  for (let i = 0; i < 60; i++) {
+    const { exceptionDetails } = await run(`throw new TypeError('boom ${i}')`);
+    assert.ok(exceptionDetails?.exception);
+    assert.match((await target.describeError(exceptionDetails.exception)).stack, new RegExp(`^TypeError: boom ${i}\n`), `throw ${i}`);
+  }
+  // What Bun records then, made by hand.
+  const { exceptionDetails } = await run("const e = new TypeError('made'); e.stack = 'Error\\n    at cell'; throw e");
+  assert.ok(exceptionDetails?.exception);
+  assert.equal((await target.describeError(exceptionDetails.exception)).stack, "TypeError: made\n    at cell");
+});
+
 test("interrupting an awaiting cell abandons it and keeps the session", { skip }, async (t) => {
   const { target, events, run } = await launch(t);
   await run("globalThis.kept = 'state'");
@@ -113,3 +127,22 @@ test("prompt() blocks on stdin for the host's reply", { skip }, async (t) => {
   assert.equal((await result).result.type, "string");
   await run("1");
 });
+
+// Bun queues writes to a non-blocking pipe for its event loop, which
+// prompt()'s blocking read stops (#180).
+for (const write of ["process.stdout.write", "console.log", "console.error"]) {
+  test(`prompt() after ${write} of more than the pipe holds gets its reply`, { skip }, async (t) => {
+    const { target, events, run } = await launch(t);
+    await run(`jupyter.broadcast("warm", {})`); // stdout and stderr now exist
+    const result = target.evaluate(target.transform(`${write}("x".repeat(300_000) + "\\n"); prompt("Name?")`, {}));
+    for (let i = 0; i < 250 && !events.some((e) => "message" in e && e.message.kind === "input_request"); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const chars = () => events.reduce((n, e) => n + ("text" in e ? e.text.replaceAll(/\x1b\[cdpk:\d+m?\]\x1b/g, "").length : 0), 0);
+    assert.ok(events.some((e) => "message" in e && e.message.kind === "input_request"), `no input_request after ${chars()} chars`);
+    // The output came before the request, not after it.
+    assert.ok(chars() >= 300_001, `${chars()} chars before the input_request`);
+    target.replyInput("Ada");
+    assert.equal((await result).result.type, "string");
+  });
+}
