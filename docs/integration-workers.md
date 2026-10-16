@@ -61,7 +61,9 @@ three kinds of message back:
   call, and on stderr for an error a cell's timer throws or a promise
   rejection nothing handles, after the cell has finished. Workers has no
   global `error` event, so the driver wraps `setTimeout`, `setInterval`
-  and `queueMicrotask` callbacks to catch their errors.
+  and `queueMicrotask` callbacks to catch their errors, and the
+  rejections of the promises they return, since celld doesn't dispatch
+  `unhandledrejection`.
 - `{ kind: "iopub", ... }` for `display()` and comm messages.
 
 The driver hands each request to the same `runtime/evaluator.mjs` the Bun
