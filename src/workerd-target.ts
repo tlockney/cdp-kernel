@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
@@ -426,7 +426,7 @@ export class WorkerdTarget implements KernelTarget {
     const { failedModules, ...reply } = await this.#interruptibly("eval", { code: script, modules }, "Execution");
     // A module that threw while loading is rebuilt for its next import (#147).
     if (Array.isArray(failedModules)) for (const specifier of failedModules) this.#sent.delete(specifier);
-    return reply as unknown as EvaluateResult;
+    return asEvaluateResult(reply);
   }
 
   /**

@@ -22,7 +22,7 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { build } from "esbuild";
-import type { CdpParams } from "./cdp.ts";
+import { type CdpParams, isRecord } from "./cdp.ts";
 import { parseJsonc } from "./deno-config.ts";
 import { runtimeDir } from "./package.ts";
 import type { TargetEvents } from "./target.ts";
@@ -194,17 +194,21 @@ class CelldHost implements WorkerHost {
     if (projectConfig !== null) {
       if (projectConfig.endsWith(".toml")) throw new Error("celld reads wrangler.jsonc or wrangler.json, not wrangler.toml");
       const parsed = parseJsonc(readFileSync(projectConfig, "utf8"));
-      if (typeof parsed !== "object" || parsed === null) throw new Error(`${projectConfig} is not an object`);
-      project = parsed as CdpParams;
+      if (!isRecord(parsed) || Array.isArray(parsed)) throw new Error(`${projectConfig} is not an object`);
+      project = parsed;
       dir = join(dirname(projectConfig), ".celld", "cdp-kernel");
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     } else {
       dir = mkdtempSync(join(tmpdir(), "cdpk-celld-"));
     }
     const main = project && typeof project.main === "string" ? resolve(dirname(projectConfig ?? cwd), project.main) : undefined;
-    const define = project && typeof project.define === "object" && project.define !== null
-      ? project.define as { [name: string]: string }
-      : {};
+    const define: { [name: string]: string } = {};
+    if (project && isRecord(project.define)) {
+      for (const [name, value] of Object.entries(project.define)) {
+        if (typeof value !== "string") throw new Error(`define.${name} in ${projectConfig} must be a string`);
+        define[name] = value;
+      }
+    }
     const token = randomBytes(32).toString("hex");
     // 0600: the config carries this launch's token.
     writeFileSync(join(dir, "driver.mjs"), await bundleDriver(source, main, define));

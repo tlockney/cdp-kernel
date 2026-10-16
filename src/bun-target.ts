@@ -11,7 +11,7 @@ import process from "node:process";
 import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
-import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
@@ -181,7 +181,7 @@ export class BunTarget implements KernelTarget {
   }
 
   async evaluate(script: string): Promise<EvaluateResult> {
-    return (await this.#interruptible("eval", { code: script }, "Execution")) as unknown as EvaluateResult;
+    return asEvaluateResult(await this.#interruptible("eval", { code: script }, "Execution"));
   }
 
   /**
