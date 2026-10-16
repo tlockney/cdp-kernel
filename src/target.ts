@@ -337,6 +337,13 @@ export class Interrupted extends Error {
   override name = "Interrupted";
 }
 
+/** A catch handler: a call interrupt() abandoned becomes Interrupted. */
+function interrupted(what: string): (err: unknown) => never {
+  return (err) => {
+    throw err instanceof CdpAbandoned ? new Interrupted(`${what} interrupted`) : err;
+  };
+}
+
 export class Target implements KernelTarget {
   readonly runtime: CdpRuntime;
   readonly transform = transformCell;
@@ -546,7 +553,7 @@ export class Target implements KernelTarget {
 
   /** Resolves once all output and messages sent so far have been delivered. */
   async flush(): Promise<void> {
-    const n = await this.#evaluateSync(`${SHIM}.barrier()`);
+    const n = await this.#evaluateSync(`${SHIM}.barrier()`).catch(interrupted("Execution"));
     const barrier = Number(n.result.value);
     await Promise.all([this.#stdout.waitFor(barrier), this.#stderr.waitFor(barrier)]);
     await this.#messages;
@@ -648,10 +655,12 @@ export class Target implements KernelTarget {
       : result.unserializableValue !== undefined
       ? { unserializableValue: result.unserializableValue }
       : { value: result.value };
+    // An async $display method can still be running when interrupt()
+    // abandons the call (#135).
     await this.#callAsyncFunctionOn(`function (n, r) { return globalThis.${SHIM}.broadcastResult(n, r); }`, [
       { value: executionCount },
       arg,
-    ]);
+    ]).catch(interrupted("Execution"));
   }
 
   /**
