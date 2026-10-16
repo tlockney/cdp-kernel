@@ -109,3 +109,6 @@
 .ansi-blue { color: var(--vp-c-indigo-1); }
 .ansi-magenta { color: var(--vp-c-purple-1); }
 .ansi-cyan { color: var(--vp-c-brand-1); }
+.nb-note { margin: 0; font-size: 0.875rem; font-style: italic; color: var(--vp-c-text-2); }
+.nb-vega { min-height: 2rem; }
+.nb-html table { font-size: 0.8125rem; }

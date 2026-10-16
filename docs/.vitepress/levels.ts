@@ -48,6 +48,15 @@ export function groups(site: string): Group[] {
       ],
     },
     {
+      text: "Examples",
+      level: "guide",
+      items: [
+        { text: "Example notebooks", link: "/examples" },
+        { text: "MoMA's collection", link: "/example-moma" },
+        { text: "A Deno-style notebook", link: "/example-deno-style" },
+      ],
+    },
+    {
       text: "Reference",
       level: "reference",
       items: [
