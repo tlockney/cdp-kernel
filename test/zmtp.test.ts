@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { connect, type AddressInfo, type Server, type Socket } from "node:net";
+import { connect, createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import {
   encodeFrame,
   encodeMultipart,
@@ -265,4 +265,19 @@ test("RouterSocket keeps peers apart: replies go to their sender, sendAll to eve
   a.socket.destroy();
   await until(() => router.peers.size === 1);
   router.send(fromA.peer, [ENC.encode("gone")]); // a departed peer is dropped quietly
+});
+
+test("RouterSocket waits for a port that is briefly in use", async () => {
+  const holder = createServer();
+  await new Promise<void>((resolve) => holder.listen(0, "127.0.0.1", resolve));
+  const { port } = holder.address() as AddressInfo;
+  const router = new RouterSocket(port, "127.0.0.1");
+  try {
+    setTimeout(() => holder.close(), 300);
+    await new Promise<void>((resolve) => router.server.once("listening", resolve));
+    assert.equal((router.server.address() as AddressInfo).port, port);
+  } finally {
+    holder.close();
+    router.server.close();
+  }
 });
