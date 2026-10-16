@@ -6,6 +6,13 @@
 <title>cdp-kernel: TypeScript notebooks on the runtime you choose</title>
 <meta name="description" content="A Jupyter kernel for TypeScript and JavaScript, extracted from Deno's, that runs notebooks on Node, Deno, Bun, workerd and celld.">
 <link rel="stylesheet" href="style.css">
+<script>
+  // Use the light/dark choice made with the docs' switch, if there is one.
+  try {
+    const mode = localStorage.getItem("vitepress-theme-appearance");
+    if (mode === "light" || mode === "dark") document.documentElement.dataset.theme = mode;
+  } catch {}
+</script>
 </head>
 <body>
 <header class="top">
@@ -84,7 +91,7 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
           background needed.</p>
       </a>
       <a class="path" href="docs/notebooks">
-        <span class="lvl guide">Guides</span>
+        <span class="lvl guide">Guide</span>
         <h3>Using cdp-kernel</h3>
         <p>Imports and packages, rich output with the <code>jupyter</code> namespace, choosing a
           runtime, widgets and the debugger.</p>

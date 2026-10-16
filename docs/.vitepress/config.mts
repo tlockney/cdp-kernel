@@ -59,7 +59,7 @@ export default defineConfig({
   },
   themeConfig: {
     nav: [
-      { text: "Home", link: `${site}/`, target: "_self" },
+      { text: "Home", link: `${site}/`, target: "_self", noIcon: true },
       { text: "Get started", link: "/getting-started" },
       { text: "Guides", link: "/notebooks" },
       { text: "Reference", link: "/known-gaps" },

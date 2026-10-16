@@ -6,18 +6,27 @@
   --line: #dedad0;
   --accent: #2e6e64;
   --accent-fg: #ffffff;
-  --code-bg: #14191f;
-  --code-fg: #e4e6e8;
-  --code-comment: #7d8894;
-  --code-keyword: #e0a458;
-  --code-string: #8fcf9f;
-  --code-type: #7fb6e6;
+  --code-bg: #f2f0ea;
+  --code-fg: #24292e;
+  --code-comment: #6a737d;
+  --code-keyword: #d73a49;
+  --code-string: #032f62;
+  --code-type: #6f42c1;
+  --inline-code-bg: rgba(142, 150, 170, 0.14);
+  --lvl-intro: #18794e;
+  --lvl-intro-bg: rgba(24, 121, 78, 0.14);
+  --lvl-guide-bg: rgba(46, 110, 100, 0.14);
+  --lvl-adv: #6f42c1;
+  --lvl-adv-bg: rgba(111, 66, 193, 0.14);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 }
 
+/* Dark follows the system, unless the docs' light/dark switch picked one
+   (the script in index.html copies that choice to data-theme). The docs theme
+   (docs/.vitepress/theme/custom.css) uses the same colors. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #111518;
     --bg-alt: #171c20;
     --fg: #e6e8ea;
@@ -26,7 +35,37 @@
     --accent: #5aa89b;
     --accent-fg: #0d1214;
     --code-bg: #0b0e11;
+    --code-fg: #e1e4e8;
+    --code-keyword: #f97583;
+    --code-string: #9ecbff;
+    --code-type: #b392f0;
+    --inline-code-bg: rgba(101, 117, 133, 0.16);
+    --lvl-intro: #3dd68c;
+    --lvl-intro-bg: rgba(16, 185, 129, 0.16);
+    --lvl-guide-bg: rgba(90, 168, 155, 0.16);
+    --lvl-adv: #c8abfa;
+    --lvl-adv-bg: rgba(159, 122, 234, 0.16);
   }
+}
+:root[data-theme="dark"] {
+  --bg: #111518;
+  --bg-alt: #171c20;
+  --fg: #e6e8ea;
+  --fg-soft: #a4adb6;
+  --line: #2a3238;
+  --accent: #5aa89b;
+  --accent-fg: #0d1214;
+  --code-bg: #0b0e11;
+  --code-fg: #e1e4e8;
+  --code-keyword: #f97583;
+  --code-string: #9ecbff;
+  --code-type: #b392f0;
+  --inline-code-bg: rgba(101, 117, 133, 0.16);
+  --lvl-intro: #3dd68c;
+  --lvl-intro-bg: rgba(16, 185, 129, 0.16);
+  --lvl-guide-bg: rgba(90, 168, 155, 0.16);
+  --lvl-adv: #c8abfa;
+  --lvl-adv-bg: rgba(159, 122, 234, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -38,7 +77,9 @@ body {
   font: 16px/1.6 var(--sans);
 }
 a { color: var(--accent); }
-code { font-family: var(--mono); font-size: 0.9em; }
+code { font-family: var(--mono); font-size: 0.875em; }
+:not(pre) > code { padding: 3px 6px; border-radius: 4px; background: var(--inline-code-bg); color: var(--accent); }
+h3 > code, .rt code { color: inherit; }
 h1, h2, h3 { line-height: 1.2; }
 h2 { font-size: 1.6rem; margin: 0 0 0.75rem; }
 h3 { font-size: 1.05rem; margin: 0 0 0.4rem; }
@@ -48,7 +89,7 @@ section { padding: 64px 0; }
 section.alt { background: var(--bg-alt); border-block: 1px solid var(--line); }
 
 .top { border-bottom: 1px solid var(--line); }
-.nav { display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 16px; }
+.nav { display: flex; align-items: center; justify-content: space-between; height: 64px; gap: 16px; }
 .brand { white-space: nowrap; font-family: var(--mono); font-weight: 700; color: var(--fg); text-decoration: none; }
 .nav nav { display: flex; gap: 18px; flex-wrap: wrap; }
 .nav nav a { color: var(--fg-soft); text-decoration: none; font-size: 0.95rem; }
@@ -64,9 +105,9 @@ pre {
   background: var(--code-bg);
   color: var(--code-fg);
   border-radius: 8px;
-  padding: 16px 18px;
+  padding: 20px 24px;
   overflow-x: auto;
-  font: 0.9rem/1.6 var(--mono);
+  font: 0.875rem/1.7 var(--mono);
 }
 pre code { font-size: inherit; }
 .c { color: var(--code-comment); }
@@ -139,19 +180,15 @@ pre code { font-size: inherit; }
   margin-bottom: 10px;
   padding: 1px 9px;
   border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
-.lvl.intro { color: #18794e; background: rgba(24, 121, 78, 0.12); }
-.lvl.guide { color: var(--accent); background: rgba(46, 110, 100, 0.12); }
-.lvl.adv { color: #6f42c1; background: rgba(111, 66, 193, 0.12); }
-@media (prefers-color-scheme: dark) {
-  .lvl.intro { color: #4cc38a; background: rgba(76, 195, 138, 0.14); }
-  .lvl.guide { background: rgba(90, 168, 155, 0.16); }
-  .lvl.adv { color: #b392f0; background: rgba(179, 146, 240, 0.14); }
-}
+/* The docs' level badges (docs/.vitepress/theme/custom.css). */
+.lvl.intro { color: var(--lvl-intro); background: var(--lvl-intro-bg); }
+.lvl.guide { color: var(--accent); background: var(--lvl-guide-bg); }
+.lvl.adv { color: var(--lvl-adv); background: var(--lvl-adv-bg); }
 .diagram { display: block; width: 100%; height: auto; margin: 0 0 24px; border-radius: 8px; }
 
 .note { border-left: 3px solid var(--accent); padding: 4px 0 4px 20px; }
