@@ -412,7 +412,10 @@ export class WorkerdTarget implements KernelTarget {
       // A failed bundle is rebuilt next time, after the user fixes it.
       if (!modules[specifier].startsWith("Promise.reject(")) this.#sent.add(specifier);
     }
-    return (await this.#interruptibly("eval", { code: script, modules }, "Execution")) as unknown as EvaluateResult;
+    const { failedModules, ...reply } = await this.#interruptibly("eval", { code: script, modules }, "Execution");
+    // A module that threw while loading is rebuilt for its next import (#147).
+    if (Array.isArray(failedModules)) for (const specifier of failedModules) this.#sent.delete(specifier);
+    return reply as unknown as EvaluateResult;
   }
 
   /**
