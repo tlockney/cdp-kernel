@@ -46,7 +46,8 @@ export interface KernelTarget {
   inspect(path: string, detail: number): Promise<string | null>;
   /** The Debugger domain, on targets driven over CDP (#18). */
   readonly debug?: DebugChannel;
-  replyInput(value: string | null): void;
+  /** Answers the target's pending prompt; `interrupted` makes it throw instead (#121). */
+  replyInput(value: string | null, interrupted?: boolean): void;
   kill(): void;
 }
 
@@ -752,8 +753,8 @@ export class Target implements KernelTarget {
     return (res.names as string[] | undefined) ?? [];
   }
 
-  replyInput(value: string | null): void {
-    this.#child.stdin.write(JSON.stringify({ value }) + "\n");
+  replyInput(value: string | null, interrupted = false): void {
+    this.#child.stdin.write(JSON.stringify({ value, interrupted }) + "\n");
   }
 
   kill(): void {

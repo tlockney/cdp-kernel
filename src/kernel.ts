@@ -8,7 +8,7 @@
 import { Buffer } from "node:buffer";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
-import { decodeMessage, encodeMessage, type JsonObject, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
+import { decodeMessage, encodeMessage, type JsonObject, makeHeader, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
 import { PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
 import { Interrupted, type KernelTarget, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
 import { BunTarget } from "./bun-target.ts";
@@ -63,6 +63,17 @@ export function parseConnectionInfo(json: string): ConnectionInfo {
   };
 }
 
+/** How long interrupt_request may wait on the target before it's answered anyway (#121). */
+const INTERRUPT_REPLY_WAIT_MS = 5_000;
+
+/** The answer to a target's prompt: a value, or "unwind the cell" (#121). */
+interface InputAnswer {
+  value: string | null;
+  interrupted: boolean;
+}
+
+const NO_INPUT: InputAnswer = { value: null, interrupted: false };
+
 interface ErrorContent extends JsonObject {
   ename: string;
   evalue: string;
@@ -108,6 +119,10 @@ export class Kernel {
    */
   #abortQueued = 0;
   #aborting = false;
+  /** The input_request waiting for its input_reply, if any. */
+  #input: { msgId: string; settle: (answer: InputAnswer) => void } | null = null;
+  /** An interrupt is waiting on the target. */
+  #interrupting = false;
   // Open comms, for comm_info_request: comm_id -> target_name (#9).
   readonly #comms = new Map<string, string>();
   #shuttingDown = false;
@@ -144,7 +159,8 @@ export class Kernel {
       });
     }
     await Promise.all([this.#loop(this.#shell, (m, p) => this.#handleShell(m, p)),
-      this.#loop(this.#control, (m, p) => this.#handleControl(m, p))]);
+      this.#loop(this.#control, (m, p) => this.#handleControl(m, p)),
+      this.#loop(this.#stdin, (m) => this.#handleStdin(m))]);
   }
 
   #log(text: string): void {
@@ -257,6 +273,8 @@ export class Kernel {
       message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
       exit: (code, note) => {
         this.#target = null;
+        // Its prompt, if any, died with it; a late reply is dropped.
+        this.#input = null;
         void this.#debugger?.attachTarget(null);
         if (!this.#shuttingDown) {
           const text = note ?? `[cdp-kernel] ${this.#runtime} exited (${code}); restarting on next cell`;
@@ -275,17 +293,34 @@ export class Kernel {
       });
       return;
     }
-    let value: string | null = null;
+    // The answer goes to the target that asked, not one started since.
+    const target = this.#target;
+    let answer = NO_INPUT;
     try {
-      value = await this.#requestInput(msg.prompt, msg.password);
+      answer = await this.#requestInput(msg.prompt, msg.password);
     } finally {
       // Always answer exactly once so the target's blocking read returns.
-      this.#target?.replyInput(value);
+      if (target !== null && target === this.#target) target.replyInput(answer.value, answer.interrupted);
     }
   }
 
   async #interrupt(): Promise<void> {
-    if (this.#target && this.#executing) await this.#target.interrupt();
+    // A target blocked reading its prompt's answer can't run
+    // terminateExecution, and would never answer it. Make the prompt throw
+    // instead, which ends the cell (#121).
+    const input = this.#input;
+    if (input !== null) {
+      this.#input = null;
+      input.settle({ value: null, interrupted: true });
+      return;
+    }
+    if (!this.#target || !this.#executing) return;
+    this.#interrupting = true;
+    try {
+      await this.#target.interrupt();
+    } finally {
+      this.#interrupting = false;
+    }
   }
 
   // --- messaging --------------------------------------------------------------
@@ -370,7 +405,11 @@ export class Kernel {
         this.#reply(socket, peer, msg, "kernel_info_reply", this.#kernelInfo());
         break;
       case "interrupt_request":
-        await this.#interrupt();
+        // Answer even if the target doesn't (#121); the interrupt goes on.
+        await Promise.race([
+          this.#interrupt().catch((err) => this.#log(`interrupt failed: ${err}`)),
+          new Promise((r) => setTimeout(r, INTERRUPT_REPLY_WAIT_MS)),
+        ]);
         this.#reply(socket, peer, msg, "interrupt_reply", { status: "ok" });
         break;
       case "debug_request": {
@@ -498,25 +537,36 @@ export class Kernel {
     };
   }
 
-  async #requestInput(prompt: string, password: boolean): Promise<string | null> {
+  async #requestInput(prompt: string, password: boolean): Promise<InputAnswer> {
+    // The target asked while an interrupt was already waiting on it.
+    if (this.#interrupting) return { value: null, interrupted: true };
     const parent = this.#parent;
-    if (!this.#allowStdin || typeof parent.msg_id !== "string") return null;
+    if (!this.#allowStdin || typeof parent.msg_id !== "string") return NO_INPUT;
     if (this.#stdin.peers.size === 0) await new Promise((r) => setTimeout(r, 100));
-    if (this.#stdin.peers.size === 0) return null;
-    this.#stdin.sendAll(this.#encode("input_request", { prompt, password }, parent));
-    for (;;) {
-      const { frames } = await this.#stdin.recv();
-      let reply: Message;
-      try {
-        reply = decodeMessage(frames);
-      } catch {
-        continue; // as #loop does (#122)
-      }
-      if (!verify(this.#conn.key, reply.signedParts, reply.sig)) continue;
-      if (reply.header.msg_type === "input_reply") {
-        return typeof reply.content.value === "string" ? reply.content.value : null;
-      }
-    }
+    if (this.#stdin.peers.size === 0) return NO_INPUT;
+    const header = makeHeader(this.#session, "input_request");
+    const answer = new Promise<InputAnswer>((settle) => (this.#input = { msgId: header.msg_id, settle }));
+    this.#stdin.sendAll(encodeMessage(this.#session, this.#conn.key, "input_request", { prompt, password }, {
+      header,
+      parentHeader: parent,
+    }));
+    return answer;
+  }
+
+  /** stdin carries only input_replys. */
+  async #handleStdin(reply: Message): Promise<void> {
+    if (reply.header.msg_type !== "input_reply") return;
+    const input = this.#input;
+    // A reply with nothing waiting is late (its prompt was interrupted), and
+    // one naming another request is for an earlier prompt: drop both rather
+    // than answer the next prompt with them (#121). Some clients
+    // (jupyter_client's input()) send no parent header, so only a present
+    // one is checked.
+    if (input === null) return;
+    const parentId = reply.parentHeader.msg_id;
+    if (typeof parentId === "string" && parentId !== "" && parentId !== input.msgId) return;
+    this.#input = null;
+    input.settle({ value: typeof reply.content.value === "string" ? reply.content.value : null, interrupted: false });
   }
 
   async #evaluateCell(target: KernelTarget, code: string): Promise<EvaluateResult> {
