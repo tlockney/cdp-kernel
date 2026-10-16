@@ -126,6 +126,14 @@ export class Kernel {
     // Start the runtime eagerly so the first cell doesn't pay for it.
     this.#ensureTarget().catch((err) => this.#log(`target failed to start: ${err}`));
     process.on("SIGINT", () => void this.#interrupt());
+    // Exiting runs the exit hook that kills the runtime (src/children.ts);
+    // these signals' default action would skip it (#218).
+    for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129]] as const) {
+      process.on(signal, () => {
+        this.#shuttingDown = true;
+        process.exit(code);
+      });
+    }
     await Promise.all([this.#loop(this.#shell, (m, p) => this.#handleShell(m, p)),
       this.#loop(this.#control, (m, p) => this.#handleControl(m, p))]);
   }

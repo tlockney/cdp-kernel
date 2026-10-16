@@ -28,6 +28,7 @@ import { build } from "esbuild";
 import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
@@ -225,6 +226,10 @@ export class RawWorkerd implements WorkerHost {
     // --experimental: the UnsafeEval binding.
     const child = spawn(workerd, ["serve", "config.capnp", "--experimental"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });
     child.once("exit", () => rmSync(dir, { recursive: true, force: true }));
+    killOnExit(child, () => {
+      child.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    });
 
     // Cell output is captured inside the Worker; what workerd itself prints
     // (its own warnings, errors from background work) goes to the server log.
