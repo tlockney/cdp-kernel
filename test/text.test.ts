@@ -38,6 +38,25 @@ test("checkIsComplete: escaped quotes do not end a string", () => {
   assert.equal(checkIsComplete("'it\\'s").status, "incomplete");
 });
 
+test("checkIsComplete: an escaped backtick does not end a template (#126)", () => {
+  assert.deepEqual(checkIsComplete("`a\\`b`"), { status: "complete" });
+  assert.equal(checkIsComplete("`a\\`").status, "incomplete");
+});
+
+test("checkIsComplete: quotes and brackets inside a regex literal are ignored (#126)", () => {
+  for (const code of ['/"/.test(x)', "const r = /\\[/; r", "x.split(/[(]/)", "if (/'/.test(s)) f()", "return /}/"]) {
+    assert.deepEqual(checkIsComplete(code), { status: "complete" }, code);
+  }
+  assert.deepEqual(checkIsComplete("const r = /\\[/; [1"), { status: "incomplete", indent: "  " });
+});
+
+test("checkIsComplete: division is not a regex", () => {
+  for (const code of ["a / b / c", "(1) / 2 / (3)", "x[0] / y / '('"]) {
+    assert.deepEqual(checkIsComplete(code), { status: "complete" }, code);
+  }
+  assert.deepEqual(checkIsComplete("a / (b"), { status: "incomplete", indent: "  " });
+});
+
 test("exprAtCursor picks the dotted expression before the cursor", () => {
   assert.equal(exprAtCursor("Math.fl", 7), "Math.fl");
   assert.equal(exprAtCursor("x = foo.bar.ba", 14), "foo.bar.ba");

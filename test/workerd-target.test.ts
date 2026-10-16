@@ -4,7 +4,8 @@
 // end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -20,6 +21,7 @@ import {
   WorkerdTarget,
 } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
+import { connectUnixWebSocket } from "../src/ws-client.ts";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 const WORKERD = join(REPO, "node_modules", ".bin", "workerd");
@@ -178,6 +180,21 @@ test("a relative import is bundled by the host", { skip }, async (t) => {
   assert.match((await target.describeError(missing.exceptionDetails.exception)).message, /Cannot import "\.\/nope\.ts"/);
 });
 
+test("a module that throws while loading shows its error each time, and loads once fixed", { skip }, async (t) => {
+  const dir = scratch(t);
+  writeFileSync(join(dir, "boom.ts"), 'throw new Error("boom at load");\n');
+  const { target, run } = await launch(t, dir);
+  for (let i = 0; i < 2; i++) {
+    const { exceptionDetails } = await run('import "./boom.ts"');
+    assert.ok(exceptionDetails?.exception, `import ${i + 1} fails`);
+    assert.match((await target.describeError(exceptionDetails.exception)).message, /boom at load/, `import ${i + 1}`);
+  }
+  writeFileSync(join(dir, "boom.ts"), "export const fixed: boolean = true;\n");
+  const { result, exceptionDetails } = await run('import { fixed } from "./boom.ts"; fixed');
+  assert.equal(exceptionDetails, undefined);
+  assert.equal(result.type, "boolean");
+});
+
 test("I/O objects and pending work carry over between cells: one session", { skip }, async (t) => {
   const { events, run } = await launch(t);
   // A Response body is an I/O object, tied to the request that made it.
@@ -225,6 +242,17 @@ test("interrupting a busy cell stops workerd, reporting the exit before the cell
   assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE });
 });
 
+test("kill during a busy cell stops workerd", { skip }, async (t) => {
+  const { target, events, run } = await launch(t);
+  run("while (true) {}").catch(() => {});
+  await new Promise((r) => setTimeout(r, 200));
+  // SIGTERM never reaches a spinning isolate's event loop, so kill() must
+  // follow up with SIGKILL (#128).
+  target.kill();
+  for (let i = 0; i < 120 && !events.some((e) => "exit" in e); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(events.some((e) => "exit" in e), "workerd exited within 6 s");
+});
+
 test("comm messages reach registered targets inside a request", { skip }, async (t) => {
   const { target, run } = await launch(t);
   await run('jupyter.comm.registerTarget("t", (comm) => comm.onMsg(() => setTimeout(() => {}, 1)))');
@@ -232,4 +260,34 @@ test("comm messages reach registered targets inside a request", { skip }, async 
     handled: true,
   });
   assert.deepEqual(await target.dispatchComm("comm_msg", { comm_id: "c1", data: {} }, {}, []), { handled: true });
+});
+
+test("the driver Worker refuses a session without the right token", { skip }, async (t) => {
+  const dir = scratch(t);
+  const socket = join(dir, "sock");
+  for (const name of WORKER_MODULES) copyFileSync(join(REPO, "runtime", name), join(dir, name));
+  const compatibilityDate = compatibilityDateOf(execFileSync(WORKERD, ["--version"], { encoding: "utf8" }));
+  writeFileSync(join(dir, "config.capnp"), workerdConfig({ socket, compatibilityDate }));
+  const token = "a".repeat(64);
+  const child = spawn(WORKERD, ["serve", "config.capnp", "--experimental"], {
+    cwd: dir,
+    stdio: "ignore",
+    env: { ...process.env, CDPK_TOKEN: token, CDPK_META: "{}" },
+  });
+  t.after(() => child.kill("SIGKILL"));
+  const open = async (headers: { [name: string]: string }) => {
+    for (let i = 0;; i++) {
+      try {
+        return await connectUnixWebSocket(socket, { headers });
+      } catch (err) {
+        if (i >= 200 || !/ENOENT|ECONNREFUSED/.test(String(err))) throw err;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+  };
+  const wrongs: { [name: string]: string }[] = [{}, { "x-cdpk-token": "a" }, { "x-cdpk-token": "b".repeat(64) }];
+  for (const wrong of wrongs) {
+    await assert.rejects(open(wrong), /handshake failed: HTTP\/1\.1 403/);
+  }
+  (await open({ "x-cdpk-token": token })).close();
 });

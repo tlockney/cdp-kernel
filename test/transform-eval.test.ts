@@ -142,3 +142,16 @@ test("TypeScript enums and annotations survive", async () => {
 test("syntax errors throw CellSyntaxError", () => {
   assert.throws(() => transformCellForEval("const = ;"), CellSyntaxError);
 });
+
+test("a trailing sequence expression's value is its last (#140)", async () => {
+  const s = session();
+  assert.deepEqual(await s.cell("1, 2"), [2]);
+  assert.deepEqual(await s.cell("let n = 0; n++, n++, n"), [2]);
+});
+
+test("a cell ending in a side-effect or type-only import has no result (#139)", async () => {
+  const s = session({ side: { x: 1 } });
+  assert.deepEqual(await s.cell('import "side"'), [undefined]);
+  assert.deepEqual(await s.cell('import { type X } from "side"'), [undefined]);
+  assert.deepEqual(s.imports, ["side", "side"]);
+});

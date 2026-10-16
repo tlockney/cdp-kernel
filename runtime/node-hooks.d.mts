@@ -8,6 +8,12 @@ export function parsePackageSpecifier(spec: string): PackageSpecifier;
 export function jsrToNpm(spec: string): PackageSpecifier;
 export function aliasFor(name: string, range: string): string;
 export type Installer = "npm" | "bun";
+/** Where `installer` keeps its packages: $XDG_CACHE_HOME/cdp-kernel/<installer>, or CDPK_CACHE_DIR for npm. */
+export function cacheDirPath(
+  installer: Installer,
+  env?: { [name: string]: string | undefined },
+  home?: string,
+): string;
 export function installCommand(
   installer: Installer,
   alias: string,
@@ -32,6 +38,15 @@ export function ensureInstalled(
   installer?: Installer,
   options?: { lockFile?: string | null; run?: InstallRunner },
 ): { dir: string; alias: string };
+/** ensureInstalled without blocking the event loop; `run` may return a promise. */
+export function ensureInstalledAsync(
+  pkg: { name: string; range: string },
+  installer?: Installer,
+  options?: {
+    lockFile?: string | null;
+    run?: (...args: Parameters<InstallRunner>) => ReturnType<InstallRunner> | Promise<ReturnType<InstallRunner>>;
+  },
+): Promise<{ dir: string; alias: string }>;
 
 export const LOCK_FILE: string;
 export interface Lock {
@@ -42,6 +57,7 @@ export function findLockFile(dir: string): string | null;
 export function readLock(path: string): Lock;
 export function writeLock(path: string, lock: Lock): void;
 export function withInstallLock<T>(dir: string, fn: () => T, options?: { timeoutMs?: number }): T;
+export function withInstallLockAsync<T>(dir: string, fn: () => T | Promise<T>, options?: { timeoutMs?: number }): Promise<T>;
 /** Compiles one TypeScript or JSX file with the esbuild binary at `binary`; `run` is replaceable in tests. */
 export function compileTypeScript(
   source: string,

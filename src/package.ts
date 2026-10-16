@@ -96,7 +96,7 @@ export function kernelArgv(host: HostRuntime, execPath: string, origin: Origin, 
 }
 
 export function cacheRoot(): string {
-  const base = process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache");
+  const base = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
   return join(base, "cdp-kernel");
 }
 

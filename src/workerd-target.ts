@@ -25,13 +25,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import type { CdpParams, EvaluateResult, RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
+import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "./target.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
-import { ensureInstalled, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
+import { ensureInstalledAsync, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
 
 /** The driver Worker's modules; the first is its main module. */
 export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "widget.mjs", "evaluator.mjs", "introspect.mjs"];
@@ -133,7 +134,8 @@ export async function bundleModule(specifier: string, cwd: string): Promise<stri
       ? jsrToNpm(specifier.slice(4))
       : null;
     if (pkg) {
-      const { dir, alias } = ensureInstalled(pkg, "npm", { lockFile: findLockFile(cwd) });
+      // Async: a sync install would stall the heartbeat and interrupts (#149).
+      const { dir, alias } = await ensureInstalledAsync(pkg, "npm", { lockFile: findLockFile(cwd) });
       entry = alias + pkg.subpath;
       resolveDir = dir;
     }
@@ -224,12 +226,19 @@ export class RawWorkerd implements WorkerHost {
     // --experimental: the UnsafeEval binding.
     const child = spawn(workerd, ["serve", "config.capnp", "--experimental"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });
     child.once("exit", () => rmSync(dir, { recursive: true, force: true }));
+    killOnExit(child, () => {
+      child.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    });
 
     // Cell output is captured inside the Worker; what workerd itself prints
     // (its own warnings, errors from background work) goes to the server log.
+    // `early` keeps that output for a startup error only, and stops growing
+    // once the session is open.
     let early = "";
+    let starting = true;
     const log = (chunk: Buffer) => {
-      early += chunk.toString();
+      if (starting) early += chunk.toString();
       process.stderr.write(`[cdp-kernel workerd] ${chunk}`);
     };
     child.stdout?.on("data", log);
@@ -251,7 +260,10 @@ export class RawWorkerd implements WorkerHost {
       }
     })();
     try {
-      return new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      const host = new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      starting = false;
+      early = "";
+      return host;
     } catch (err) {
       child.kill();
       throw err;
@@ -259,7 +271,15 @@ export class RawWorkerd implements WorkerHost {
   }
 
   stop(now: boolean): void {
-    this.#child.kill(now ? "SIGKILL" : "SIGTERM");
+    if (now) {
+      this.#child.kill("SIGKILL");
+      return;
+    }
+    this.#child.kill("SIGTERM");
+    // A busy isolate keeps workerd's event loop from ever seeing SIGTERM (#128).
+    setTimeout(() => {
+      if (this.#child.exitCode === null && this.#child.signalCode === null) this.#child.kill("SIGKILL");
+    }, 3000).unref();
   }
 
   onExit(listener: (code: number | null) => void): void {
@@ -381,6 +401,8 @@ export class WorkerdTarget implements KernelTarget {
   }
 
   #request(op: string, params: CdpParams = {}, interruptible = false): Promise<CdpParams> {
+    // The channel drops writes after it closes, so nothing would answer.
+    if (this.#exitedOnce) return Promise.reject(new Abandoned("the workerd session is closed"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
@@ -412,7 +434,10 @@ export class WorkerdTarget implements KernelTarget {
       // A failed bundle is rebuilt next time, after the user fixes it.
       if (!modules[specifier].startsWith("Promise.reject(")) this.#sent.add(specifier);
     }
-    return (await this.#interruptibly("eval", { code: script, modules }, "Execution")) as unknown as EvaluateResult;
+    const { failedModules, ...reply } = await this.#interruptibly("eval", { code: script, modules }, "Execution");
+    // A module that threw while loading is rebuilt for its next import (#147).
+    if (Array.isArray(failedModules)) for (const specifier of failedModules) this.#sent.delete(specifier);
+    return asEvaluateResult(reply);
   }
 
   /**

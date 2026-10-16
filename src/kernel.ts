@@ -66,6 +66,16 @@ interface ErrorContent extends JsonObject {
   traceback: string[];
 }
 
+/** Shell requests other than execute_request, and their reply types. */
+const SHELL_REPLIES: Record<string, string> = {
+  kernel_info_request: "kernel_info_reply",
+  complete_request: "complete_reply",
+  is_complete_request: "is_complete_reply",
+  inspect_request: "inspect_reply",
+  history_request: "history_reply",
+  comm_info_request: "comm_info_reply",
+};
+
 export class Kernel {
   readonly #conn: ConnectionInfo;
   readonly #runtime: RuntimeName;
@@ -116,6 +126,14 @@ export class Kernel {
     // Start the runtime eagerly so the first cell doesn't pay for it.
     this.#ensureTarget().catch((err) => this.#log(`target failed to start: ${err}`));
     process.on("SIGINT", () => void this.#interrupt());
+    // Exiting runs the exit hook that kills the runtime (src/children.ts);
+    // these signals' default action would skip it (#218).
+    for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129]] as const) {
+      process.on(signal, () => {
+        this.#shuttingDown = true;
+        process.exit(code);
+      });
+    }
     await Promise.all([this.#loop(this.#shell, (m, p) => this.#handleShell(m, p)),
       this.#loop(this.#control, (m, p) => this.#handleControl(m, p))]);
   }
@@ -227,7 +245,7 @@ export class Kernel {
   #targetEvents(): TargetEvents {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
-      message: (msg) => void this.#onTargetMessage(msg),
+      message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
       exit: (code, note) => {
         this.#target = null;
         void this.#debugger?.attachTarget(null);
@@ -395,6 +413,17 @@ export class Kernel {
           await this.#handleComm(msg);
           break;
       }
+    } catch (err) {
+      // E.g. the runtime failed to launch. Answer anyway, so the frontend
+      // doesn't wait on the request forever (#125).
+      const replyType = SHELL_REPLIES[type];
+      if (replyType !== undefined) {
+        const name = err instanceof Error ? err.name : "Error";
+        const message = err instanceof Error ? err.message : String(err);
+        const error: ErrorContent = { ename: name, evalue: message, traceback: [`${name}: ${message}`] };
+        this.#reply(this.#shell, peer, msg, replyType, { status: "error", ...error });
+      }
+      throw err;
     } finally {
       this.#status("idle", msg.header);
     }
@@ -452,7 +481,12 @@ export class Kernel {
     this.#stdin.sendAll(this.#encode("input_request", { prompt, password }, parent));
     for (;;) {
       const { frames } = await this.#stdin.recv();
-      const reply = decodeMessage(frames);
+      let reply: Message;
+      try {
+        reply = decodeMessage(frames);
+      } catch {
+        continue; // as #loop does (#122)
+      }
       if (!verify(this.#conn.key, reply.signedParts, reply.sig)) continue;
       if (reply.header.msg_type === "input_reply") {
         return typeof reply.content.value === "string" ? reply.content.value : null;

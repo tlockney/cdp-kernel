@@ -51,6 +51,44 @@ Object.assign(console, {
   error: stream("stderr"),
 });
 
+// An error thrown later by a cell's timer or promise goes to stderr, as on
+// the other targets (runtime/bootstrap.mjs). Workers has no global "error"
+// event, so timer callbacks report their own (#148), and so do the
+// promises they return: celld doesn't dispatch "unhandledrejection".
+function reportUncaught(kind, err) {
+  emit({ kind: "stream", name: "stderr", text: `${kind}: ${err instanceof Error ? (err.stack ?? err.message) : inspect(err)}\n` });
+}
+// A rejection both runtimes' events report is shown once.
+const reported = new WeakSet();
+function reportRejection(reason) {
+  if (typeof reason === "object" && reason !== null) {
+    if (reported.has(reason)) return;
+    reported.add(reason);
+  }
+  reportUncaught("Uncaught (in promise)", reason);
+}
+globalThis.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  reportRejection(event.reason);
+});
+globalThis.process?.on?.("unhandledRejection", reportRejection);
+const reporting = (callback) =>
+  typeof callback !== "function" ? callback : function (...args) {
+    let result;
+    try {
+      result = callback.apply(this, args);
+    } catch (err) {
+      reportUncaught("Uncaught", err);
+      return;
+    }
+    if (typeof result?.then === "function") result.then(undefined, reportRejection);
+    return result;
+  };
+for (const name of ["setTimeout", "setInterval", "queueMicrotask"]) {
+  const original = globalThis[name];
+  globalThis[name] = { [name]: (callback, ...rest) => original(reporting(callback), ...rest) }[name];
+}
+
 const jupyter = createJupyter({
   inspect: (value) => inspect(value, { colors: true, depth: 4 }),
   base64,
@@ -131,13 +169,23 @@ function install(env) {
 
 let evaluate = null;
 
+// Modules whose load rejected. Importing one again gives its error again,
+// and the next eval reply names it, so the host bundles it afresh for the
+// next import (#147), which replaces it here.
+const rejected = new Set();
+const unreported = new Set();
+
 /** Evaluates the bundles a cell brings, once each. */
 async function loadModules(bundles = {}) {
   for (const [specifier, script] of Object.entries(bundles)) {
-    if (modules.has(specifier)) continue;
+    if (modules.has(specifier) && !rejected.has(specifier)) continue;
+    rejected.delete(specifier);
     const loading = Promise.resolve().then(() => evaluate(script));
-    // A module that failed to load is retried by the next import of it.
-    loading.catch(() => modules.delete(specifier));
+    loading.catch(() => {
+      if (modules.get(specifier) !== loading) return;
+      rejected.add(specifier);
+      unreported.add(specifier);
+    });
     modules.set(specifier, loading);
   }
 }
@@ -151,8 +199,31 @@ async function answer(req) {
       worker: globalThis.worker !== undefined,
     };
   }
-  if (req.op === "eval") await loadModules(req.modules);
-  return await handle(req);
+  if (req.op !== "eval") return await handle(req);
+  await loadModules(req.modules);
+  const reply = await handle(req);
+  // After the cell, so a load that failed in it is counted.
+  const failedModules = [...unreported];
+  unreported.clear();
+  return { ...reply, failedModules };
+}
+
+const encoder = new TextEncoder();
+
+/**
+ * Compares in constant time: under celld and Miniflare the driver listens on
+ * loopback TCP, where any local user can try tokens. The length (fixed by
+ * the host) is not secret.
+ */
+function tokenMatches(token, expected) {
+  if (typeof token !== "string" || typeof expected !== "string") return false;
+  const a = encoder.encode(token);
+  const b = encoder.encode(expected);
+  if (a.byteLength !== b.byteLength) return false;
+  if (typeof crypto.subtle.timingSafeEqual === "function") return crypto.subtle.timingSafeEqual(a, b);
+  let diff = 0;
+  for (let i = 0; i < a.byteLength; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 export default {
@@ -160,7 +231,7 @@ export default {
     // A header, or the query string for a WebSocket client that can't set
     // headers (celld's session uses the host's built-in WebSocket).
     const token = request.headers.get("x-cdpk-token") ?? new URL(request.url).searchParams.get("token");
-    if (token !== env.TOKEN) return new Response("forbidden", { status: 403 });
+    if (!tokenMatches(token, env.TOKEN)) return new Response("forbidden", { status: 403 });
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected a WebSocket", { status: 426 });
     evaluate ??= install(env);
 

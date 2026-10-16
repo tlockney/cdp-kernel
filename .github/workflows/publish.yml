@@ -124,3 +124,32 @@ jobs:
           $cli version
           CDPK_E2E_CLI="$cli" uv run --with nbclient --with nbformat --with jupyter_client \
             python "$GITHUB_WORKSPACE/test/e2e.py" node deno
+
+  # The GitHub release for the tag, with the version's CHANGELOG.md entry
+  # (test/package.test.ts makes sure there is one) as its notes.
+  release:
+    needs: [jsr, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: create the release unless it exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists; skipping"
+            exit 0
+          fi
+          # The lines between this version's heading and the next one.
+          awk -v v="$version" '
+            /^## / { if (found) exit; if (index($0, "## " v " (") == 1) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no entry for $version" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag

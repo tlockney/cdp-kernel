@@ -61,9 +61,11 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
       <p>Each install writes a kernelspec (<code>cdp-node</code>, <code>cdp-deno</code>,
         <code>cdp-bun</code>, …). Choose it in JupyterLab or VS Code and write TypeScript.
         Imports from npm and JSR install on first use.</p>
-      <p>The display API is Deno's: <code>jupyter.display</code>, <code>md</code>,
-        <code>html</code>, <code>svg</code>, <code>image</code>, and
-        <code>Symbol.for("Jupyter.display")</code> for your own types.</p>
+      <p>Cells display rich output through a global <code>jupyter</code>:
+        <code>jupyter.display</code>, <code>md</code>, <code>html</code>, <code>svg</code>,
+        <code>image</code>, and <code>Symbol.for("Jupyter.display")</code> for your own types.
+        It is ported from Deno's <code>Deno.jupyter</code>, which is the same object on
+        <code>cdp-deno</code>.</p>
     </div>
     <figure class="nb">
       <div class="nb-code"><span class="nb-lang">ts</span>

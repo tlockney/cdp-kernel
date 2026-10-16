@@ -42,6 +42,10 @@ export class SocketReader {
     waiter?.();
   }
 
+  // Each call joins every buffered chunk, so a reader that keeps a large
+  // backlog while small chunks trickle in recopies it per call (quadratic).
+  // Jupyter traffic over loopback arrives in few, large chunks; a chunk
+  // list with an offset would avoid the copies if that ever changes.
   async readExact(n: number): Promise<Uint8Array> {
     while (this.#buffered < n) {
       if (this.#error) throw this.#error;
@@ -150,11 +154,29 @@ export async function recvMultipart(reader: SocketReader): Promise<Uint8Array[]>
   }
 }
 
+/** How long a port from the connection file may stay taken before the kernel gives up. */
+const LISTEN_RETRY_MS = 5000;
+const LISTEN_RETRY_INTERVAL_MS = 100;
+
 function listen(port: number, host: string, onConn: (socket: Socket) => void): Server {
   const server = createServer((socket) => {
     socket.setNoDelay(true);
     onConn(socket);
   });
+  // The frontend picks these ports by binding and releasing them, so another
+  // socket can take one before the kernel binds it. Wait for it to be freed
+  // rather than die before kernel_info.
+  const deadline = Date.now() + LISTEN_RETRY_MS;
+  const onError = (err: Error & { code?: string }) => {
+    if (err.code !== "EADDRINUSE" || Date.now() >= deadline) {
+      server.off("error", onError);
+      server.emit("error", err);
+      return;
+    }
+    setTimeout(() => server.listen(port, host), LISTEN_RETRY_INTERVAL_MS);
+  };
+  server.on("error", onError);
+  server.once("listening", () => server.off("error", onError));
   server.listen(port, host);
   return server;
 }
@@ -191,7 +213,11 @@ export interface RoutedMessage {
   frames: Uint8Array[];
 }
 
-/** ROUTER socket: each TCP connection is one peer with a generated identity. */
+/**
+ * ROUTER socket: each TCP connection is one peer with a generated identity.
+ * Writes ignore socket.write's backpressure signal: node:net buffers the
+ * rest, which is fine for loopback peers that read promptly.
+ */
 export class RouterSocket {
   readonly incoming = new Queue<RoutedMessage>();
   readonly peers = new Map<string, Socket>();

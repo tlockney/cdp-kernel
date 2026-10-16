@@ -8,3 +8,5 @@ deno.lock
 # VitePress build output and cache (docs site, see docs/.vitepress/config.mts)
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+# Wrangler/Miniflare local cache and state (holds machine-specific data)
+.wrangler/
