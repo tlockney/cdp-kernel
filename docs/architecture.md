@@ -44,6 +44,8 @@ scripts. Deno closes that gap in two places:
 Neither exists on Node, Bun or workerd, so the kernel does the same work in
 three pieces.
 
+![A cell's TypeScript goes through esbuild, which strips types, then acorn, which rewrites import declarations into calls to __cdpk.import. Node and Deno run the result with Runtime.evaluate in replMode; Bun, workerd and celld run it inside an async function with top-level names hoisted to globals, and workerd and celld get imports bundled by the host.](images/concepts/cell-pipeline.svg)
+
 ### esbuild: TypeScript to JavaScript
 
 `transformSync` strips types and compiles JSX in the cell's text

@@ -20,6 +20,8 @@ The program you open the notebook in, such as JupyterLab or VS Code, is the
 **kernel**, a separate process for one language, and shows what comes back.
 Jupyter started with Python, but kernels exist for many languages.
 
+![The frontend shows the notebook and sends each cell's code to cdp-kernel. The kernel runs it in the runtime you picked (Node, Deno, Bun, workerd or celld) and sends the results and output back to show under the cell.](images/concepts/notebook-kernel-runtime.svg)
+
 [Deno](https://deno.com), a JavaScript runtime, ships a kernel for
 TypeScript (`deno jupyter`). cdp-kernel is that kernel taken out of Deno so
 that notebook code can run on Node, Bun and other runtimes as well as Deno.
