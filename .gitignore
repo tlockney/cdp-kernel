@@ -5,3 +5,6 @@ dist/
 # Dependencies are pinned by package-lock.json; Deno resolves them from
 # node_modules, so a deno.lock would only record stray resolutions.
 deno.lock
+# VitePress build output and cache (docs site, see docs/.vitepress/config.mts)
+docs/.vitepress/dist/
+docs/.vitepress/cache/
