@@ -8,7 +8,7 @@ celld, which evaluate cells in-process. In principle, anything else whose
 inspector speaks CDP works too.
 
 **Website:** <https://cdp-kernel.org/> ·
-**Docs:** [`docs/`](https://github.com/tlockney/cdp-kernel/tree/main/docs)
+**Docs:** [cdp-kernel.org/docs](https://cdp-kernel.org/docs/)
 
 This is early software. It passes a conformance suite derived from Deno's
 own Jupyter integration tests on every target, and it's packaged for npm and
@@ -44,7 +44,7 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno
 
 Each install writes a Jupyter kernelspec (`cdp-node`, `cdp-deno`, …). Pick
 it in JupyterLab or VS Code. Linux and macOS are supported; Windows isn't
-yet. See [Install](https://github.com/tlockney/cdp-kernel/blob/main/docs/install.md)
+yet. See [Install](https://cdp-kernel.org/docs/install)
 for `--deno-compat`, release-day installs on Deno, target runtime
 requirements, and installing from a checkout.
 
@@ -59,14 +59,14 @@ await jupyter.display(jupyter.md`**Today** is ${format(now, "PPPP")}`);
 
 ## Documentation
 
-- [Writing notebooks](https://github.com/tlockney/cdp-kernel/blob/main/docs/notebooks.md)
-- [Runtimes: Bun, workerd, celld](https://github.com/tlockney/cdp-kernel/blob/main/docs/runtimes.md)
-- [Debugger](https://github.com/tlockney/cdp-kernel/blob/main/docs/debugger.md)
-- [Widgets and comms](https://github.com/tlockney/cdp-kernel/blob/main/docs/widgets.md)
-- [Editor types](https://github.com/tlockney/cdp-kernel/blob/main/docs/editor-types.md)
-- [Known gaps](https://github.com/tlockney/cdp-kernel/blob/main/docs/known-gaps.md)
-- [Architecture](https://github.com/tlockney/cdp-kernel/blob/main/docs/architecture.md)
-- [Development: tests and releasing](https://github.com/tlockney/cdp-kernel/blob/main/docs/development.md)
+- [Writing notebooks](https://cdp-kernel.org/docs/notebooks)
+- [Runtimes: Bun, workerd, celld](https://cdp-kernel.org/docs/runtimes)
+- [Debugger](https://cdp-kernel.org/docs/debugger)
+- [Widgets and comms](https://cdp-kernel.org/docs/widgets)
+- [Editor types](https://cdp-kernel.org/docs/editor-types)
+- [Known gaps](https://cdp-kernel.org/docs/known-gaps)
+- [Architecture](https://cdp-kernel.org/docs/architecture)
+- [Development: tests and releasing](https://cdp-kernel.org/docs/development)
 
 The [feasibility study](https://cdp-kernel.org/study.html)
 behind the project covers the design, the alternatives considered (workerd,
@@ -75,4 +75,4 @@ Bun, rusty_v8, FFI), and the evidence.
 ## License
 
 MIT. Parts are ports of Deno's Jupyter kernel, Copyright 2018-2026 the Deno
-authors; see [Architecture › Provenance](https://github.com/tlockney/cdp-kernel/blob/main/docs/architecture.md#provenance).
+authors; see [Architecture › Provenance](https://cdp-kernel.org/docs/architecture#provenance).
