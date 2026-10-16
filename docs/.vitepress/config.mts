@@ -69,6 +69,10 @@ export default defineConfig({
         text: "How it works",
         items: [
           { text: "Architecture", link: "/architecture" },
+          { text: "Runtime integrations", link: "/integrations" },
+          { text: "Node and Deno", link: "/integration-cdp" },
+          { text: "Bun", link: "/integration-bun" },
+          { text: "workerd and celld", link: "/integration-workers" },
           { text: "Development", link: "/development" },
           { text: "Feasibility study", link: `${site}/study.html`, target: "_self" },
         ],

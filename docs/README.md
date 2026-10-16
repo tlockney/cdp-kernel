@@ -10,6 +10,7 @@
 - [Editor types](editor-types.md): type declarations for the notebook globals.
 - [Known gaps](known-gaps.md): what doesn't work yet, per runtime.
 - [Architecture](architecture.md): how the kernel was extracted from Deno, and how the tricky parts work.
+- [Runtime integrations](integrations.md): how the kernel drives each runtime, with diagrams: [Node and Deno](integration-cdp.md), [Bun](integration-bun.md), [workerd and celld](integration-workers.md).
 - [Development](development.md): tests and releasing.
 
 The [feasibility study](life-after-deno-jupyter.html) behind the project

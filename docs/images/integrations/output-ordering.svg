@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 360" width="860" height="360" role="img" aria-label="Barrier markers keep pipe output and display messages in the order the cell produced them">
+  <title>Barrier markers keep pipe output and display messages in the order the cell produced them</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="360" rx="8"/>
+  <text class="t" x="20" y="34">What the target sends (time runs left to right)</text>
+  <text class="s" x="20" y="84">stdout pipe</text>
+  <text class="s" x="20" y="134">stderr pipe</text>
+  <text class="s" x="20" y="184">binding / fd 3</text>
+  <line class="ln" x1="130" y1="80" x2="520" y2="80" stroke-dasharray="3 4"/>
+  <line class="ln" x1="130" y1="130" x2="520" y2="130" stroke-dasharray="3 4"/>
+  <line class="ln" x1="130" y1="180" x2="520" y2="180" stroke-dasharray="3 4"/>
+  <rect class="inner" x="150" y="64" width="70" height="32" rx="4"/>
+  <text class="m" x="185" y="85" text-anchor="middle">"a\n"</text>
+  <rect class="acc" x="250" y="64" width="80" height="32" rx="4"/>
+  <text class="m" x="290" y="85" text-anchor="middle">⟨7m⟩</text>
+  <rect class="inner" x="360" y="64" width="70" height="32" rx="4"/>
+  <text class="m" x="395" y="85" text-anchor="middle">"b\n"</text>
+  <rect class="acc" x="250" y="114" width="80" height="32" rx="4"/>
+  <text class="m" x="290" y="135" text-anchor="middle">⟨7m⟩</text>
+  <rect class="warn" x="250" y="164" width="200" height="32" rx="4"/>
+  <text class="m" x="350" y="185" text-anchor="middle">display_data, barrier 7</text>
+  <text class="l" x="130" y="222">console.log("a"); display(x); console.log("b")</text>
+
+  <!-- Host rules -->
+  <rect class="box" x="560" y="50" width="280" height="190" rx="6"/>
+  <text class="t" x="700" y="76" text-anchor="middle">Host: PipeDemux + Gates</text>
+  <text class="s" x="576" y="104">1. Hold message 7 until stdout and</text>
+  <text class="s" x="592" y="122">stderr have both passed marker 7.</text>
+  <text class="s" x="576" y="150">2. Publish it on iopub.</text>
+  <text class="s" x="576" y="178">3. Open gate 7. The "m" marks the</text>
+  <text class="s" x="592" y="196">marker as gated: pipe text after it</text>
+  <text class="s" x="592" y="214">waits until the message is out.</text>
+  <path class="ln" d="M520,130 H560" marker-end="url(#a)"/>
+  <path class="ln" d="M700,240 V270" marker-end="url(#a)"/>
+
+  <!-- Result -->
+  <text class="t" x="20" y="300">What the frontend sees on iopub</text>
+  <rect class="inner" x="420" y="280" width="110" height="34" rx="4"/>
+  <text class="m" x="475" y="302" text-anchor="middle">stream "a"</text>
+  <line class="ln" x1="530" y1="297" x2="560" y2="297" marker-end="url(#a)"/>
+  <rect class="warn" x="560" y="280" width="120" height="34" rx="4"/>
+  <text class="m" x="620" y="302" text-anchor="middle">display_data</text>
+  <line class="ln" x1="680" y1="297" x2="710" y2="297" marker-end="url(#a)"/>
+  <rect class="inner" x="710" y="280" width="110" height="34" rx="4"/>
+  <text class="m" x="765" y="302" text-anchor="middle">stream "b"</text>
+  <text class="l" x="20" y="340">workerd and celld don't need markers: output, messages and replies share one WebSocket, which keeps their order.</text>
+</svg>
