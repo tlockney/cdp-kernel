@@ -238,6 +238,38 @@ def checks(runtime, workdir, offline):
         _, out = s.run("prompt('x') === null")
         assert strip_ansi(result_of(out)["text/plain"]) == "true", out
 
+    def garbage_binding_payload(s):
+        # __cdpk_send is reachable from cells; non-JSON mustn't kill the host (#122).
+        reply, out = s.run('__cdpk_send("not json"); 1')
+        assert reply["status"] == "ok", reply
+        reply, out = s.run("2")
+        assert strip_ansi(result_of(out)["text/plain"]) == "2", out
+
+    def malformed_stdin_message(s):
+        # A frame set with a non-JSON header on the stdin port while a prompt
+        # waits is dropped, and the real input_reply still answers it (#122).
+        import zmq
+
+        info = s.km.get_connection_info()
+        ctx = zmq.Context.instance()
+        rogue = ctx.socket(zmq.DEALER)
+        rogue.linger = 0
+        rogue.connect(f"tcp://{info['ip']}:{info['stdin_port']}")
+
+        def answer(req):
+            rogue.send_multipart([b"<IDS|MSG>", b"", b"not json", b"{}", b"{}", b"{}"])
+            time.sleep(0.3)
+            return "World"
+
+        try:
+            reply, out = s.run('console.log(`Hello, ${prompt("Name?")}!`)', allow_stdin=True, on_input=answer)
+        finally:
+            rogue.close()
+        assert reply["status"] == "ok", reply
+        assert text_of(out) == "Hello, World!\n", out
+        reply, _ = s.run("1")
+        assert reply["status"] == "ok", reply
+
     def interrupt(s):
         s.run("globalThis.kept = 'state'")
         msg_id = s.kc.execute("let spins = 0; while (true) { spins++ }")
@@ -281,8 +313,8 @@ def checks(runtime, workdir, offline):
         return reply, outputs
 
     def interrupt_await_keeps_state(s):
-        # Bun has no terminateExecution, but an awaiting cell leaves its event
-        # loop free, so the cell is abandoned in place.
+        # An awaiting cell leaves the event loop free, so every target
+        # abandons it in place, Bun too, though it has no terminateExecution.
         s.run("globalThis.kept = 'state'")
         reply, _ = interrupt_cell(s, "await new Promise((r) => setTimeout(r, 60_000))")
         assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
@@ -673,11 +705,14 @@ def checks(runtime, workdir, offline):
         tests += [request_scoped_apis, import_meta_workerd, session_carries_over]
         if not offline:
             tests.append(workerd_fetch)
+    else:
+        # workerd's driver has no __cdpk_send global, nor a blocking prompt.
+        tests += [garbage_binding_payload, malformed_stdin_message]
     # Busy-loop interrupt keeps state where the inspector can stop running JS.
     if not runtime.startswith(("bun", "workerd", "celld")):
         tests.append(debugger_breakpoint)
     in_process = runtime in ("bun", "workerd", "celld")
-    tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if in_process else [interrupt]
+    tests += [interrupt_await_keeps_state] + ([interrupt_busy_restarts] if in_process else [interrupt])
     if not offline:
         tests += [npm_import, jsr_import]
         # Deno targets resolve npm: themselves; the lockfile is the kernel's.

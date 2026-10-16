@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { connect, type AddressInfo } from "node:net";
+import { connect, createServer, type AddressInfo } from "node:net";
 import {
   encodeFrame,
   encodeMultipart,
@@ -128,5 +128,20 @@ test("RouterSocket loopback: handshake, receive multipart, send back", async () 
     socket?.destroy();
     for (const peerSocket of router.peers.values()) peerSocket.destroy();
     await new Promise<void>((resolve) => router.server.close(() => resolve()));
+  }
+});
+
+test("RouterSocket waits for a port that is briefly in use", async () => {
+  const holder = createServer();
+  await new Promise<void>((resolve) => holder.listen(0, "127.0.0.1", resolve));
+  const { port } = holder.address() as AddressInfo;
+  const router = new RouterSocket(port, "127.0.0.1");
+  try {
+    setTimeout(() => holder.close(), 300);
+    await new Promise<void>((resolve) => router.server.once("listening", resolve));
+    assert.equal((router.server.address() as AddressInfo).port, port);
+  } finally {
+    holder.close();
+    router.server.close();
   }
 });
