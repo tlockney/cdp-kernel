@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feasibility study · cdp-kernel</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://cdp-kernel.org/docs/feasibility-study">
+<meta http-equiv="refresh" content="0; url=docs/feasibility-study">
+<script>
+  // The study moved into the docs. Map its old section anchors (#s1 to #s11)
+  // onto the docs page's headings.
+  const sections = {
+    bluf: "bottom-line", s1: "what-changed", s2: "anatomy-of-deno-jupyter-in-2-9",
+    s3: "the-extraction-cdp-kernel", s4: "evidence", s5: "options-compared",
+    s6: "workerd-as-a-target", s7: "bun", s8: "rusty-v8-and-ffi-surfaces",
+    s9: "risks-and-gaps", s10: "recommended-next-steps", s11: "where-it-landed",
+    glossary: "glossary",
+  };
+  const hash = sections[location.hash.slice(1)];
+  location.replace("docs/feasibility-study" + (hash ? "#" + hash : ""));
+</script>
+</head>
+<body>
+<p>The feasibility study has moved to <a href="docs/feasibility-study">cdp-kernel.org/docs/feasibility-study</a>.</p>
+</body>
+</html>

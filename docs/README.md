@@ -46,7 +46,7 @@ cdp-kernel.
 - [Runtime integrations](integrations.md): how the kernel drives each
   runtime, with diagrams: [Node and Deno](integration-cdp.md),
   [Bun](integration-bun.md), [workerd and celld](integration-workers.md).
-- The [feasibility study](life-after-deno-jupyter.html) is the design
+- The [feasibility study](feasibility-study.md) is the design
   document the project started from. It was written while the project was
   a spike and revised after 0.4.0; its last section compares what it
   predicted with what was built.

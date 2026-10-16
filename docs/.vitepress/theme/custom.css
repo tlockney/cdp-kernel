@@ -169,3 +169,25 @@
 }
 .nb-widget { margin: 0.25rem 0 0.5rem; }
 .nb-widget-failed { font-size: 0.875rem; color: var(--vp-c-danger-1); }
+
+/* The feasibility study's summary card (feasibility-study.md). */
+.vp-doc .study-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.9rem 1.5rem;
+  margin: 1.5rem 0 2rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+}
+.vp-doc .study-meta dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+.vp-doc .study-meta dd { margin: 0.15rem 0 0; font-size: 0.9rem; line-height: 1.5; }
+.vp-doc .study-meta .study-verdict { grid-column: 1 / -1; }
+.vp-doc .study-meta .study-verdict dd { font-weight: 600; color: var(--vp-c-brand-1); }
