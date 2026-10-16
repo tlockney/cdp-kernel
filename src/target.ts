@@ -473,8 +473,11 @@ export class Target implements KernelTarget {
       if (isTargetMessage(msg)) target.#deliver(msg, events);
     });
 
-    // Wait for the bootstrap's top-level await to finish installing the shim.
-    for (let i = 0; i < 200; i++) {
+    // Wait for the bootstrap's top-level await to finish installing the
+    // shim. There is no cap here: launch's start timeout bounds the wait and
+    // kills the child, so a slow bootstrap never yields a target without
+    // the shim (#134).
+    for (;;) {
       const probe = await target.#evaluateSync(`typeof globalThis.${SHIM}?.tick === "function"`);
       if (probe.result.value === true) break;
       await new Promise((r) => setTimeout(r, 25));
