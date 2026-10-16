@@ -37,6 +37,11 @@ test("parseConnectionInfo rejects non-numeric ports and non-objects", () => {
   assert.throws(() => parseConnectionInfo("3"), /not an object/);
 });
 
+test("parseConnectionInfo rejects a non-string ip or key", () => {
+  assert.throws(() => parseConnectionInfo(JSON.stringify({ ...ports, ip: 127 })), /ip is not a string/);
+  assert.throws(() => parseConnectionInfo(JSON.stringify({ ...ports, key: 42 })), /key is not a string/);
+});
+
 test("parseConnectionInfo rejects non-tcp transport", () => {
   assert.throws(() => parseConnectionInfo(JSON.stringify({ ...ports, transport: "ipc" })), /unsupported transport/);
 });
