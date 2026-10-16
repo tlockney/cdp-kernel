@@ -1,5 +1,6 @@
 # cdp-kernel documentation
 
+- [Getting started](getting-started.md): Jupyter basics, a first notebook, and what to use it for.
 - [Install](install.md): npm, JSR, or a checkout; what each target runtime needs.
 - [Writing notebooks](notebooks.md): display API, imports, `npm:`/`jsr:`, the lockfile, Deno projects, input, inspection.
 - [Runtimes](runtimes.md): how the Bun, workerd and celld targets work, and Workers projects.
