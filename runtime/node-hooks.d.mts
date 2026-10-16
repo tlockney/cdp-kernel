@@ -42,4 +42,23 @@ export function findLockFile(dir: string): string | null;
 export function readLock(path: string): Lock;
 export function writeLock(path: string, lock: Lock): void;
 export function withInstallLock<T>(dir: string, fn: () => T, options?: { timeoutMs?: number }): T;
+/** Compiles one TypeScript file with the esbuild binary at `binary`; `run` is replaceable in tests. */
+export function compileTypeScript(
+  source: string,
+  filename: string,
+  binary: string,
+  run?: (cmd: string, args: string[], options: object) => { status: number | null; stdout: string; stderr: string; error?: Error },
+): string;
+export interface LoadResult {
+  format?: string | null;
+  source?: string | ArrayBuffer | ArrayBufferView | null;
+  shortCircuit?: boolean;
+}
+/** The load hook: Node's own result unless its type stripping would reject the file. */
+export function loadTypeScript(
+  url: string,
+  context: object,
+  nextLoad: (url: string, context: object) => LoadResult,
+  binary: string | undefined,
+): LoadResult;
 export function installNodeResolveHooks(urls: { shimUrl: string; replUrl: string }): void;

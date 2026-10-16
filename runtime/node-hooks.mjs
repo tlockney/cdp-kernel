@@ -9,6 +9,9 @@
 //     one package can coexist (Deno keeps a global cache the same way).
 //   - jsr:@scope/name[@range][/subpath] maps onto JSR's npm compatibility
 //     registry (npm.jsr.io) as @jsr/scope__name.
+//   - TypeScript files a cell imports load with Node's own type stripping
+//     where it can; syntax that needs code generation (enum, namespaces with
+//     values, parameter properties) is compiled by esbuild instead (#73).
 // Uses module.registerHooks (synchronous, in-thread; Node >= 23.5), so the
 // install can run with spawnSync inside resolve.
 
@@ -221,8 +224,82 @@ export function ensureInstalled({ name, range }, installer = "npm", { lockFile =
   });
 }
 
+// --- Imported TypeScript (#73) --------------------------------------------------
+// Node strips types in place, so line and column numbers stay those of the
+// file, but it rejects TypeScript that needs code generation. Such a file
+// is compiled with esbuild, as cells are, with an inline source map. The
+// host passes its esbuild binary in CDPK_ESBUILD_BINARY: the runtime files
+// may have been copied away from any node_modules (src/package.ts), and the
+// esbuild binary, unlike its JavaScript API, works from anywhere.
+
+const TS_FILE = /^file:.*\.[cm]?ts$/;
+const TS_FORMATS = { "module-typescript": "module", "commonjs-typescript": "commonjs" };
+
+function isUnsupportedSyntax(err) {
+  return err?.code === "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX";
+}
+
+/** Node's strip-only transform, without its once-per-process ExperimentalWarning. */
+function stripTypes(source) {
+  const emitWarning = process.emitWarning;
+  process.emitWarning = function (warning, ...rest) {
+    if (String(warning?.message ?? warning).includes("stripTypeScriptTypes")) return;
+    return emitWarning.call(this, warning, ...rest);
+  };
+  try {
+    return module.stripTypeScriptTypes(source, { mode: "strip" });
+  } finally {
+    process.emitWarning = emitWarning;
+  }
+}
+
+/** Compiles one TypeScript file with the esbuild binary at `binary`, as cells are compiled. */
+export function compileTypeScript(source, filename, binary, run = spawnSync) {
+  const args = [
+    "--loader=ts",
+    "--target=esnext",
+    "--sourcemap=inline",
+    `--sourcefile=${filename}`,
+    '--tsconfig-raw={"compilerOptions":{"verbatimModuleSyntax":true}}',
+    "--log-level=error",
+    "--color=false",
+  ];
+  const result = run(binary, args, { input: source, encoding: "utf8", maxBuffer: 1 << 30 });
+  if (result.status !== 0) {
+    throw new SyntaxError(`${filename}: ${(result.stderr || String(result.error)).trim()}`);
+  }
+  return result.stdout;
+}
+
+/** The load hook: Node's result unless it would reject the file's TypeScript. */
+export function loadTypeScript(url, context, nextLoad, binary) {
+  if (!binary || !TS_FILE.test(url)) return nextLoad(url, context);
+  let result;
+  try {
+    result = nextLoad(url, context);
+  } catch (err) {
+    // A .ts file outside a package.json "type" is stripped while Node
+    // detects its format, so the rejection surfaces here. Notebooks import
+    // ES modules, so it's compiled as one.
+    if (!isUnsupportedSyntax(err)) throw err;
+    const filename = fileURLToPath(url);
+    return { format: "module", source: compileTypeScript(readFileSync(filename, "utf8"), filename, binary), shortCircuit: true };
+  }
+  const format = TS_FORMATS[result.format];
+  if (format === undefined || typeof module.stripTypeScriptTypes !== "function") return result;
+  const source = typeof result.source === "string" ? result.source : new TextDecoder().decode(result.source);
+  try {
+    return { ...result, format, source: stripTypes(source) };
+  } catch (err) {
+    if (!isUnsupportedSyntax(err)) throw err;
+    return { ...result, format, source: compileTypeScript(source, fileURLToPath(url), binary) };
+  }
+}
+
 export function installNodeResolveHooks({ shimUrl, replUrl }) {
+  const esbuild = process.env.CDPK_ESBUILD_BINARY;
   module.registerHooks({
+    load: (url, context, nextLoad) => loadTypeScript(url, context, nextLoad, esbuild),
     resolve(specifier, context, nextResolve) {
       let pkg = null;
       if (specifier.startsWith("npm:")) pkg = parsePackageSpecifier(specifier.slice(4));
