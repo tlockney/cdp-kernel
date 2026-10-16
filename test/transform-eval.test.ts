@@ -164,3 +164,10 @@ test("the cell starts on line 2 whether or not it declares anything (#150)", asy
   assert.equal(await stackLine('throw new Error("x")'), 2);
   assert.equal(await stackLine('const b = 1;\nthrow new Error("x")'), 3);
 });
+
+test("a cell ending in a side-effect or type-only import has no result (#139)", async () => {
+  const s = session({ side: { x: 1 } });
+  assert.deepEqual(await s.cell('import "side"'), [undefined]);
+  assert.deepEqual(await s.cell('import { type X } from "side"'), [undefined]);
+  assert.deepEqual(s.imports, ["side", "side"]);
+});
