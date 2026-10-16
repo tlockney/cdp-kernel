@@ -225,6 +225,17 @@ test("interrupting a busy cell stops workerd, reporting the exit before the cell
   assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE });
 });
 
+test("kill during a busy cell stops workerd", { skip }, async (t) => {
+  const { target, events, run } = await launch(t);
+  run("while (true) {}").catch(() => {});
+  await new Promise((r) => setTimeout(r, 200));
+  // SIGTERM never reaches a spinning isolate's event loop, so kill() must
+  // follow up with SIGKILL (#128).
+  target.kill();
+  for (let i = 0; i < 120 && !events.some((e) => "exit" in e); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(events.some((e) => "exit" in e), "workerd exited within 6 s");
+});
+
 test("comm messages reach registered targets inside a request", { skip }, async (t) => {
   const { target, run } = await launch(t);
   await run('jupyter.comm.registerTarget("t", (comm) => comm.onMsg(() => setTimeout(() => {}, 1)))');

@@ -259,7 +259,15 @@ export class RawWorkerd implements WorkerHost {
   }
 
   stop(now: boolean): void {
-    this.#child.kill(now ? "SIGKILL" : "SIGTERM");
+    if (now) {
+      this.#child.kill("SIGKILL");
+      return;
+    }
+    this.#child.kill("SIGTERM");
+    // A busy isolate keeps workerd's event loop from ever seeing SIGTERM (#128).
+    setTimeout(() => {
+      if (this.#child.exitCode === null && this.#child.signalCode === null) this.#child.kill("SIGKILL");
+    }, 3000).unref();
   }
 
   onExit(listener: (code: number | null) => void): void {
