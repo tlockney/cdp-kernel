@@ -4,24 +4,121 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.5.0 (2026-10-16)
+
+Changes in behavior:
+
+- The npm and Bun package caches follow `XDG_CACHE_HOME`, as the runtime
+  cache already did. With it set, packages are downloaded again into the
+  new location, and `~/.cache/cdp-kernel/{npm,bun}` can be deleted
+  ([#163](https://github.com/tlockney/cdp-kernel/issues/163)).
+- On Bun, `console` output is formatted as on Node, and stdout and stderr
+  writes are synchronous, so a large write before `prompt()` no longer
+  deadlocks ([#180](https://github.com/tlockney/cdp-kernel/issues/180)).
+- `stop_on_error` is honoured: execute requests queued behind a failed cell
+  are aborted instead of run
+  ([#123](https://github.com/tlockney/cdp-kernel/issues/123)).
+- `process.exit()` or `Deno.exit()` in a cell ends the runtime, and the
+  next cell starts a fresh one
+  ([#130](https://github.com/tlockney/cdp-kernel/issues/130)).
+
+New:
 
 - On Node, `.ts`, `.tsx` and `.jsx` files imported by a cell are compiled
   with esbuild when Node's type stripping can't handle them (enums,
   namespaces, parameter properties, JSX)
   ([#73](https://github.com/tlockney/cdp-kernel/issues/73),
   [#91](https://github.com/tlockney/cdp-kernel/issues/91)).
+- Cells can use standard decorators and `accessor` fields
+  ([#142](https://github.com/tlockney/cdp-kernel/issues/142)), anonymous
+  `export default class/function` and `import x = require()`
+  ([#143](https://github.com/tlockney/cdp-kernel/issues/143)).
+- `--deno-compat` throws a clear error for a `Deno` member it doesn't
+  implement ([#172](https://github.com/tlockney/cdp-kernel/issues/172)).
+- Documentation site at [cdp-kernel.org/docs](https://cdp-kernel.org/docs/),
+  with getting started, runtime, troubleshooting, security, VS Code and
+  CLI reference pages, and this changelog.
+
+Jupyter protocol:
+
+- Interrupting a cell blocked in `prompt()` makes `prompt()` throw instead
+  of wedging the kernel, and a stale `input_reply` no longer answers the
+  next prompt ([#121](https://github.com/tlockney/cdp-kernel/issues/121)).
+- Malformed JSON from a cell or the stdin port no longer crashes the
+  kernel ([#122](https://github.com/tlockney/cdp-kernel/issues/122)); a
+  shell handler that throws replies with an error
+  ([#125](https://github.com/tlockney/cdp-kernel/issues/125)).
+- A silent request publishes no `execute_input`, a shell
+  `shutdown_request` is handled, and control requests publish busy/idle
+  ([#124](https://github.com/tlockney/cdp-kernel/issues/124)).
+- A frontend-opened comm whose `comm_open` handler throws is dropped
+  ([#137](https://github.com/tlockney/cdp-kernel/issues/137)).
+
+Fixes:
+
+- Runtimes no longer outlive the kernel: they are killed when it exits by
+  SIGTERM, SIGHUP, an uncaught error or shutdown during startup
+  ([#127](https://github.com/tlockney/cdp-kernel/issues/127),
+  [#218](https://github.com/tlockney/cdp-kernel/issues/218)); Node and Deno
+  targets exit when their kernel is SIGKILLed
+  ([#219](https://github.com/tlockney/cdp-kernel/issues/219)); workerd
+  processes and directories left by a dead kernel are cleaned up
+  ([#220](https://github.com/tlockney/cdp-kernel/issues/220)); workerd is
+  SIGKILLed when SIGTERM doesn't stop it
+  ([#128](https://github.com/tlockney/cdp-kernel/issues/128)).
+- Deadlocks: `prompt()` after a large write on Node
+  ([#131](https://github.com/tlockney/cdp-kernel/issues/131)), a display
+  payload `JSON.stringify` rejects
+  ([#129](https://github.com/tlockney/cdp-kernel/issues/129)), and requests
+  on a closed session ([#133](https://github.com/tlockney/cdp-kernel/issues/133)).
+  An interrupt during result formatting reports `Interrupted`
+  ([#135](https://github.com/tlockney/cdp-kernel/issues/135)).
 - Fewer startup failures: a runtime whose start fails or stalls is stopped
   ([#52](https://github.com/tlockney/cdp-kernel/issues/52)); intermittent
   "Promise was collected" errors are fixed
   ([#50](https://github.com/tlockney/cdp-kernel/issues/50),
   [#55](https://github.com/tlockney/cdp-kernel/issues/55)); celld retries a
   start that loses a port race; a kernel port briefly in use at startup is
-  retried.
+  retried ([#160](https://github.com/tlockney/cdp-kernel/issues/160)); a
+  start whose bootstrap never installs fails with an error
+  ([#134](https://github.com/tlockney/cdp-kernel/issues/134)).
+- Cell results: a trailing sequence expression returns its last value on
+  Bun, workerd and celld
+  ([#140](https://github.com/tlockney/cdp-kernel/issues/140)); a trailing
+  side-effect or type-only import is not the result
+  ([#139](https://github.com/tlockney/cdp-kernel/issues/139)); stack-trace
+  line numbers no longer shift
+  ([#150](https://github.com/tlockney/cdp-kernel/issues/150)); the
+  completeness check handles escaped backticks and regex literals
+  ([#126](https://github.com/tlockney/cdp-kernel/issues/126)); `.ts`/`.tsx`
+  imports with a query or fragment are compiled
+  ([#145](https://github.com/tlockney/cdp-kernel/issues/145)).
+- workerd and celld: a module that threw while loading is re-sent
+  ([#147](https://github.com/tlockney/cdp-kernel/issues/147)); errors from
+  timers and rejections after a cell are reported
+  ([#148](https://github.com/tlockney/cdp-kernel/issues/148)); `npm:`/`jsr:`
+  installs no longer block heartbeat and interrupt
+  ([#149](https://github.com/tlockney/cdp-kernel/issues/149)).
+- Deno target: `Deno.` completes and Shift+Tab inspects `Deno.*` again
+  ([#132](https://github.com/tlockney/cdp-kernel/issues/132)).
+- `cdp-kernel.lock.json` is written atomically, a live install lock is no
+  longer stolen, and a corrupt lockfile names its path
+  ([#144](https://github.com/tlockney/cdp-kernel/issues/144)).
+- Runtime stderr notices are filtered per line, so user lines starting
+  with "Download" are kept
+  ([#136](https://github.com/tlockney/cdp-kernel/issues/136)); WebSocket
+  fragmented binary messages and Close frames are handled
+  ([#138](https://github.com/tlockney/cdp-kernel/issues/138)); cleanup of
+  buffers, debugger files, token comparison and image errors
+  ([#152](https://github.com/tlockney/cdp-kernel/issues/152)).
 - npm installs run through `cmd.exe` on Windows
   ([#51](https://github.com/tlockney/cdp-kernel/issues/51)). Windows is
   still not supported.
-- Documentation site at [cdp-kernel.org/docs](https://cdp-kernel.org/docs/).
+- LICENSE credits the MurmurHash2 port's JupyterLab and Gary Court
+  licenses ([#154](https://github.com/tlockney/cdp-kernel/issues/154)).
+- CI tests Deno 2.x (latest) only, pins Bun 1.4, and smoke-tests the
+  published JSR package after each release
+  ([#146](https://github.com/tlockney/cdp-kernel/issues/146)).
 
 ## 0.4.0 (2026-10-15)
 
