@@ -48,12 +48,19 @@ export function aliasFor(name, range) {
   return `cdpk-${digest}`;
 }
 
-// Each installer keeps its own cache, so npm's and Bun's lockfiles never
-// meet; both read the @jsr registry from .npmrc.
+/**
+ * Each installer keeps its own cache, so npm's and Bun's lockfiles never
+ * meet. Both sit beside the runtime cache (cacheRoot in src/package.ts);
+ * CDPK_CACHE_DIR overrides npm's.
+ */
+export function cacheDirPath(installer, env = process.env, home = homedir()) {
+  if (installer === "npm" && env.CDPK_CACHE_DIR) return env.CDPK_CACHE_DIR;
+  return join(env.XDG_CACHE_HOME || join(home, ".cache"), "cdp-kernel", installer);
+}
+
+// Both caches read the @jsr registry from .npmrc.
 function cacheDir(installer) {
-  const dir = installer === "npm"
-    ? process.env.CDPK_CACHE_DIR ?? join(homedir(), ".cache", "cdp-kernel", "npm")
-    : join(homedir(), ".cache", "cdp-kernel", installer);
+  const dir = cacheDirPath(installer);
   if (!existsSync(join(dir, "package.json"))) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "package.json"), '{ "private": true }\n');
