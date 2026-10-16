@@ -58,6 +58,20 @@ test("imported .ts files may use enum, value namespaces and parameter properties
   assert.equal(await run(`(await import("./lib.cts")).default.size`), 1);
 });
 
+test("imported .tsx and .jsx files compile their JSX as cells do", async (t) => {
+  const createElement = "const React = { createElement: (t, _p, ...c) => [t, ...c], Fragment: 'F' };\n";
+  const cwd = notebookDir({
+    "view.tsx": `${createElement}export const el = <b>{"hi" as string}</b>;\nexport const frag = <>x</>;\n`,
+    "view.jsx": `${createElement}export const el = <i>hey</i>;\n`,
+    "pragma.tsx": "/** @jsx h */\nconst h = (t: string) => t.toUpperCase();\nexport const el = <p />;\n",
+  });
+  const run = await launch(t, cwd);
+  await run(`import { el, frag } from "./view.tsx";`);
+  assert.equal(await run(`JSON.stringify([el, frag])`), '[["b","hi"],["F","x"]]');
+  assert.equal(await run(`JSON.stringify((await import("./view.jsx")).el)`), '["i","hey"]');
+  assert.equal(await run(`(await import("./pragma.tsx")).el`), "P");
+});
+
 test("a .ts file Node can strip keeps its line numbers", async (t) => {
   const cwd = notebookDir({
     "strip.ts": "type T = {\n  a: number;\n};\n\nexport function where(): string {\n  return new Error().stack!.split(\"\\n\")[1];\n}\n",
