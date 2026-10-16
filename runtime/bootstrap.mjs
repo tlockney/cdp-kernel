@@ -55,7 +55,12 @@ function barrier(gated = false) {
 function send(payload) {
   const binding = globalThis.__cdpk_send;
   if (typeof binding !== "function") return; // host not attached yet
-  binding(JSON.stringify({ ...payload, barrier: barrier(true) }));
+  // Serialize before writing the marker: if the payload can't be
+  // serialized (a BigInt, a cycle), the error reaches the cell without a
+  // gated marker the host would wait on forever (#129). `payload` always
+  // has a `kind`, so `body` is never "{}".
+  const body = JSON.stringify(payload);
+  binding(`{"barrier":${barrier(true)},${body.slice(1)}`);
 }
 
 const jupyter = createJupyter({
@@ -260,7 +265,14 @@ async function platform() {
   const util = await import("node:util");
   const fs = await import("node:fs");
   const buf = Buffer.alloc(1);
+  // Node writes to a pipe without blocking and queues what doesn't fit for
+  // the event loop to flush. input() blocks the main thread in readSync, so
+  // queued output, and the input_request's barrier marker after it, would
+  // never reach the host (#131). Blocking writes finish before readSync
+  // starts, as Node already does on Windows. Bun has no _handle and needs
+  // its own fix (#180).
   if (isBun) await syncBunOutput();
+  else for (const stream of [process.stdout, process.stderr]) stream._handle?.setBlocking?.(true);
   return {
     inspect: (v) => util.inspect(v, { colors: true, depth: 4 }),
     inspectPlain: (v) => util.inspect(v, { colors: false, depth: 2 }),
