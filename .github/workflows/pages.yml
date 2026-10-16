@@ -32,6 +32,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/site"
           cp -R site/. "$RUNNER_TEMP/site/"
           cp -R docs/.vitepress/dist "$RUNNER_TEMP/site/docs"
+          cp -R docs/images "$RUNNER_TEMP/site/images"
           cp docs/life-after-deno-jupyter.html "$RUNNER_TEMP/site/study.html"
       - uses: actions/upload-pages-artifact@v3
         with:
