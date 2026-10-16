@@ -5,7 +5,8 @@
 import path from "node:path";
 import { defineConfig } from "vitepress";
 import { groups } from "./levels.ts";
-import { notebookPlugin } from "./notebook.ts";
+import fs from "node:fs";
+import { notebookPlugin, published } from "./notebook.ts";
 
 const repo = "https://github.com/tlockney/cdp-kernel";
 const site = "https://cdp-kernel.org";
@@ -46,9 +47,15 @@ export default defineConfig({
       md.use(notebookPlugin, {
         docsDir,
         downloadHref: (rel: string) => `/docs/${rel.replace(/^public\//, "")}`,
-        viewHref: (rel: string) => `${repo}/blob/main/docs/${rel}`,
+        viewHref: (rel: string) => `${repo}/blob/main/${rel}`,
       });
     },
+  },
+  // Notebooks that pages show from outside docs/public/ (examples/) are
+  // published beside the ones inside it, for download.
+  buildEnd({ outDir }) {
+    fs.mkdirSync(path.join(outDir, "notebooks"), { recursive: true });
+    for (const [name, file] of published) fs.copyFileSync(file, path.join(outDir, "notebooks", name));
   },
   themeConfig: {
     nav: [

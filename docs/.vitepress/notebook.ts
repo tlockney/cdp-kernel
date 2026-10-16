@@ -12,6 +12,13 @@
 // The Markdown stays the source, so the page still reads normally on GitHub,
 // and readers can download the notebook. A marked block with no matching
 // cell fails the build, so the docs never show code that wasn't run.
+//
+// A page can also show a whole notebook that already has outputs, such as
+// the ones in examples/, with a line of its own:
+//
+//   @[notebook](../examples/moma-collection.node.ipynb)
+//
+// GitHub shows that line as a link to the notebook, which it renders.
 import fs from "node:fs";
 import path from "node:path";
 import type MarkdownIt from "markdown-it";
@@ -101,10 +108,23 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown): stri
   const html = get("text/html");
   if (typeof html === "string") return `<div class="nb-html">${html.replace(/<script\b[\s\S]*?<\/script>/gi, "")}</div>`;
   const svg = get("image/svg+xml");
-  if (typeof svg === "string") return `<img class="nb-image" alt="SVG output" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}">`;
+  if (typeof svg === "string") {
+    // As an <img>, so its styles stay its own. That needs the SVG namespace,
+    // which SVG built with a server-side DOM (linkedom) often leaves out.
+    const doc = /<svg\b[^>]*\bxmlns=/.test(svg) ? svg : svg.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+    return `<img class="nb-image" alt="SVG output" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(doc)}">`;
+  }
   for (const mime of ["image/png", "image/jpeg", "image/gif"]) {
     const img = get(mime);
     if (typeof img === "string") return `<img class="nb-image" alt="Image output" src="${dataURI(mime, img)}">`;
+  }
+  const vega = get("application/vnd.vegalite.v5+json") ?? get("application/vnd.vegalite.v4+json");
+  if (vega !== undefined) {
+    // Drawn in the browser by the theme (theme/vega.ts), from this spec.
+    return `<div class="nb-vega" data-spec="${escapeHTML(JSON.stringify(vega))}"></div>`;
+  }
+  if (get("application/vnd.jupyter.widget-view+json") !== undefined) {
+    return `<p class="nb-note">An interactive widget. It runs in JupyterLab, Notebook 7 or VS Code, not on this page.</p>`;
   }
   const markdown = get("text/markdown");
   if (typeof markdown === "string") return `<div class="nb-markdown">${md.render(markdown, env)}</div>`;
@@ -139,16 +159,72 @@ export function pageNotebook(page: string): string | undefined {
   return match ? path.resolve(path.dirname(page), match[1]) : undefined;
 }
 
+/** Notebooks outside docs/public/ that pages offer for download, by published name. */
+export const published = new Map<string, string>();
+
 export interface Options {
   /** docs/ on disk. */
   docsDir: string;
-  /** Where the published notebook is downloaded from, by its path under docs/. */
+  /** Where a notebook is downloaded from, by its path under docs/. */
   downloadHref: (rel: string) => string;
-  /** Where it's viewed on GitHub, by its path under docs/. */
+  /** Where a notebook is viewed on GitHub, by its path in the repository. */
   viewHref: (rel: string) => string;
 }
 
+function bar(file: string, opts: Options, text: string): string {
+  const rel = path.relative(opts.docsDir, file).split(path.sep).join("/");
+  const name = path.basename(file);
+  let href: string;
+  if (rel.startsWith("public/")) href = opts.downloadHref(rel);
+  else {
+    published.set(name, file);
+    href = opts.downloadHref(`public/notebooks/${name}`);
+  }
+  const view = opts.viewHref(path.relative(path.dirname(opts.docsDir), file).split(path.sep).join("/"));
+  return `<div class="nb-bar"><span>${text}</span>
+<span class="nb-bar-links"><a href="${href}" download="${escapeHTML(name)}" target="_self">Download ${escapeHTML(name)}</a> · <a href="${view}">View on GitHub</a></span></div>\n`;
+}
+
+const fenceLang: Record<string, string> = { typescript: "ts", javascript: "js", python: "py" };
+
+/** A whole notebook: Markdown cells as prose, code cells with their outputs. */
+function renderNotebook(md: MarkdownIt, file: string, env: unknown, opts: Options): string {
+  const notebook = readNotebook(file);
+  const kernel = notebook.metadata.kernelspec?.name;
+  const lang = fenceLang[(notebook.metadata as { language_info?: { name?: string } }).language_info?.name ?? ""] ?? "ts";
+  let html = bar(file, opts, `A notebook run on the ${kernel ? `<code>${escapeHTML(kernel)}</code> ` : ""}kernel, shown with its saved output.`);
+  for (const [i, cell] of notebook.cells.entries()) {
+    let source = join(cell.source);
+    // The page gives the title; drop the notebook's own.
+    if (i === 0 && cell.cell_type === "markdown") source = source.replace(/^# .*\n?/, "");
+    if (cell.cell_type === "markdown") html += md.render(source, env);
+    else if (cell.cell_type === "code") {
+      const fence = "`".repeat(Math.max(3, ...(source.match(/`+/g) ?? []).map((t) => t.length + 1)));
+      const code = md.render(`${fence}${lang}\n${source}\n${fence}\n`, env);
+      html += `<div class="nb-cell"><div class="nb-prompt">[${cell.execution_count ?? " "}]</div>${code}${renderOutputs(md, cell, env)}</div>`;
+    }
+  }
+  return html;
+}
+
 export function notebookPlugin(md: MarkdownIt, opts: Options) {
+  md.block.ruler.before("paragraph", "notebook", (state, start, _end, silent) => {
+    const line = state.src.slice(state.bMarks[start] + state.tShift[start], state.eMarks[start]);
+    const match = line.match(/^@\[notebook\]\(([^)\s]+\.ipynb)\)\s*$/);
+    if (!match) return false;
+    if (silent) return true;
+    const token = state.push("notebook", "", 0);
+    token.info = match[1];
+    token.map = [start, start + 1];
+    state.line = start + 1;
+    return true;
+  });
+  md.renderer.rules.notebook = (tokens, idx, _options, env) => {
+    const file = path.resolve(path.dirname(env.path), tokens[idx].info);
+    if (!fs.existsSync(file)) throw new Error(`${env.path}: ${file} doesn't exist`);
+    return renderNotebook(md, file, env, opts);
+  };
+
   const fence = md.renderer.rules.fence!;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
@@ -175,9 +251,7 @@ export function notebookPlugin(md: MarkdownIt, opts: Options) {
     const match = tokens[idx].content.match(markerRE);
     if (!match) return htmlBlock(tokens, idx, options, env, self);
     const file = path.resolve(path.dirname(env.path), match[1]);
-    const rel = path.relative(opts.docsDir, file).split(path.sep).join("/");
     const kernel = fs.existsSync(file) ? readNotebook(file).metadata.kernelspec?.name : undefined;
-    return `<div class="nb-bar"><span>This page is also a notebook. Its examples ran on the ${kernel ? `<code>${escapeHTML(kernel)}</code> ` : ""}kernel, and the output shown is what they produced.</span>
-<span class="nb-bar-links"><a href="${opts.downloadHref(rel)}" download="${path.basename(rel)}" target="_self">Download ${escapeHTML(path.basename(rel))}</a> · <a href="${opts.viewHref(rel)}">View on GitHub</a></span></div>\n`;
+    return bar(file, opts, `This page is also a notebook. Its examples ran on the ${kernel ? `<code>${escapeHTML(kernel)}</code> ` : ""}kernel, and the output shown is what they produced.`);
   };
 }

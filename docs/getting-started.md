@@ -148,7 +148,7 @@ console.table(totals);
 Each new question is a new cell that reuses `orders`. For larger data,
 import a dataframe library such as `npm:nodejs-polars` or `npm:arquero`,
 and draw charts with `npm:@observablehq/plot`. The
-[MoMA collection notebook](../examples/moma-collection.ipynb) is a
+[MoMA collection notebook](example-moma.md) is a
 worked example with both.
 
 ### Runbooks
