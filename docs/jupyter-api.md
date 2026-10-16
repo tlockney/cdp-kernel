@@ -493,10 +493,28 @@ and everything else is Deno's.
 
 To run an existing Deno notebook on Node, install the `cdp-node-deno`
 kernel (`cdp-kernel install --runtime node --deno-compat`). It adds a
-`Deno` namespace covering `Deno.jupyter` and Deno's file, environment and
-process APIs (`runtime/deno-compat.mjs`). It's a separate kernel rather
-than the default because libraries detect Deno with `typeof Deno`, and
-would take Deno code paths that call APIs the shim doesn't cover.
+partial `Deno` namespace (`runtime/deno-compat.mjs`) with these members:
+
+| Area | Members |
+| --- | --- |
+| Notebook | `jupyter` |
+| Runtime info | `version`, `build`, `pid`, `args`, `noColor`, `execPath()`, `inspect()` |
+| Process | `cwd()`, `chdir()`, `exit()`, `env` (`get`, `set`, `delete`, `has`, `toObject`) |
+| Reading files | `readTextFile`, `readFile`, `readDir`, `stat`, `lstat`, `realPath` |
+| Writing files | `writeTextFile`, `writeFile`, `mkdir`, `remove`, `rename`, `makeTempDir`, `makeTempFile` |
+| Output | `stdout.write`, `stderr.write` |
+| Errors | `errors.NotFound`, `AlreadyExists`, `PermissionDenied`, `IsADirectory`, `NotADirectory` |
+
+Each file function has its `…Sync` form too, except `makeTempFile`, and
+`stdout`/`stderr` have `writeSync`. `Deno.version.deno` is
+`"0.0.0-cdp-kernel"`, so code can tell the shim from real Deno.
+
+Everything else, such as `Deno.serve`, `Deno.Command`, `Deno.open`,
+`Deno.openKv`, `Deno.permissions`, `Deno.stdin` and `Deno.test`, is
+`undefined`: calling it fails with "is not a function". The shim is a
+separate kernel rather than the default because libraries detect Deno
+with `typeof Deno`, and would take Deno code paths that call APIs the
+shim doesn't cover.
 
 New notebooks should use `jupyter`, which works on every kernel.
 
