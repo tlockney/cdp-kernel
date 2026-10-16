@@ -1,7 +1,9 @@
 /**
- * cdp-kernel: Deno's Jupyter kernel, extracted to run notebook cells in any
- * runtime whose inspector speaks the Chrome DevTools Protocol (Node and
- * Deno today).
+ * cdp-kernel: a Jupyter kernel for TypeScript and JavaScript, extracted from
+ * Deno's, that runs notebooks on several JavaScript runtimes. The kernel host
+ * runs on Node or Deno; cells run in a separate target runtime: Node or Deno
+ * over the Chrome DevTools Protocol, or Bun, workerd and celld, which
+ * evaluate cells in-process.
  *
  * Most people want the CLI (`cdp-kernel install`). This module exposes
  * the kernel for embedding: give it a parsed connection file and a target
