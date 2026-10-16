@@ -227,9 +227,12 @@ export class RawWorkerd implements WorkerHost {
 
     // Cell output is captured inside the Worker; what workerd itself prints
     // (its own warnings, errors from background work) goes to the server log.
+    // `early` keeps that output for a startup error only, and stops growing
+    // once the session is open.
     let early = "";
+    let starting = true;
     const log = (chunk: Buffer) => {
-      early += chunk.toString();
+      if (starting) early += chunk.toString();
       process.stderr.write(`[cdp-kernel workerd] ${chunk}`);
     };
     child.stdout?.on("data", log);
@@ -251,7 +254,10 @@ export class RawWorkerd implements WorkerHost {
       }
     })();
     try {
-      return new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      const host = new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      starting = false;
+      early = "";
+      return host;
     } catch (err) {
       child.kill();
       throw err;
