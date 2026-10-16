@@ -66,6 +66,16 @@ interface ErrorContent extends JsonObject {
   traceback: string[];
 }
 
+/** Shell requests other than execute_request, and their reply types. */
+const SHELL_REPLIES: Record<string, string> = {
+  kernel_info_request: "kernel_info_reply",
+  complete_request: "complete_reply",
+  is_complete_request: "is_complete_reply",
+  inspect_request: "inspect_reply",
+  history_request: "history_reply",
+  comm_info_request: "comm_info_reply",
+};
+
 export class Kernel {
   readonly #conn: ConnectionInfo;
   readonly #runtime: RuntimeName;
@@ -395,6 +405,17 @@ export class Kernel {
           await this.#handleComm(msg);
           break;
       }
+    } catch (err) {
+      // E.g. the runtime failed to launch. Answer anyway, so the frontend
+      // doesn't wait on the request forever (#125).
+      const replyType = SHELL_REPLIES[type];
+      if (replyType !== undefined) {
+        const name = err instanceof Error ? err.name : "Error";
+        const message = err instanceof Error ? err.message : String(err);
+        const error: ErrorContent = { ename: name, evalue: message, traceback: [`${name}: ${message}`] };
+        this.#reply(this.#shell, peer, msg, replyType, { status: "error", ...error });
+      }
+      throw err;
     } finally {
       this.#status("idle", msg.header);
     }
