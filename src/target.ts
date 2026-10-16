@@ -273,6 +273,9 @@ export class Target implements KernelTarget {
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
   #paused = false;
+  /** Set once the main context is gone: the runtime is exiting (#130). */
+  #exiting = false;
+  readonly #exited: Promise<void>;
   readonly #baselineGlobals = new Set<string>();
   readonly versions: { runtime: string; engine: string };
 
@@ -289,6 +292,10 @@ export class Target implements KernelTarget {
   ) {
     this.runtime = runtime;
     this.#child = child;
+    this.#exited = new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) resolve();
+      else child.once("exit", () => resolve());
+    });
     this.#shell = shell;
     this.#control = control;
     this.#stdout = stdout;
@@ -401,6 +408,12 @@ export class Target implements KernelTarget {
     const contextId = await contextReady;
 
     const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
+    // process.exit() or Deno.exit() destroys the context, then the runtime
+    // waits for its inspector clients to disconnect before it exits. Let go,
+    // so it exits and the kernel starts a fresh one (#130).
+    shell.on("Runtime.executionContextDestroyed", (params) => {
+      if (params.executionContextId === contextId) target.#onExit();
+    });
     shell.on("Runtime.bindingCalled", (params) => {
       if (params.name !== BINDING || typeof params.payload !== "string") return;
       const msg: unknown = JSON.parse(params.payload);
@@ -483,8 +496,25 @@ export class Target implements KernelTarget {
       return await this.#evaluateRaw(script);
     } catch (err) {
       if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Execution interrupted");
+      if (this.#exiting) {
+        // The child's exit, which drops this target in the kernel, comes
+        // first, so the next cell starts a fresh one.
+        await this.#exited;
+        throw new Error(`${this.runtime} exited`);
+      }
       throw err;
     }
+  }
+
+  #onExit(): void {
+    if (this.#exiting) return;
+    this.#exiting = true;
+    this.#shell.close();
+    this.#control.close();
+    // In case it still doesn't exit once both sessions are gone.
+    setTimeout(() => {
+      if (this.#child.exitCode === null && this.#child.signalCode === null) this.#child.kill("SIGKILL");
+    }, 2000).unref();
   }
 
   /**

@@ -301,6 +301,17 @@ def checks(runtime, workdir, offline):
         assert reply["status"] == "ok", reply
         assert "undefined" in result_of(out)["text/plain"], out
 
+    def exit_restarts(s):
+        # process.exit() ends the target despite the attached inspector, and
+        # the next cell runs in a fresh one (#130).
+        s.run("globalThis.kept = 'state'")
+        exit = "Deno.exit(0)" if runtime != "node" else "process.exit(0)"
+        reply, _ = s.run(exit)
+        assert reply["status"] == "error", reply
+        reply, out = s.run("typeof kept")
+        assert reply["status"] == "ok", reply
+        assert "undefined" in result_of(out)["text/plain"], out
+
     def request_scoped_apis(s):
         # Outside a request, workerd throws "Disallowed operation called
         # within global scope" for all of these (#8).
@@ -678,6 +689,8 @@ def checks(runtime, workdir, offline):
         tests.append(debugger_breakpoint)
     in_process = runtime in ("bun", "workerd", "celld")
     tests += [interrupt_await_keeps_state, interrupt_busy_restarts] if in_process else [interrupt]
+    if runtime in ("node", "deno", "node-deno"):
+        tests.append(exit_restarts)
     if not offline:
         tests += [npm_import, jsr_import]
         # Deno targets resolve npm: themselves; the lockfile is the kernel's.

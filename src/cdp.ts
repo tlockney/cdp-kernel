@@ -114,6 +114,8 @@ export class CdpSession {
   send(method: string, params: CdpParams = {}): Promise<CdpParams> {
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
+      // A closed WebSocket drops what's sent, so nothing would answer.
+      if (this.#ws.readyState >= WebSocket.CLOSING) return reject(new Error("CDP connection closed"));
       this.#pending.set(id, { method, resolve, reject });
       this.#ws.send(JSON.stringify({ id, method, params }));
     });
