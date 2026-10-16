@@ -58,7 +58,10 @@ three kinds of message back:
 
 - `{ kind: "reply", id, ... }` when a request finishes.
 - `{ kind: "stream", name: "stdout" | "stderr", text }` for each `console`
-  call.
+  call, and on stderr for an error a cell's timer throws or a promise
+  rejection nothing handles, after the cell has finished. Workers has no
+  global `error` event, so the driver wraps `setTimeout`, `setInterval`
+  and `queueMicrotask` callbacks to catch their errors.
 - `{ kind: "iopub", ... }` for `display()` and comm messages.
 
 The driver hands each request to the same `runtime/evaluator.mjs` the Bun

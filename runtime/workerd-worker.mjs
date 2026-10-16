@@ -51,6 +51,29 @@ Object.assign(console, {
   error: stream("stderr"),
 });
 
+// An error thrown later by a cell's timer or promise goes to stderr, as on
+// the other targets (runtime/bootstrap.mjs). Workers has no global "error"
+// event, so timer callbacks report their own (#148).
+function reportUncaught(kind, err) {
+  emit({ kind: "stream", name: "stderr", text: `${kind}: ${err instanceof Error ? (err.stack ?? err.message) : inspect(err)}\n` });
+}
+globalThis.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  reportUncaught("Uncaught (in promise)", event.reason);
+});
+const reporting = (callback) =>
+  typeof callback !== "function" ? callback : function (...args) {
+    try {
+      return callback.apply(this, args);
+    } catch (err) {
+      reportUncaught("Uncaught", err);
+    }
+  };
+for (const name of ["setTimeout", "setInterval", "queueMicrotask"]) {
+  const original = globalThis[name];
+  globalThis[name] = { [name]: (callback, ...rest) => original(reporting(callback), ...rest) }[name];
+}
+
 const jupyter = createJupyter({
   inspect: (value) => inspect(value, { colors: true, depth: 4 }),
   base64,
