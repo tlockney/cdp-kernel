@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 484" width="860" height="484" role="img" aria-label="A cell goes through esbuild, which strips types, then acorn, which rewrites imports to __cdpk.import calls, then runs on the target">
+  <title>A cell goes through esbuild, which strips types, then acorn, which rewrites imports to __cdpk.import calls, then runs on the target</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .str { fill: #2f8a4c; }
+    .num { fill: #b35900; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .str { fill: #5cc27e; }
+      .num { fill: #e0904a; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="484" rx="8"/>
+  <rect class="box" x="20" y="20" width="190" height="88" rx="6"/>
+  <text class="t" x="36" y="50">The cell</text>
+  <text class="s" x="36" y="72">TypeScript, as typed</text>
+  <text class="s" x="36" y="88">in the notebook</text>
+  <rect class="inner" x="230" y="20" width="610" height="88" rx="6"/>
+  <text class="m" x="248" y="46">import { z } from <tspan class="str">&quot;npm:zod@3&quot;</tspan>;</text>
+  <text class="m" x="248" y="66">const n: number = <tspan class="num">1</tspan>;</text>
+  <text class="m" x="248" y="86">n + <tspan class="num">1</tspan></text>
+  <line class="ln" x1="115" y1="108" x2="115" y2="128" marker-end="url(#a)"/>
+  <rect class="box" x="20" y="130" width="190" height="88" rx="6"/>
+  <text class="t" x="36" y="160">esbuild</text>
+  <text class="s" x="36" y="182">strips types, compiles</text>
+  <text class="s" x="36" y="198">JSX, keeps a source map</text>
+  <rect class="inner" x="230" y="130" width="610" height="88" rx="6"/>
+  <text class="m" x="248" y="156">import { z } from <tspan class="str">&quot;npm:zod@3&quot;</tspan>;</text>
+  <text class="m" x="248" y="176">const n = <tspan class="num">1</tspan>;</text>
+  <text class="m" x="248" y="196">n + <tspan class="num">1</tspan>;</text>
+  <line class="ln" x1="115" y1="218" x2="115" y2="238" marker-end="url(#a)"/>
+  <rect class="box" x="20" y="240" width="190" height="88" rx="6"/>
+  <text class="t" x="36" y="270">acorn</text>
+  <text class="s" x="36" y="292">rewrites import and</text>
+  <text class="s" x="36" y="308">export for a script</text>
+  <rect class="acc" x="230" y="240" width="610" height="88" rx="6"/>
+  <text class="m" x="248" y="266">var __cdpk_m0 = await __cdpk.import(<tspan class="str">&quot;npm:zod@3&quot;</tspan>); var z = __cdpk_m0[<tspan class="str">&quot;z&quot;</tspan>];</text>
+  <text class="m" x="248" y="286">const n = <tspan class="num">1</tspan>;</text>
+  <text class="m" x="248" y="306">n + <tspan class="num">1</tspan>;</text>
+  <line class="ln" x1="280" y1="328" x2="280" y2="358" marker-end="url(#a)"/>
+  <line class="ln" x1="640" y1="328" x2="640" y2="358" marker-end="url(#a)"/>
+  <rect class="ok" x="20" y="360" width="400" height="104" rx="6"/>
+  <text class="t" x="36" y="386">Node and Deno</text>
+  <text class="s" x="36" y="408">Runtime.evaluate with replMode over CDP, as in Deno.</text>
+  <text class="s" x="36" y="426"><tspan font-family="ui-monospace, monospace">__cdpk.import</tspan> resolves npm:, jsr: and ./ files:</text>
+  <text class="s" x="36" y="444">Node through resolve hooks, Deno through its own loader.</text>
+  <rect class="warn" x="440" y="360" width="400" height="104" rx="6"/>
+  <text class="t" x="456" y="386">Bun, workerd and celld</text>
+  <text class="s" x="456" y="408">hoistForEval: top-level names become globals, and</text>
+  <text class="s" x="456" y="426">the cell runs inside an async function.</text>
+  <text class="s" x="456" y="444">workerd and celld get each import bundled by the host.</text>
+</svg>
