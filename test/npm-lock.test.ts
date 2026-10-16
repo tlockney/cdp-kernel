@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -144,6 +144,34 @@ test("withInstallLock waits for a live holder, then times out", (t) => {
   const started = Date.now();
   assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 400 }), /timed out waiting for the install lock/);
   assert.ok(Date.now() - started >= 400);
+});
+
+test("withInstallLock waits for a live holder however old its lock (#144)", (t) => {
+  const dir = scratch(t);
+  const lockDir = join(dir, ".install-lock");
+  mkdirSync(lockDir);
+  writeFileSync(join(lockDir, "pid"), String(process.pid));
+  // Older than the 10-minute wait, as a long install's lock would be.
+  const old = new Date(Date.now() - 15 * 60 * 1000);
+  utimesSync(lockDir, old, old);
+  assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 300 }), /timed out waiting for the install lock/);
+  assert.equal(readFileSync(join(lockDir, "pid"), "utf8"), String(process.pid));
+});
+
+test("withInstallLock leaves a lock another process took over", (t) => {
+  const dir = scratch(t);
+  const lockDir = join(dir, ".install-lock");
+  withInstallLock(dir, () => writeFileSync(join(lockDir, "pid"), "1"));
+  assert.ok(existsSync(lockDir), "the new holder's lock is still there");
+});
+
+test("writeLock replaces the file in one step; a corrupt lockfile names itself", (t) => {
+  const dir = scratch(t);
+  const path = join(dir, LOCK_FILE);
+  writeLock(path, { version: 1, packages: { "is-odd@^3": "3.0.1" } });
+  assert.deepEqual(readdirSync(dir), [LOCK_FILE], "no temporary file left behind");
+  writeFileSync(path, '{"version": 1, "packages": {"is-odd@^3": "3.0');
+  assert.throws(() => readLock(path), (err: Error) => err.message.startsWith(`cannot read ${path}: `));
 });
 
 test("two kernels installing at once don't overlap, and install once", async (t) => {
