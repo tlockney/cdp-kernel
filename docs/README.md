@@ -3,6 +3,7 @@
 - [Getting started](getting-started.md): Jupyter basics, a first notebook, and what to use it for.
 - [Install](install.md): npm, JSR, or a checkout; what each target runtime needs.
 - [Writing notebooks](notebooks.md): display API, imports, `npm:`/`jsr:`, the lockfile, Deno projects, input, inspection.
+- [The `jupyter` namespace](jupyter-api.md): rich output, custom display, `prompt`/`confirm`, and `Deno.jupyter`, with examples.
 - [Runtimes](runtimes.md): how the Bun, workerd and celld targets work, and Workers projects.
 - [Debugger](debugger.md): JupyterLab's visual debugger on Node and Deno targets.
 - [Widgets and comms](widgets.md): anywidget-style widgets and the comm API.

@@ -13,6 +13,9 @@ are in [Runtimes](runtimes.md) and [Known gaps](known-gaps.md).
 await jupyter.display(jupyter.md`# Hello, **notebook**`);
 ```
 
+Each of these is explained with examples in
+[The `jupyter` namespace](jupyter-api.md).
+
 `Deno.jupyter` also works:
 
 - On a Deno target it is a proxy over the real namespace. Deno's own

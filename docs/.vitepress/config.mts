@@ -57,6 +57,7 @@ export default defineConfig({
           { text: "Getting started", link: "/getting-started" },
           { text: "Install", link: "/install" },
           { text: "Writing notebooks", link: "/notebooks" },
+          { text: "The jupyter namespace", link: "/jupyter-api" },
           { text: "Runtimes", link: "/runtimes" },
           { text: "Debugger", link: "/debugger" },
           { text: "Widgets and comms", link: "/widgets" },
