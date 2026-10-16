@@ -272,8 +272,8 @@ export class BunTarget implements KernelTarget {
     return Promise.resolve([]);
   }
 
-  replyInput(value: string | null): void {
-    this.#child.stdin?.write(JSON.stringify({ value }) + "\n");
+  replyInput(value: string | null, interrupted = false): void {
+    this.#child.stdin?.write(JSON.stringify({ value, interrupted }) + "\n");
   }
 
   kill(): void {

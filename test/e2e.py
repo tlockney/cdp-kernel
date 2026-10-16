@@ -334,6 +334,40 @@ def checks(runtime, workdir, offline):
         assert "undefined" in result_of(out)["text/plain"], out
         assert replies(("throw new Error('x')", False), ("3", True)) == ["error", "ok"]
 
+    def interrupt_while_prompting(s):
+        # The target blocks in a synchronous read while it prompts; an
+        # interrupt must still end the cell, and a late input_reply must not
+        # answer the next prompt (#121).
+        s.run("globalThis.keptAcrossPrompt = 'state'")
+        msg_id = s.kc.execute('prompt("Name?"); "unreachable"', allow_stdin=True)
+        s.kc.get_stdin_msg(timeout=TIMEOUT)
+        interrupt = s.kc.session.msg("interrupt_request", {})
+        s.kc.control_channel.send(interrupt)
+        reply = None
+        deadline = time.time() + 15
+        while reply is None:
+            assert time.time() < deadline, "no execute_reply after interrupting a prompt"
+            try:
+                r = s.kc.get_shell_msg(timeout=0.5)
+            except Exception:
+                continue
+            if r["parent_header"].get("msg_id") == msg_id:
+                reply = r["content"]
+        assert reply["status"] == "error" and reply["ename"] == "Interrupted", reply
+        while True:
+            r = s.kc.get_control_msg(timeout=TIMEOUT)
+            if r["parent_header"].get("msg_id") == interrupt["header"]["msg_id"]:
+                break
+        assert r["content"]["status"] == "ok", r
+        s.kc.input("stale")
+        time.sleep(0.3)
+        reply, out = s.run('console.log(prompt("Again?"))', allow_stdin=True, on_input=lambda req: "fresh")
+        assert reply["status"] == "ok", reply
+        assert text_of(out) == "fresh\n", out
+        # Interrupted in place: no restart, so state is kept (Bun included).
+        _, out = s.run("keptAcrossPrompt")
+        assert "state" in result_of(out)["text/plain"], out
+
     def interrupt(s):
         s.run("globalThis.kept = 'state'")
         msg_id = s.kc.execute("let spins = 0; while (true) { spins++ }")
@@ -820,7 +854,7 @@ def checks(runtime, workdir, offline):
             tests.append(workerd_fetch)
     else:
         # workerd's driver has no __cdpk_send global, nor a blocking prompt.
-        tests += [garbage_binding_payload, malformed_stdin_message]
+        tests += [garbage_binding_payload, malformed_stdin_message, interrupt_while_prompting]
     # Busy-loop interrupt keeps state where the inspector can stop running JS.
     if not runtime.startswith(("bun", "workerd", "celld")):
         tests.append(debugger_breakpoint)

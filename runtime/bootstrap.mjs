@@ -77,6 +77,13 @@ const jupyter = createJupyter({
     const line = readStdinLine();
     if (line === null) return null;
     const reply = JSON.parse(line);
+    if (reply.interrupted === true) {
+      // Interrupted while waiting for the answer: unwind the cell, as
+      // KeyboardInterrupt does in Python's input() (#121).
+      const err = new Error("Execution interrupted");
+      err.name = "Interrupted";
+      throw err;
+    }
     return typeof reply.value === "string" ? reply.value : null;
   },
 });

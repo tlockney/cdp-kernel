@@ -72,6 +72,8 @@ export function makeHeader(session: string, msgType: string): Header {
 }
 
 export interface EncodeOptions {
+  /** Defaults to a fresh header; pass one to know its msg_id. */
+  header?: Header;
   identities?: Uint8Array[];
   parentHeader?: JsonObject;
   metadata?: JsonObject;
@@ -86,7 +88,7 @@ export function encodeMessage(
   options: EncodeOptions = {},
 ): Uint8Array[] {
   const parts = [
-    makeHeader(session, msgType),
+    options.header ?? makeHeader(session, msgType),
     options.parentHeader ?? {},
     options.metadata ?? {},
     content,
