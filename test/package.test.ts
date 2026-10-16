@@ -25,6 +25,13 @@ test("VERSION matches package.json and deno.jsonc", () => {
   assert.equal(m?.[1], VERSION);
 });
 
+test("CHANGELOG.md has an entry for VERSION, dated RELEASE_DATE", () => {
+  // The publish workflow uses this entry as the GitHub release notes.
+  const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
+  const heading = `## ${VERSION} (${RELEASE_DATE})`;
+  assert.ok(changelog.split("\n").includes(heading), `add "${heading}" to CHANGELOG.md`);
+});
+
 test("no other source file hardcodes a version", () => {
   // kernel_info once reported a hardcoded "0.1.0" (#22). Everything should
   // use VERSION from src/package.ts; these literals are other protocols' or

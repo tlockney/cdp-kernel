@@ -112,10 +112,11 @@ export class CdpSession {
   }
 
   send(method: string, params: CdpParams = {}): Promise<CdpParams> {
+    // send() on a closing or closed socket drops the frame silently, so
+    // nothing would ever settle the call (#133).
+    if (this.#ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error("CDP connection closed"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
-      // A closed WebSocket drops what's sent, so nothing would answer.
-      if (this.#ws.readyState >= WebSocket.CLOSING) return reject(new Error("CDP connection closed"));
       this.#pending.set(id, { method, resolve, reject });
       this.#ws.send(JSON.stringify({ id, method, params }));
     });

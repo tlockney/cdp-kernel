@@ -72,6 +72,17 @@ test("imported .tsx and .jsx files compile their JSX as cells do", async (t) => 
   assert.equal(await run(`(await import("./pragma.tsx")).el`), "P");
 });
 
+test("a query or fragment on an imported .ts or .tsx URL doesn't skip the compile (#145)", async (t) => {
+  const cwd = notebookDir({
+    "plain.ts": NEEDS_CODEGEN,
+    "view.tsx": "const React = { createElement: (t: string) => t };\nexport const el = <b />;\n",
+  });
+  const run = await launch(t, cwd);
+  assert.equal(await run(`(await import("./plain.ts?v=2")).Color.Green`), 1);
+  assert.equal(await run(`(await import("./plain.ts#x")).Shapes.sides`), 4);
+  assert.equal(await run(`(await import("./view.tsx?v=2")).el`), "b");
+});
+
 test("a .ts file Node can strip keeps its line numbers", async (t) => {
   const cwd = notebookDir({
     "strip.ts": "type T = {\n  a: number;\n};\n\nexport function where(): string {\n  return new Error().stack!.split(\"\\n\")[1];\n}\n",
