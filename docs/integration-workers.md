@@ -200,6 +200,10 @@ If the project can't load (for example, wrangler isn't installed in it),
 the first cell says why and the kernel falls back to plain workerd.
 Miniflare listens on a loopback TCP port, so here the token is what keeps
 other local processes out.
+Miniflare stops its workerd when the kernel exits normally. If the kernel
+is killed with SIGKILL, the kernel's helper process stops it instead: the
+kernel finds the workerd that Miniflare started among its own child
+processes and registers it with the helper.
 
 ### celld
 

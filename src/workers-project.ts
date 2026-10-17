@@ -10,12 +10,14 @@
 // from the same Worker. Neither wrangler nor Miniflare is a dependency of
 // cdp-kernel: they're loaded from the project, so they match its version.
 
+import process from "node:process";
 import { builtinModules, createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { build } from "esbuild";
 import type { CdpParams } from "./cdp.ts";
+import { childPids, reap } from "./children.ts";
 import { runtimeDir } from "./package.ts";
 import { cellMeta, WORKER_MODULES, type WorkerHost } from "./workerd-target.ts";
 import type { WsChannel } from "./ws-client.ts";
@@ -182,8 +184,13 @@ class MiniflareHost implements WorkerHost {
   readonly #exitListeners: ((code: number | null) => void)[] = [];
   #stopped = false;
 
-  constructor(mf: Miniflare, channel: WsChannel, version: string, project: string) {
+  readonly #forget: (() => void)[];
+
+  constructor(mf: Miniflare, channel: WsChannel, version: string, project: string, workerd: number[]) {
     this.#mf = mf;
+    // Miniflare kills its workerd only on a normal exit; the helper in
+    // src/children.ts kills it if this process is SIGKILLed (#241).
+    this.#forget = workerd.map(reap);
     this.channel = channel;
     this.runtime = `miniflare ${version}`.trim();
     this.project = project;
@@ -194,6 +201,7 @@ class MiniflareHost implements WorkerHost {
     this.#stopped = true;
     // dispose() ends workerd even mid-cell.
     void this.#mf.dispose().catch(() => {}).finally(() => {
+      for (const forget of this.#forget) forget();
       for (const listener of this.#exitListeners) listener(null);
     });
   }
@@ -233,6 +241,8 @@ export async function startMiniflare(configPath: string, cwd: string): Promise<W
     // Miniflare 5 renamed Miniflare 4's defaultPersistRoot.
     ...(v5 ? { resourcePersistencePath: state } : { defaultPersistRoot: state }),
   };
+  // Miniflare's workerd is this process's child; it doesn't say which.
+  const before = new Set(childPids(process.pid, "workerd"));
   const mf = new miniflare.Miniflare(v5 && miniflare.convertV4MiniflareOptions ? miniflare.convertV4MiniflareOptions(options) : options);
   try {
     await mf.ready;
@@ -240,7 +250,8 @@ export async function startMiniflare(configPath: string, cwd: string): Promise<W
     // other local processes from the driver.
     const res = await mf.dispatchFetch("http://cdpk/", { headers: { Upgrade: "websocket", "x-cdpk-token": token } });
     if (res.status !== 101 || res.webSocket === null) throw new Error(`the driver answered ${res.status}: ${await res.text()}`);
-    return new MiniflareHost(mf, channelOf(res.webSocket), version, configPath);
+    const workerd = childPids(process.pid, "workerd").filter((pid) => !before.has(pid));
+    return new MiniflareHost(mf, channelOf(res.webSocket), version, configPath, workerd);
   } catch (err) {
     await mf.dispose().catch(() => {});
     throw err;
