@@ -9,7 +9,7 @@
 // can notice: celld dev and its server, and a Node or Deno runtime stuck in
 // a cell's synchronous loop, where the #219 watchdog never gets to run.
 import process from "node:process";
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 
 const cleanups = new Set<() => void>();
 
@@ -70,13 +70,31 @@ function tellReaper(line: string): void {
 }
 
 /**
+ * Kills `pid` if this process dies, until the returned function is called
+ * (when the process is known to have exited: its pid may be reused).
+ */
+export function reap(pid: number): () => void {
+  tellReaper(`+${pid}`);
+  return () => tellReaper(`-${pid}`);
+}
+
+/**
  * Kills `pid`, which isn't this process's child (a runtime's own child in
  * its own process group), if this process dies while `owner` runs.
  */
 export function reapWith(pid: number, owner: ChildProcess): void {
   if (owner.exitCode !== null || owner.signalCode !== null) return;
-  tellReaper(`+${pid}`);
-  owner.once("exit", () => tellReaper(`-${pid}`));
+  owner.once("exit", reap(pid));
+}
+
+/** `pid`'s children whose command line matches `pattern` (pgrep's -f). */
+export function childPids(pid: number, pattern?: string): number[] {
+  try {
+    const args = ["-P", String(pid), ...(pattern === undefined ? [] : ["-f", pattern])];
+    return execFileSync("pgrep", args, { encoding: "utf8" }).split(/\s+/).filter(Boolean).map(Number);
+  } catch {
+    return []; // none, or no pgrep
+  }
 }
 
 /**
