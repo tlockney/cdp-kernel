@@ -2,6 +2,9 @@ name: publish
 on:
   push:
     tags: ["v*"]
+  # Run on a tag by release.yml (a tag it pushes starts nothing), or by hand
+  # to retry a release. Run on a branch, the version job fails.
+  workflow_dispatch:
 jobs:
   verify:
     uses: ./.github/workflows/ci.yml

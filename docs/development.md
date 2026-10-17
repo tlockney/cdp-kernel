@@ -41,8 +41,16 @@ entry for it: move the "Unreleased" items under a heading for the new version as
 part of the bump. To release:
 
 1. Bump all three, and set `RELEASE_DATE` in `src/package.ts` to today
-   (UTC). Commit, and merge to `main`.
-2. Tag and push, for example `git tag v0.4.1 && git push origin v0.4.1`.
+   (UTC). Commit, and merge to `main` by a PR.
+2. Start the `release` workflow from the Actions tab (or
+   `gh workflow run release.yml -f version=0.5.1`) with the new version. It
+   checks that `main` has that version, its changelog entry and a current
+   `RELEASE_DATE`, and that the tag doesn't exist yet. Then it tags `main`
+   and starts the `publish` workflow on the tag.
+
+   Pushing the tag from a checkout instead
+   (`git tag -a v0.5.1 -m v0.5.1 && git push origin v0.5.1`) starts the
+   `publish` workflow the same way.
 
 The `publish` workflow then:
 
@@ -67,7 +75,8 @@ its notes.
 
 Neither registry lets a version be republished. Each job skips a version
 its registry already has, so re-running a release only fills in the half
-that failed.
+that failed. To re-run one, start `publish` on its tag:
+`gh workflow run publish.yml --ref v0.5.1`.
 
 ## Docs
 
