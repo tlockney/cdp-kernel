@@ -19,8 +19,8 @@ unless noted below.
 
 ## The kernel isn't in the launcher or kernel picker
 
-1. Run `cdp-kernel list` (or `jupyter kernelspec list`, or
-   `ganymede kernelspec list`). The cdp-kernel kernels are named
+1. Run `cdp-kernel list` (or `jupyter kernelspec list`). The cdp-kernel
+   kernels are named
    `cdp-node`, `cdp-deno`, `cdp-node-deno`, `cdp-bun`, `cdp-workerd` and
    `cdp-celld`, unless installed with `--name`.
 2. If it's missing, run `cdp-kernel install --runtime <runtime>` again
@@ -118,7 +118,6 @@ cdp-kernel uninstall cdp-node    # or --all for every cdp-kernel kernelspec
 npm uninstall -g @tlockney/cdp-kernel
 ```
 
-`jupyter kernelspec remove cdp-node` and `ganymede kernelspec remove cdp-node`
-work too.
+`jupyter kernelspec remove cdp-node` works too.
 
 The caches under `~/.cache/cdp-kernel` can be deleted too.

@@ -117,13 +117,11 @@ cdp-kernel wrote, in the [kernels directory](#files-and-environment) that
 other kernels are left alone. From a JSR install, run them as
 `deno run -A jsr:@tlockney/cdp-kernel/cli list` and so on.
 
-With Jupyter or Ganymede installed, these do the same:
+With Jupyter installed, these do the same:
 
 ```sh
 jupyter kernelspec list
 jupyter kernelspec remove cdp-node
-ganymede kernelspec list
-ganymede kernelspec remove cdp-node
 ```
 
 Then `npm uninstall -g @tlockney/cdp-kernel` for an npm install. A JSR
