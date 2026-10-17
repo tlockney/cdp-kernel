@@ -42,6 +42,12 @@ You need two things: a Jupyter frontend and the kernel.
 - [VS Code](https://code.visualstudio.com/docs/datascience/jupyter-notebooks)
   with the Jupyter extension. VS Code still needs Jupyter's kernel
   registry, which the `cdp-kernel install` step below writes to.
+- [Ganymede](https://github.com/tlockney/ganymede), a
+  Jupyter server in Rust that installs and serves JupyterLab's frontend
+  with no Python. Its
+  [workstation install](https://tlockney.github.io/ganymede/docs/workstation)
+  goes from a clean Linux or macOS machine to this kernel running in
+  JupyterLab, step by step.
 
 **The kernel.** With Node 24 or later:
 
