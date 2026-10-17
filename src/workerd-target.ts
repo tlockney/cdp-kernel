@@ -288,7 +288,7 @@ export class RawWorkerd implements WorkerHost {
     killOnExit(child, () => {
       child.kill("SIGKILL");
       rmSync(dir, { recursive: true, force: true });
-    });
+    }, { dir });
 
     // Cell output is captured inside the Worker; what workerd itself prints
     // (its own warnings, errors from background work) goes to the server log.

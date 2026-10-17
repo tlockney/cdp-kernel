@@ -3,11 +3,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REAPER_SCRIPT } from "../src/children.ts";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const MAIN = join(REPO, "src", "main.ts");
@@ -120,4 +121,26 @@ test("a host that dies of an uncaught error mid-start stops the starting runtime
   assert.equal(code, 1, "the host died of its error");
   const pid = Number(readFileSync(pidFile, "utf8"));
   assert.ok(await gone(pid), `runtime (${pid}) still running`);
+});
+
+test("the helper kills what is still registered, and removes its directories, when the pipe closes", { skip: process.platform === "win32" }, async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cdpk-reaper-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const kept = spawn("sleep", ["60"], { stdio: "ignore" });
+  const killed = spawn("sleep", ["60"], { stdio: "ignore" });
+  t.after(() => {
+    kept.kill("SIGKILL");
+    killed.kill("SIGKILL");
+  });
+  const killedExit = new Promise((resolve) => killed.once("exit", (_code, signal) => resolve(signal)));
+  const leftover = join(dir, "leftover dir");
+  mkdirSync(join(leftover, "sub"), { recursive: true });
+  const reaper = spawn("/bin/sh", ["-c", REAPER_SCRIPT], { stdio: ["pipe", "ignore", "inherit"] });
+  const reaperExit = new Promise((resolve) => reaper.once("exit", resolve));
+  // `kept` exited as far as the helper knows, so its pid may be reused.
+  reaper.stdin!.end(`+${killed.pid}\n+${kept.pid}\nd${leftover}\n-${kept.pid}\n`);
+  assert.equal(await reaperExit, 0);
+  assert.equal(await killedExit, "SIGKILL");
+  assert.ok(alive(kept.pid!), "a forgotten pid is left alone");
+  assert.ok(!existsSync(leftover), `${leftover} left behind`);
 });
