@@ -2,9 +2,9 @@
 // CDP's Runtime.evaluate can run with replMode: true.
 //
 // Deno does this with deno_ast (swc) and `var_decl_imports: true`
-// (cli/tools/repl/session.rs, evaluate_ts_expression). Here esbuild does the
-// TypeScript/JSX part and acorn finds the module syntax that a script can't
-// contain:
+// (cli/tools/repl/session.rs, evaluate_ts_expression). Here a type stripper
+// (esbuild by default) does the TypeScript/JSX part and acorn finds the
+// module syntax that a script can't contain:
 //   import x, { y as z } from "m"  ->  var __cdpk_m0 = await __cdpk.import("m");
 //                                     var x = __cdpk_m0["default"], z = __cdpk_m0["y"];
 //   import("m")                    ->  __cdpk.import("m")
@@ -15,7 +15,6 @@
 // module referrer, so Node rejects a bare import() ("A dynamic import
 // callback was not specified").
 
-import { type TransformOptions, transformSync } from "esbuild";
 import { type Node, parse, type Pattern, type Program, type VariableDeclaration } from "acorn";
 import { full, recursive } from "acorn-walk";
 import { LineMap } from "./sourcemap.ts";
@@ -40,7 +39,7 @@ const PRELUDE = `'use strict'; await ${SHIM}.tick();\n`;
 export const SETTLE = `\n;let ${SHIM}_settled = await ${SHIM}.tick();`;
 
 export class CellSyntaxError extends Error {
-  override name = "SyntaxError";
+  override name: string = "SyntaxError";
 }
 
 export type JsxOptions =
@@ -55,54 +54,61 @@ export type JsxOptions =
 export interface CellTransformOptions {
   jsx?: JsxOptions;
   experimentalDecorators?: boolean;
+  /** What removes a cell's types and compiles its JSX; esbuild by default (#238). */
+  typeStrip?: TypeStripperName | TypeStripper;
 }
 
-function jsxSettings(jsx: JsxOptions | undefined): TransformOptions {
-  if (jsx?.mode === "automatic") {
-    return { jsx: "automatic", jsxImportSource: jsx.importSource, jsxDev: jsx.development };
+/**
+ * Turns a TypeScript/TSX cell into JavaScript with ES module syntax left in
+ * place, and with `mappings` (a source map's field, lines are enough) when
+ * `sourcemap` is set, for the debugger. Throws CellSyntaxError for code it
+ * rejects.
+ */
+export type TypeStripper = (
+  code: string,
+  options: CellTransformOptions,
+  sourcemap: boolean,
+) => { code: string; mappings: string };
+
+export type TypeStripperName = "esbuild";
+
+export function isTypeStripperName(value: unknown): value is TypeStripperName {
+  return value === "esbuild";
+}
+
+const strippers = new Map<TypeStripperName, TypeStripper>();
+
+/**
+ * Loads a built-in type stripper. Transforms are synchronous, so a kernel
+ * loads the one it uses before its first cell; only that one's module is
+ * imported (#238).
+ */
+export async function loadTypeStripper(name: TypeStripperName): Promise<TypeStripper> {
+  let stripper = strippers.get(name);
+  if (stripper === undefined) {
+    stripper = (await import("./strip-esbuild.ts")).stripTypes;
+    strippers.set(name, stripper);
   }
-  return { jsx: "transform", jsxFactory: jsx?.factory, jsxFragment: jsx?.fragment };
+  return stripper;
+}
+
+function typeStripper(choice: TypeStripperName | TypeStripper = "esbuild"): TypeStripper {
+  if (typeof choice === "function") return choice;
+  const stripper = strippers.get(choice);
+  if (stripper === undefined) throw new Error(`the ${choice} type stripper isn't loaded (see loadTypeStripper)`);
+  return stripper;
 }
 
 // esbuild compiles `import x = require("m")` to a `require` call, which a
 // cell doesn't have (#143); `import type x = require("m")` is erased.
 const IMPORT_REQUIRE = /^\s*(?:export\s+)?import\s+(?!type\s)[\w$]+\s*=\s*require\s*\(/m;
 
-/** esbuild's output, with its source map's `mappings` when asked for. */
+/** The stripper's output, with its source map's `mappings` when asked for. */
 function stripTypesMapped(code: string, options: CellTransformOptions, sourcemap: boolean): { code: string; mappings: string } {
   if (IMPORT_REQUIRE.test(code)) {
     throw new CellSyntaxError('import x = require("m") is not supported in a cell; use import x from "m"');
   }
-  const compilerOptions = {
-    verbatimModuleSyntax: true,
-    ...(options.experimentalDecorators ? { experimentalDecorators: true } : {}),
-  };
-  // Like Deno: prefer TSX, fall back to TS for `<T>x` assertions.
-  let firstError: unknown;
-  for (const loader of ["tsx", "ts"] as const) {
-    try {
-      const result = transformSync(code, {
-        loader,
-        target: "esnext",
-        // Neither acorn nor V8 parses standard (TC39) decorators or
-        // `accessor` yet, so esbuild lowers them (#142).
-        supported: { decorators: false },
-        ...jsxSettings(options.jsx),
-        tsconfigRaw: { compilerOptions },
-        logLevel: "silent",
-        ...(sourcemap ? { sourcemap: "external" as const } : {}),
-      });
-      const map: unknown = sourcemap ? JSON.parse(result.map) : null;
-      const mappings = typeof (map as { mappings?: unknown } | null)?.mappings === "string"
-        ? (map as { mappings: string }).mappings
-        : "";
-      return { code: result.code, mappings };
-    } catch (err) {
-      firstError ??= err;
-    }
-  }
-  const message = firstError instanceof Error ? firstError.message : String(firstError);
-  throw new CellSyntaxError(message.replace(/^Transform failed with \d+ errors?:\n/, ""));
+  return typeStripper(options.typeStrip)(code, options, sourcemap);
 }
 
 function stripTypes(code: string, options: CellTransformOptions): string {
@@ -374,7 +380,7 @@ export function transformCell(code: string, options: CellTransformOptions = {}):
 /**
  * transformCell, plus the map between the cell's lines and the script's,
  * for the debugger (#18). The rewrite keeps lines (see applyEdits), so the
- * script's lines are esbuild's, after the prelude's one.
+ * script's lines are the stripper's, after the prelude's one.
  */
 export function transformCellWithLines(code: string, options: CellTransformOptions = {}): { script: string; lines: LineMap } {
   const stripped = stripTypesMapped(code, options, true);

@@ -12,6 +12,9 @@ import { join } from "node:path";
 import { bundleProject, compatibilityFlagsFor, findWranglerConfig, PROJECT_MAIN } from "../src/workers-project.ts";
 import { RESTART_NOTE, WorkerdTarget } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 // Miniflare hung on Windows (#32), and the workerd target is unsupported there.

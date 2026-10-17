@@ -23,6 +23,9 @@ import {
 } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
 import { connectUnixWebSocket } from "../src/ws-client.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 const WORKERD = join(REPO, "node_modules", ".bin", "workerd");

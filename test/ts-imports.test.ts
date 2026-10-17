@@ -7,6 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compileTypeScript, loadTypeScript } from "../runtime/node-hooks.mjs";
 import { esbuildBinary, Target, type TargetEvents } from "../src/target.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const events: TargetEvents = { stream: () => {}, message: () => {}, exit: () => {} };
 
