@@ -576,21 +576,43 @@ export class Target implements KernelTarget {
   }
 
   /**
-   * What the host is waiting on, and whether the runtime still evaluates
-   * and still runs timers, for a kernel that has stopped answering (#237).
-   * The probes go over the control session, which no cell holds.
+   * What the host is waiting on, whether the runtime still evaluates, runs
+   * immediates and runs timers, and where its JavaScript is if it is
+   * running any, for a kernel that has stopped answering (#237). The probes
+   * go over the control session, which no cell holds.
    */
   async diagnose(): Promise<CdpParams> {
+    const within = <T>(promise: Promise<T>, fallback: T) =>
+      Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), 2000).unref())]);
     const probe = (expression: string, awaitPromise: boolean) =>
-      Promise.race([
+      within(
         this.#control.send("Runtime.evaluate", { expression, contextId: this.#contextId, awaitPromise, returnByValue: true })
           .then((res) => res.exceptionDetails ? `threw: ${JSON.stringify(res.exceptionDetails)}` : String((res.result as RemoteObject | undefined)?.value), (err) => `failed: ${err}`),
-        new Promise<string>((resolve) => setTimeout(() => resolve("no answer in 2 s"), 2000).unref()),
-      ]);
-    const [evaluates, timers] = await Promise.all([
+        "no answer in 2 s",
+      );
+    const [evaluates, immediates, timers] = await Promise.all([
       probe("'yes'", false),
+      probe("new Promise((resolve) => setImmediate(() => resolve('yes')))", true),
       probe("new Promise((resolve) => setTimeout(() => resolve('yes'), 0))", true),
     ]);
+    // A runtime whose event loop is stuck may be stuck in JavaScript: say
+    // where. (An idle one would take the pause in whatever runs next.)
+    let running: unknown = "event loop runs";
+    if (immediates !== "yes") {
+      try {
+        const paused = new Promise<CdpParams>((resolve) => this.#control.on("Debugger.paused", resolve));
+        await this.#control.send("Debugger.enable");
+        await this.#control.send("Debugger.pause");
+        const event = await within(paused, null);
+        running = event === null ? "no" : (event.callFrames as { functionName: string; url: string; location: { lineNumber: number } }[])
+          .slice(0, 10)
+          .map((f) => `${f.functionName || "(anonymous)"} ${f.url || "(no url)"}:${f.location.lineNumber + 1}`);
+        await this.#control.send("Debugger.resume").catch(() => {});
+        await this.#control.send("Debugger.disable");
+      } catch (err) {
+        running = `failed: ${err}`;
+      }
+    }
     return {
       pid: this.#child.pid ?? null,
       calls: { shell: this.#shell.pendingCalls(), control: this.#control.pendingCalls() },
@@ -600,7 +622,9 @@ export class Target implements KernelTarget {
       paused: this.#paused,
       exiting: this.#exiting,
       evaluates,
+      immediates,
       timers,
+      running,
     };
   }
 
