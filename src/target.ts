@@ -48,6 +48,8 @@ export interface KernelTarget {
   readonly debug?: DebugChannel;
   /** Answers the target's pending prompt; `interrupted` makes it throw instead (#121). */
   replyInput(value: string | null, interrupted?: boolean): void;
+  /** What the host waits on, for a kernel that has stopped answering (#237). */
+  diagnose?(): Promise<CdpParams>;
   kill(): void;
 }
 
@@ -175,6 +177,8 @@ export class PipeDemux {
   #closed = false;
   #reached = 0;
   #waiters: { n: number; resolve: () => void }[] = [];
+  /** The gated marker the pipe is paused on, if any. */
+  #gatedOn: number | null = null;
   readonly onText: (text: string) => void;
   readonly gate: (n: number) => Promise<void>;
 
@@ -214,7 +218,11 @@ export class PipeDemux {
           continue;
         }
         this.#reach(item.barrier);
-        if (item.gated && !this.#closed) await this.gate(item.barrier);
+        if (item.gated && !this.#closed) {
+          this.#gatedOn = item.barrier;
+          await this.gate(item.barrier);
+          this.#gatedOn = null;
+        }
       }
     } finally {
       this.#pumping = false;
@@ -233,6 +241,17 @@ export class PipeDemux {
   waitFor(n: number): Promise<void> {
     if (n <= this.#reached) return Promise.resolve();
     return new Promise((resolve) => this.#waiters.push({ n, resolve }));
+  }
+
+  /** Where the pipe stands, for a state dump (#237). */
+  state(): { reached: number; waitingFor: number[]; gatedOn: number | null; queued: number; held: number } {
+    return {
+      reached: this.#reached,
+      waitingFor: this.#waiters.map((w) => w.n),
+      gatedOn: this.#gatedOn,
+      queued: this.#items.length,
+      held: this.#buffer.length,
+    };
   }
 
   /** Release everything (the process died). */
@@ -356,6 +375,8 @@ export class Target implements KernelTarget {
   #gates: Gates;
   #contextId: number;
   #messages: Promise<void> = Promise.resolve();
+  /** Binding messages received but not yet delivered. */
+  #undelivered = 0;
   #interrupted = false;
   #paused = false;
   /** Set once the main context is gone: the runtime is exiting (#130). */
@@ -545,11 +566,66 @@ export class Target implements KernelTarget {
   // Binding messages wait until both pipes have caught up to their marker,
   // and are delivered strictly in order.
   #deliver(msg: TargetMessage, events: TargetEvents): void {
+    this.#undelivered++;
     this.#messages = this.#messages.then(async () => {
       await Promise.all([this.#stdout.waitFor(msg.barrier), this.#stderr.waitFor(msg.barrier)]);
+      this.#undelivered--;
       events.message(msg);
       this.#gates.open(msg.barrier);
     });
+  }
+
+  /**
+   * What the host is waiting on, whether the runtime still evaluates, runs
+   * immediates and runs timers, and where its JavaScript is if it is
+   * running any, for a kernel that has stopped answering (#237). The probes
+   * go over the control session, which no cell holds.
+   */
+  async diagnose(): Promise<CdpParams> {
+    const within = <T>(promise: Promise<T>, fallback: T) =>
+      Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), 2000).unref())]);
+    const probe = (expression: string, awaitPromise: boolean) =>
+      within(
+        this.#control.send("Runtime.evaluate", { expression, contextId: this.#contextId, awaitPromise, returnByValue: true })
+          .then((res) => res.exceptionDetails ? `threw: ${JSON.stringify(res.exceptionDetails)}` : String((res.result as RemoteObject | undefined)?.value), (err) => `failed: ${err}`),
+        "no answer in 2 s",
+      );
+    const [evaluates, immediates, timers] = await Promise.all([
+      probe("'yes'", false),
+      probe("new Promise((resolve) => setImmediate(() => resolve('yes')))", true),
+      probe("new Promise((resolve) => setTimeout(() => resolve('yes'), 0))", true),
+    ]);
+    // A runtime whose event loop is stuck may be stuck in JavaScript: say
+    // where. (An idle one would take the pause in whatever runs next.)
+    let running: unknown = "event loop runs";
+    if (immediates !== "yes") {
+      try {
+        const paused = new Promise<CdpParams>((resolve) => this.#control.on("Debugger.paused", resolve));
+        await this.#control.send("Debugger.enable");
+        await this.#control.send("Debugger.pause");
+        const event = await within(paused, null);
+        running = event === null ? "no" : (event.callFrames as { functionName: string; url: string; location: { lineNumber: number } }[])
+          .slice(0, 10)
+          .map((f) => `${f.functionName || "(anonymous)"} ${f.url || "(no url)"}:${f.location.lineNumber + 1}`);
+        await this.#control.send("Debugger.resume").catch(() => {});
+        await this.#control.send("Debugger.disable");
+      } catch (err) {
+        running = `failed: ${err}`;
+      }
+    }
+    return {
+      pid: this.#child.pid ?? null,
+      calls: { shell: this.#shell.pendingCalls(), control: this.#control.pendingCalls() },
+      stdout: this.#stdout.state(),
+      stderr: this.#stderr.state(),
+      undelivered: this.#undelivered,
+      paused: this.#paused,
+      exiting: this.#exiting,
+      evaluates,
+      immediates,
+      timers,
+      running,
+    };
   }
 
   /** Resolves once all output and messages sent so far have been delivered. */

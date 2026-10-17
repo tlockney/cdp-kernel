@@ -78,9 +78,15 @@ test("PipeDemux gated marker pauses later text until the gate resolves", async (
   assert.equal(c.joined(), "one");
   // The marker itself counts as reached even while the pipe is paused.
   await demux.waitFor(4);
+  const later = demux.waitFor(5);
+  // A state dump says what the pipe waits on (#237).
+  assert.deepEqual(demux.state(), { reached: 4, waitingFor: [5], gatedOn: 4, queued: 1, held: 0 });
   release();
   await tick();
   assert.equal(c.joined(), "onetwo");
+  assert.equal(demux.state().gatedOn, null);
+  demux.push("\x1b[cdpk:5]\x1b");
+  await later;
 });
 
 test("PipeDemux ungated marker does not call the gate", async () => {
