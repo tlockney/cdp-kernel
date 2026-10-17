@@ -23,9 +23,12 @@ and each picture is a screenshot of the Node run.
 
 ## Before you start
 
-Widgets are drawn by the frontend, so the frontend needs the `anywidget`
-extension. It works in JupyterLab, Jupyter Notebook 7 and VS Code. Install
-it into the same Python environment as Jupyter:
+Widgets are drawn by the frontend, which needs anywidget's JavaScript to
+do it. Widgets work in JupyterLab, Jupyter Notebook 7 and VS Code, and each
+gets that JavaScript differently.
+
+**JupyterLab and Jupyter Notebook 7.** Install the `anywidget` extension
+into the same Python environment as Jupyter:
 
 ```sh
 pip install anywidget
@@ -35,6 +38,18 @@ That is the whole frontend setup: anywidget is a Python package, but no
 Python kernel is involved. If the extension is missing, a widget shows up
 as plain text such as `Widget(4f9c…)`; see
 [Troubleshooting](#troubleshooting).
+
+**VS Code.** The Jupyter extension draws widgets itself and downloads
+anywidget's JavaScript from a CDN (jsDelivr or unpkg), so it needs
+internet access. It only looks in a Python environment for a Python
+kernel, so `pip install anywidget` makes no difference here. Downloads are
+off by default: the first widget brings up a dialog saying "Widgets require
+us to download supporting files from a 3rd party website"; choose **Enable
+Downloads**. To allow it up front, add this to your VS Code settings:
+
+```json
+"jupyter.widgetScriptSources": ["jsdelivr.com", "unpkg.com"]
+```
 
 Python users may know the ready-made ipywidgets controls (`IntSlider`,
 `Dropdown` and so on). Those are Python classes and aren't available here.
@@ -475,6 +490,11 @@ kernel restart, re-run the cells that create them.
   frontend doesn't have the anywidget extension. Install it with
   `pip install anywidget` in the environment Jupyter runs from, then reload
   the page.
+- **VS Code says "Widgets require us to download supporting files from a
+  3rd party website" or "Unable to find widget 'anywidget'".** Choose
+  **Enable Downloads**, or set `jupyter.widgetScriptSources` as shown in
+  [Before you start](#before-you-start). VS Code needs internet access to
+  reach the CDN.
 - **The widget area is empty.** The view module threw an error. Open the
   browser's developer console (in VS Code, "Developer: Toggle Developer
   Tools") to see it. A common cause is a `${...}` inside the `esm` template
