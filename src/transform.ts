@@ -54,7 +54,7 @@ export type JsxOptions =
 export interface CellTransformOptions {
   jsx?: JsxOptions;
   experimentalDecorators?: boolean;
-  /** What removes a cell's types and compiles its JSX; esbuild by default (#238). */
+  /** What removes a cell's types and compiles its JSX; esbuild by default (#238, #234). */
   typeStrip?: TypeStripperName | TypeStripper;
 }
 
@@ -70,10 +70,10 @@ export type TypeStripper = (
   sourcemap: boolean,
 ) => { code: string; mappings: string };
 
-export type TypeStripperName = "esbuild";
+export type TypeStripperName = "esbuild" | "sucrase";
 
 export function isTypeStripperName(value: unknown): value is TypeStripperName {
-  return value === "esbuild";
+  return value === "esbuild" || value === "sucrase";
 }
 
 const strippers = new Map<TypeStripperName, TypeStripper>();
@@ -86,7 +86,14 @@ const strippers = new Map<TypeStripperName, TypeStripper>();
 export async function loadTypeStripper(name: TypeStripperName): Promise<TypeStripper> {
   let stripper = strippers.get(name);
   if (stripper === undefined) {
-    stripper = (await import("./strip-esbuild.ts")).stripTypes;
+    try {
+      stripper = name === "sucrase"
+        ? (await import("./strip-sucrase.ts")).stripTypes
+        : (await import("./strip-esbuild.ts")).stripTypes;
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`cannot load the ${name} type stripper (is the ${name} package installed?): ${reason}`);
+    }
     strippers.set(name, stripper);
   }
   return stripper;

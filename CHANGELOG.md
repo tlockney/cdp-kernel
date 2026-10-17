@@ -4,6 +4,15 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- `--type-strip sucrase` strips cells' types with sucrase, plain JavaScript,
+  instead of esbuild's native binary, and an embedder can pass its own type
+  stripper. sucrase is an optional dependency, loaded only when picked; it
+  rejects decorators, `accessor` fields and namespaces
+  ([#234](https://github.com/tlockney/cdp-kernel/issues/234),
+  [#238](https://github.com/tlockney/cdp-kernel/issues/238)).
+
 ## 0.5.0 (2026-10-16)
 
 Changes in behavior:

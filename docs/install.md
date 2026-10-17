@@ -67,7 +67,7 @@ Windows build).
 ## Install options
 
 ```sh
-cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--name NAME] [--display NAME]
+cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [--name NAME] [--display NAME]
 ```
 
 - `--runtime` is `node` (the default), `deno`, `bun`, `workerd` or `celld`.
@@ -75,6 +75,12 @@ cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--name NAME] [--display 
   `deno jupyter`. It only applies to `--runtime node`; with any other
   runtime it is ignored. See
   [Notebooks written for Deno](jupyter-api.md#notebooks-written-for-deno).
+- `--type-strip` picks what removes types from cells: `esbuild` (the
+  default) or `sucrase`, which is plain JavaScript, for a host that can't
+  run esbuild's native binary. sucrase doesn't support decorators,
+  `accessor` fields or namespaces (other than `declare namespace`); a cell
+  that uses them fails with a `SyntaxError`. See
+  [Stripping types](architecture.md#stripping-types-typescript-to-javascript).
 - `--name` sets the kernelspec's directory name, which is also the name
   Jupyter uses for the kernel. The default is `cdp-<runtime>`, or
   `cdp-node-deno` with `--deno-compat`.
