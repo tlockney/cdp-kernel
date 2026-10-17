@@ -30,6 +30,17 @@ test("LineMap: an offset, the nearest mapped line, and breakpoints that move dow
   assert.equal(lines.toGenerated(5), null, "past the end");
 });
 
+test("LineMap: a mapped line left blank counts as unmapped", () => {
+  // A stripper that keeps lines (sucrase) maps every line to itself,
+  // including the ones it blanks: here an interface on lines 0-2.
+  const generated = "\n\n\nconst a = 1;";
+  const lines = new LineMap("AAAA;AACA;AACA;AACA", 0, generated);
+  assert.equal(lines.toGenerated(0), 3, "a breakpoint on the interface moves to the next statement");
+  assert.equal(lines.toGenerated(3), 3);
+  assert.equal(lines.toOriginal(3), 3);
+  assert.equal(new LineMap("AAAA;AACA;AACA;AACA").toGenerated(0), 0, "without the output, every mapping counts");
+});
+
 test("rewritten imports keep the lines after them in place", () => {
   const js = 'import {\n  a,\n  b,\n} from "m";\nconst c = a + b;';
   const out = rewriteModuleSyntax(js);

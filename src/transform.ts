@@ -384,7 +384,7 @@ export function transformCell(code: string, options: CellTransformOptions = {}):
  */
 export function transformCellWithLines(code: string, options: CellTransformOptions = {}): { script: string; lines: LineMap } {
   const stripped = stripTypesMapped(code, options, true);
-  return { script: PRELUDE + rewriteModuleSyntax(stripped.code) + SETTLE, lines: new LineMap(stripped.mappings, newlines(PRELUDE)) };
+  return { script: PRELUDE + rewriteModuleSyntax(stripped.code) + SETTLE, lines: new LineMap(stripped.mappings, newlines(PRELUDE), stripped.code) };
 }
 
 /**
