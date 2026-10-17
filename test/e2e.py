@@ -15,12 +15,14 @@ e.g. an installed npm bin, or "deno run -A src/main.ts" to test a Deno host.
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
 from pathlib import Path
+from queue import Empty
 
 from jupyter_client import KernelManager
 
@@ -89,6 +91,28 @@ class Session:
                 except Exception:
                     pass
         return reply, outputs
+
+    def responsive(self, timeout=10):
+        """Whether the kernel still answers on shell. A request stuck on shell
+        holds everything sent after it, so a hung kernel fails every later
+        check on its own timeout."""
+        msg_id = self.kc.kernel_info()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if self.kc.get_shell_msg(timeout=0.5)["parent_header"].get("msg_id") == msg_id:
+                    return True
+            except Empty:
+                pass
+        return False
+
+    def log_kernel_state(self):
+        """Has the kernel write what it is waiting on to its stderr, which
+        is this run's (#237)."""
+        if sys.platform == "win32":
+            return
+        os.kill(self.km.provisioner.process.pid, signal.SIGUSR2)
+        time.sleep(5)
 
 
 def text_of(outputs, kind="stream"):
@@ -996,6 +1020,8 @@ def cli_command():
 
 
 def main():
+    # Progress reaches the CI log as it happens, not only if the run ends.
+    sys.stdout.reconfigure(line_buffering=True)
     runtimes = sys.argv[1:] or list(VARIANTS)
     offline = os.environ.get("CDPK_E2E_OFFLINE") == "1"
     failures = 0
@@ -1028,15 +1054,22 @@ def main():
             kc.wait_for_ready(timeout=TIMEOUT)
             s = Session(km, kc)
             print(f"== {runtime}")
-            for test in checks(runtime, workdir, offline):
+            tests = checks(runtime, workdir, offline)
+            for i, test in enumerate(tests):
                 t0 = time.time()
                 try:
                     test(s)
                     print(f"  ok    {test.__name__} ({time.time() - t0:.2f}s)")
-                except Exception:
+                except Exception as err:
                     failures += 1
                     print(f"  FAIL  {test.__name__}")
                     traceback.print_exc()
+                    # Stop at the first check a hung kernel times out on (#237).
+                    if isinstance(err, (TimeoutError, Empty)) and not s.responsive():
+                        rest = ", ".join(t.__name__ for t in tests[i + 1:])
+                        print(f"  FAIL  kernel stopped answering; not run: {rest or 'none'}")
+                        s.log_kernel_state()
+                        break
             km.shutdown_kernel(now=False)
             alive = km.is_alive()
             print(f"  {'FAIL' if alive else 'ok   '} shutdown (process exited: {not alive})")

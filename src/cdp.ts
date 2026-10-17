@@ -49,6 +49,7 @@ export class CdpAbandoned extends Error {}
 
 type Pending = {
   method: string;
+  sent: number;
   resolve: (result: CdpParams) => void;
   reject: (err: Error) => void;
 };
@@ -113,9 +114,15 @@ export class CdpSession {
     if (this.#ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error("CDP connection closed"));
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
-      this.#pending.set(id, { method, resolve, reject });
+      this.#pending.set(id, { method, sent: Date.now(), resolve, reject });
       this.#ws.send(JSON.stringify({ id, method, params }));
     });
+  }
+
+  /** In-flight calls, oldest first, with how long each has waited: for a state dump (#237). */
+  pendingCalls(): string[] {
+    const now = Date.now();
+    return [...this.#pending.values()].map((p) => `${p.method} (${now - p.sent} ms)`);
   }
 
   /** Reject every in-flight call; their late responses are then ignored. */

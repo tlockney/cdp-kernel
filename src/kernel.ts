@@ -123,6 +123,8 @@ export class Kernel {
   #input: { msgId: string; settle: (answer: InputAnswer) => void } | null = null;
   /** An interrupt is waiting on the target. */
   #interrupting = false;
+  /** The shell message being handled, and since when. */
+  #handling: { msgType: string; msgId: string; since: number } | null = null;
   // Open comms, for comm_info_request: comm_id -> target_name (#9).
   readonly #comms = new Map<string, string>();
   #shuttingDown = false;
@@ -158,6 +160,8 @@ export class Kernel {
         process.exit(code);
       });
     }
+    // A state dump on stderr, for a kernel that has stopped answering (#237).
+    if (process.platform !== "win32") process.on("SIGUSR2", () => void this.#logState());
     await Promise.all([this.#loop(this.#shell, (m, p) => this.#handleShell(m, p)),
       this.#loop(this.#control, (m, p) => this.#handleControl(m, p)),
       this.#loop(this.#stdin, (m) => this.#handleStdin(m))]);
@@ -165,6 +169,21 @@ export class Kernel {
 
   #log(text: string): void {
     process.stderr.write(`[cdp-kernel] ${text}\n`);
+  }
+
+  async #logState(): Promise<void> {
+    const handling = this.#handling;
+    const target = this.#target;
+    let targetState: unknown = target === null ? (this.#targetStarting === null ? null : "starting") : target.runtime;
+    if (target?.diagnose) targetState = await target.diagnose().catch((err) => `diagnose failed: ${err}`);
+    this.#log(`state: ${JSON.stringify({
+      shell: handling && { msgType: handling.msgType, msgId: handling.msgId, ms: Date.now() - handling.since },
+      queued: this.#shell.incoming.size,
+      executing: this.#executing,
+      interrupting: this.#interrupting,
+      awaitingInput: this.#input !== null,
+      target: targetState,
+    })}`);
   }
 
   #loadProject(notebookDir: string): DenoProject | null {
@@ -352,9 +371,12 @@ export class Kernel {
         const msg = decodeMessage(frames);
         // Unsigned or forged messages are dropped, as in Deno.
         if (!verify(this.#conn.key, msg.signedParts, msg.sig)) continue;
+        if (socket === this.#shell) this.#handling = { msgType: msg.header.msg_type, msgId: msg.header.msg_id, since: Date.now() };
         await handle(msg, peer);
       } catch (err) {
         this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
+      } finally {
+        if (socket === this.#shell) this.#handling = null;
       }
     }
   }
