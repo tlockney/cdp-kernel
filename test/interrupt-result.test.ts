@@ -6,6 +6,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { BunTarget } from "../src/bun-target.ts";
 import { Interrupted, Target, type TargetEvents } from "../src/target.ts";
 import { hasBun } from "./bun.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const events: TargetEvents = { stream: () => {}, message: () => {}, exit: () => {} };
 const SLOW_DISPLAY = `({ [Symbol.for("Jupyter.display")]: async () => {

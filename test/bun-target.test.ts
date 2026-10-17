@@ -6,6 +6,9 @@ import assert from "node:assert/strict";
 import { BunTarget, bunLaunchCommand, RESTART_NOTE } from "../src/bun-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
 import { hasBun } from "./bun.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string };
 

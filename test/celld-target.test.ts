@@ -12,6 +12,9 @@ import { join } from "node:path";
 import { bundleDriver, celldConfig, celldVersionOf, findCelld, freePort, launchCelld, PROJECT_KEYS } from "../src/celld-target.ts";
 import { restartNote } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const CELLD = process.env.CELLD ?? findCelld();
 const skip = spawnSync(CELLD, ["--version"], { stdio: "ignore" }).status !== 0;

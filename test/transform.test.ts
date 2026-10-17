@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CellSyntaxError, objectLiteralCandidate, rewriteModuleSyntax, transformCell } from "../src/transform.ts";
+import { CellSyntaxError, loadTypeStripper, objectLiteralCandidate, rewriteModuleSyntax, transformCell } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const PRELUDE = "'use strict'; await __cdpk.tick();\n";
 

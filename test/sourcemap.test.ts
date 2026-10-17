@@ -2,7 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decodeVlq, generatedToOriginalLines, LineMap } from "../src/sourcemap.ts";
-import { rewriteModuleSyntax, transformCellWithLines } from "../src/transform.ts";
+import { loadTypeStripper, rewriteModuleSyntax, transformCellWithLines } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 test("decodeVlq reads signed base64 VLQ fields", () => {
   assert.deepEqual(decodeVlq("AAAA"), [0, 0, 0, 0]);

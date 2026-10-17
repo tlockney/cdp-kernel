@@ -5,7 +5,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createContext, runInContext } from "node:vm";
-import { CellSyntaxError, transformCellForEval } from "../src/transform.ts";
+import { CellSyntaxError, loadTypeStripper, transformCellForEval } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 /** A notebook session: runs cells in order, sharing one global scope. */
 function session(modules: Record<string, unknown> = {}) {
