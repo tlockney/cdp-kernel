@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // cdp-kernel CLI.
-//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--name NAME] [--display NAME]
-//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] --conn CONNECTION_FILE
+//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--name NAME] [--display NAME]
+//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild|sucrase] --conn CONNECTION_FILE
 //   cdp-kernel version
 //
 // --deno-compat (Node only) adds a `Deno` namespace for notebooks written for
-// `deno jupyter`; see runtime/deno-compat.mjs.
+// `deno jupyter`; see runtime/deno-compat.mjs. --type-strip picks what
+// removes cells' types (src/transform.ts).
 
 import process from "node:process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -14,6 +15,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { Kernel, parseConnectionInfo } from "./kernel.ts";
 import type { RuntimeName } from "./target.ts";
+import { isTypeStripperName, type TypeStripperName } from "./transform.ts";
 import { hostRuntime, kernelArgv, moduleOrigin, VERSION } from "./package.ts";
 
 function isRuntime(value: unknown): value is RuntimeName {
@@ -27,7 +29,7 @@ function kernelsDir(): string {
   return join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "jupyter", "kernels");
 }
 
-function install(runtime: RuntimeName, denoCompat: boolean, name: string, display: string): void {
+function install(runtime: RuntimeName, denoCompat: boolean, typeStrip: TypeStripperName, name: string, display: string): void {
   const dir = join(kernelsDir(), name);
   mkdirSync(dir, { recursive: true });
   const spec = {
@@ -36,6 +38,7 @@ function install(runtime: RuntimeName, denoCompat: boolean, name: string, displa
       "--runtime",
       runtime,
       ...(denoCompat ? ["--deno-compat"] : []),
+      ...(typeStrip !== "esbuild" ? ["--type-strip", typeStrip] : []),
       "--conn",
       "{connection_file}",
     ]),
@@ -60,12 +63,19 @@ const { positionals, values } = parseArgs({
     name: { type: "string" },
     display: { type: "string" },
     "deno-compat": { type: "boolean", default: false },
+    "type-strip": { type: "string", default: "esbuild" },
   },
 });
 
 const runtime = values.runtime;
 if (!isRuntime(runtime)) {
   console.error(`unknown runtime ${runtime}; expected node, deno, bun, workerd or celld`);
+  process.exit(2);
+}
+
+const typeStrip = values["type-strip"];
+if (!isTypeStripperName(typeStrip)) {
+  console.error(`unknown type stripper ${typeStrip}; expected esbuild or sucrase`);
   process.exit(2);
 }
 
@@ -78,6 +88,7 @@ switch (positionals[0]) {
     install(
       runtime,
       denoCompat,
+      typeStrip,
       values.name ?? `cdp-${runtime}${suffix}`,
       values.display ?? `TypeScript (cdp-kernel, ${runtime}${denoCompat ? ", Deno compat" : ""})`,
     );
@@ -88,7 +99,7 @@ switch (positionals[0]) {
       console.error("kernel: --conn CONNECTION_FILE is required");
       process.exit(2);
     }
-    const kernel = new Kernel(parseConnectionInfo(readFileSync(values.conn, "utf8")), runtime, { denoCompat });
+    const kernel = new Kernel(parseConnectionInfo(readFileSync(values.conn, "utf8")), runtime, { denoCompat, typeStrip });
     await kernel.run();
     break;
   }
@@ -97,7 +108,7 @@ switch (positionals[0]) {
     break;
   default:
     console.error(
-      "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version",
+      "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version",
     );
     process.exit(2);
 }

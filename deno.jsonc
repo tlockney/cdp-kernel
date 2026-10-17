@@ -16,7 +16,8 @@
   "imports": {
     "acorn": "npm:acorn@^8.15.0",
     "acorn-walk": "npm:acorn-walk@^8.3.4",
-    "esbuild": "npm:esbuild@^0.25.10"
+    "esbuild": "npm:esbuild@^0.25.10",
+    "sucrase": "npm:sucrase@^3.35.1"
   },
   "publish": {
     // runtime/*.mjs are loaded by the target runtime, not imported; a JSR

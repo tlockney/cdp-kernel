@@ -4,7 +4,7 @@
 // test/e2e.py's celld variants cover the kernel end to end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execSync, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,9 @@ import { join } from "node:path";
 import { bundleDriver, celldConfig, celldVersionOf, findCelld, freePort, launchCelld, PROJECT_KEYS } from "../src/celld-target.ts";
 import { restartNote } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const CELLD = process.env.CELLD ?? findCelld();
 const skip = spawnSync(CELLD, ["--version"], { stdio: "ignore" }).status !== 0;
@@ -262,4 +265,50 @@ test("a start that loses a port race is retried, and keeps the project", { skip 
   assert.ok(existsSync(tries), "the first start failed");
   assert.match(target.notice ?? "", /env has COUNTER, GREETING, KV/);
   assert.equal(await value("return env.GREETING"), "hello");
+});
+
+test("celld dev, its server and its directory go when the kernel is SIGKILLed", { skip: skip || process.platform === "win32" }, async (t) => {
+  const dir = scratch(t);
+  const host = join(dir, "host.ts");
+  writeFileSync(
+    host,
+    `import { launchCelld } from ${JSON.stringify(fileURLToPath(new URL("../src/celld-target.ts", import.meta.url)))};\n` +
+      `await launchCelld({ stream() {}, message() {}, exit() {} }, { cwd: ${JSON.stringify(dir)}, executable: ${JSON.stringify(CELLD)} });\n` +
+      `console.log("ready");\n`,
+  );
+  const child = spawn(process.execPath, [host], { stdio: ["ignore", "pipe", "ignore"] });
+  t.after(() => child.kill("SIGKILL"));
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.on("data", (chunk: Buffer) => chunk.toString().includes("ready") && resolve());
+    child.once("exit", (code) => reject(new Error(`host exited (${code})`)));
+  });
+  const pids = (args: string[]) => {
+    try {
+      return execFileSync("pgrep", args, { encoding: "utf8" }).split(/\s+/).filter(Boolean).map(Number);
+    } catch {
+      return [];
+    }
+  };
+  const [dev] = pids(["-P", String(child.pid), "-f", "celld dev"]);
+  const [server] = pids(["-P", String(dev)]);
+  assert.ok(dev && server, "celld dev and its server are running");
+  const devDir = /cdpk-celld-\S+/.exec(execFileSync("ps", ["-o", "args=", "-p", String(dev)], { encoding: "utf8" }))![0];
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return !/^Z/.test(execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim());
+    } catch {
+      return false;
+    }
+  };
+  t.after(() => {
+    for (const pid of [dev, server]) if (alive(pid)) process.kill(pid, "SIGKILL");
+  });
+  child.kill("SIGKILL");
+  for (let i = 0; i < 200 && (alive(dev) || alive(server) || existsSync(join(tmpdir(), devDir))); i++) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  assert.ok(!alive(dev), `celld dev (${dev}) outlived the kernel`);
+  assert.ok(!alive(server), `celld's server (${server}) outlived the kernel`);
+  assert.ok(!existsSync(join(tmpdir(), devDir)), `${devDir} left behind`);
 });

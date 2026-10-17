@@ -54,9 +54,15 @@ export class LineMap {
   readonly #toOriginal: number[];
   readonly #toGenerated = new Map<number, number>();
 
-  /** `offset`: lines the script adds before esbuild's output (the prelude). */
-  constructor(mappings: string, offset = 0) {
-    const fromEsbuild = generatedToOriginalLines(mappings);
+  /**
+   * `offset`: lines the script adds before esbuild's output (the prelude).
+   * `generated`: that output. A stripper that keeps lines blanks a
+   * type-only line in place and still maps it; with the output given, a
+   * blank line counts as unmapped, so a breakpoint there moves down (#239).
+   */
+  constructor(mappings: string, offset = 0, generated?: string) {
+    const blank = generated?.split("\n").map((line) => line.trim() === "");
+    const fromEsbuild = generatedToOriginalLines(mappings).map((original, line) => blank?.[line] ? -1 : original);
     this.#toOriginal = [...Array<number>(offset).fill(-1), ...fromEsbuild];
     this.#toOriginal.forEach((original, generated) => {
       if (original !== -1 && !this.#toGenerated.has(original)) this.#toGenerated.set(original, generated);

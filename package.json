@@ -77,5 +77,8 @@
     "vitepress": "^1.6.4",
     "workerd": "1.20261015.1",
     "wrangler": "4.151.0"
+  },
+  "optionalDependencies": {
+    "sucrase": "^3.35.1"
   }
 }

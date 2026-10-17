@@ -156,8 +156,10 @@ running as you. Whatever workerd prints itself, such as its warnings, goes
 to the Jupyter server log with a `[cdp-kernel workerd]` prefix; cell
 output never takes that route. The directory is removed when workerd
 exits, crash included. If the kernel process itself is killed first, such
-as with SIGKILL, the directory (`cdpk-workerd-*` in the system temp
-directory) and workerd stay behind until the next workerd kernel starts:
+as with SIGKILL, the kernel's helper process (see
+[Node and Deno](integration-cdp.md#errors-outside-a-cell)) kills workerd and removes the
+directory (`cdpk-workerd-*` in the system temp directory). If the helper
+was killed too, they stay behind until the next workerd kernel starts:
 each directory records the kernel's and workerd's pids, and a starting
 kernel removes directories whose kernel is gone, killing their workerd if
 it's still running.
@@ -198,6 +200,10 @@ If the project can't load (for example, wrangler isn't installed in it),
 the first cell says why and the kernel falls back to plain workerd.
 Miniflare listens on a loopback TCP port, so here the token is what keeps
 other local processes out.
+Miniflare stops its workerd when the kernel exits normally. If the kernel
+is killed with SIGKILL, the kernel's helper process stops it instead: the
+kernel finds the workerd that Miniflare started among its own child
+processes and registers it with the helper.
 
 ### celld
 
@@ -236,8 +242,11 @@ is reported in the first cell, and the driver runs without it.
 `celld dev` runs its worker process in a separate process group and waits
 for it to stop gracefully, which a busy cell never allows. So stopping
 kills that process first, then `celld dev`. The generated files are
-removed when celld exits, unless the kernel process itself is killed
-first. A project's state stays in `.celld/cdp-kernel` for the next kernel.
+removed when celld exits. If the kernel process itself is killed first,
+such as with SIGKILL, its helper process kills `celld dev` and its worker
+process and removes the temp directory; in a project, the generated files
+stay in `.celld/cdp-kernel`. A project's state stays there for the next
+kernel.
 
 ## Interrupts
 

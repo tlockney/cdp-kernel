@@ -191,7 +191,10 @@ A `setInterval` keeps the event loop alive between cells. Another checks
 every 2 seconds that the kernel is still there (the runtime's parent pid
 hasn't changed and still exists) and exits if not, so a runtime doesn't
 outlive a kernel that was killed with SIGKILL. A cell stuck in a busy loop
-never lets that check run.
+never lets that check run, so the kernel also starts a small helper
+process (a `sh` script in its own session, `src/children.ts`) that knows
+the pid of each runtime it starts. When the kernel dies, however it dies,
+the helper's input pipe closes and it kills the runtimes still running.
 
 ## Node specifics
 

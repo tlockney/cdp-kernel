@@ -5,6 +5,9 @@
 import { type TestContext, test } from "node:test";
 import assert from "node:assert/strict";
 import { Target, type TargetEvents } from "../src/target.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const events: TargetEvents = { stream: () => {}, message: () => {}, exit: () => {} };
 

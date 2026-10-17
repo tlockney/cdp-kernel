@@ -46,7 +46,7 @@ three pieces.
 
 ![A cell's TypeScript goes through esbuild, which strips types, then acorn, which rewrites import declarations into calls to __cdpk.import. Node and Deno run the result with Runtime.evaluate in replMode; Bun, workerd and celld run it inside an async function with top-level names hoisted to globals, and workerd and celld get imports bundled by the host.](images/concepts/cell-pipeline.svg)
 
-### esbuild: TypeScript to JavaScript
+### Stripping types: TypeScript to JavaScript
 
 `transformSync` strips types and compiles JSX in the cell's text
 (`stripTypesMapped` in `src/transform.ts`). As in Deno, it tries the `tsx`
@@ -56,6 +56,14 @@ are mapped onto esbuild's options by `src/deno-config.ts`. The output keeps
 `import` and `export` as written (`verbatimModuleSyntax`), and esbuild's
 source map is what the debugger uses to map lines back to the cell
 ([Debugger](debugger.md)).
+
+esbuild is the default type stripper. `--type-strip sucrase` (or the
+`Kernel`'s `typeStrip` option) uses sucrase instead, which is plain
+JavaScript and needs no native binary. It keeps every line where it was,
+blanking type-only ones. It leaves decorators and `accessor` fields in place
+and drops namespaces, so `src/strip-sucrase.ts` rejects those with a
+`SyntaxError`. An embedder can also pass its own function as `typeStrip`.
+Only the stripper in use is loaded.
 
 ### acorn: module syntax to script syntax
 

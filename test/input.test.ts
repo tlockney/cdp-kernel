@@ -6,6 +6,9 @@ import assert from "node:assert/strict";
 import { BunTarget } from "../src/bun-target.ts";
 import { Target, type TargetEvents, type TargetMessage } from "../src/target.ts";
 import { hasBun } from "./bun.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const launchers = {
   node: (events: TargetEvents) => Target.launch("node", events),

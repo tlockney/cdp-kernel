@@ -23,4 +23,5 @@
 
 export { type ConnectionInfo, Kernel, parseConnectionInfo } from "./kernel.ts";
 export type { RuntimeName } from "./target.ts";
+export { CellSyntaxError, type CellTransformOptions, type JsxOptions, type TypeStripper } from "./transform.ts";
 export { VERSION } from "./package.ts";

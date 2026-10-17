@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import { BunTarget } from "../src/bun-target.ts";
 import { Target, type TargetEvents, type TargetMessage } from "../src/target.ts";
 import { hasBun } from "./bun.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 function within<T>(promise: Promise<T>, what: string, ms = 10_000): Promise<T> {
   let timer: NodeJS.Timeout;

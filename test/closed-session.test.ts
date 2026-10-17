@@ -9,6 +9,9 @@ import { BunTarget } from "../src/bun-target.ts";
 import { Target, type TargetEvents } from "../src/target.ts";
 import { WorkerdTarget } from "../src/workerd-target.ts";
 import { hasBun } from "./bun.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const WORKERD = join(fileURLToPath(new URL("../", import.meta.url)), "node_modules", ".bin", "workerd");
 

@@ -25,7 +25,7 @@ import { build } from "esbuild";
 import { type CdpParams, isRecord } from "./cdp.ts";
 import { parseJsonc } from "./deno-config.ts";
 import { runtimeDir } from "./package.ts";
-import { killOnExit } from "./children.ts";
+import { childPids, killOnExit, reapWith } from "./children.ts";
 import type { TargetEvents } from "./target.ts";
 import type { WsChannel } from "./ws-client.ts";
 import { cellMeta, type WorkerHost, WorkerdTarget } from "./workerd-target.ts";
@@ -133,16 +133,10 @@ function channelOf(ws: WebSocket): WsChannel {
   };
 }
 
-/** celld dev's own children, which run in their own process groups. */
-function childPids(pid: number): number[] {
-  try {
-    return execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" }).split(/\s+/).filter(Boolean).map(Number);
-  } catch {
-    return []; // none
-  }
-}
-
-/** Kills celld dev's node, then the supervisor itself. */
+/**
+ * Kills celld dev's own children, which run in their own process groups,
+ * then the supervisor itself.
+ */
 function killTree(child: ChildProcess): void {
   for (const pid of childPids(child.pid ?? -1)) {
     try {
@@ -229,7 +223,7 @@ class CelldHost implements WorkerHost {
     killOnExit(child, () => {
       killTree(child);
       removeFiles();
-    });
+    }, { dir: projectConfig === null ? dir : undefined });
     // Cell output is captured in the driver; celld's own lines go to the
     // server log.
     // `early` keeps that output for a startup error only, and stops growing
@@ -267,6 +261,8 @@ class CelldHost implements WorkerHost {
     })();
     try {
       const host = new CelldHost(child, await Promise.race([ready, exited]), `celld ${version}`.trim(), projectConfig ?? undefined);
+      // Its server, in its own process group, outlives a SIGKILLed celld dev.
+      for (const pid of childPids(child.pid ?? -1)) reapWith(pid, child);
       starting = false;
       early = "";
       return host;

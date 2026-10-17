@@ -8,6 +8,9 @@ import { type DapMessage, type DebugChannel, Debugger, HASH_SEED } from "../src/
 import { murmur2 } from "../src/murmur2.ts";
 import { Target, type TargetEvents } from "../src/target.ts";
 import type { EvaluateResult } from "../src/cdp.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const hasDeno = spawnSync("deno", ["--version"], { stdio: "ignore" }).status === 0;
 
@@ -195,6 +198,8 @@ test("the debugger's cell files are removed when the kernel exits", () => {
   const script = `
     import { existsSync } from "node:fs";
     import { Debugger } from ${JSON.stringify(new URL("../src/debugger.ts", import.meta.url).href)};
+    import { loadTypeStripper } from ${JSON.stringify(new URL("../src/transform.ts", import.meta.url).href)};
+    await loadTypeStripper("esbuild");
     const dbg = new Debugger(() => {});
     dbg.cellScript("1 + 1", "1 + 1");
     if (!existsSync(dbg.pathFor("1 + 1"))) throw new Error("no cell file");

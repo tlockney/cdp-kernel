@@ -4,6 +4,7 @@
 // would be.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,9 @@ import { join } from "node:path";
 import { bundleProject, compatibilityFlagsFor, findWranglerConfig, PROJECT_MAIN } from "../src/workers-project.ts";
 import { RESTART_NOTE, WorkerdTarget } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
+import { loadTypeStripper } from "../src/transform.ts";
+
+await loadTypeStripper("esbuild");
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 // Miniflare hung on Windows (#32), and the workerd target is unsupported there.
@@ -188,4 +192,38 @@ test("interrupting a busy cell restarts the project's Miniflare, saying so", { s
   assert.ok((await outcome) instanceof Interrupted);
   assert.ok(exitedFirst);
   assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE });
+});
+
+test("the project's workerd goes when the kernel is SIGKILLed", { skip }, async (t) => {
+  const dir = scratch(t);
+  writeProject(dir);
+  const host = join(dir, "host.ts");
+  writeFileSync(
+    host,
+    `import { WorkerdTarget } from ${JSON.stringify(join(REPO, "src", "workerd-target.ts"))};\n` +
+      `await WorkerdTarget.launch({ stream() {}, message() {}, exit() {} }, { cwd: ${JSON.stringify(join(dir, "notebooks"))} });\n` +
+      `console.log("ready");\n`,
+  );
+  const child = spawn(process.execPath, [host], { stdio: ["ignore", "pipe", "ignore"] });
+  t.after(() => child.kill("SIGKILL"));
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.on("data", (chunk: Buffer) => chunk.toString().includes("ready") && resolve());
+    child.once("exit", (code) => reject(new Error(`host exited (${code})`)));
+  });
+  const [workerd] = execFileSync("pgrep", ["-P", String(child.pid), "-f", "workerd serve"], { encoding: "utf8" })
+    .split(/\s+/).filter(Boolean).map(Number);
+  const alive = () => {
+    try {
+      process.kill(workerd, 0);
+      return !/^Z/.test(execFileSync("ps", ["-o", "stat=", "-p", String(workerd)], { encoding: "utf8" }).trim());
+    } catch {
+      return false;
+    }
+  };
+  t.after(() => {
+    if (alive()) process.kill(workerd, "SIGKILL");
+  });
+  child.kill("SIGKILL");
+  for (let i = 0; i < 200 && alive(); i++) await new Promise((r) => setTimeout(r, 25));
+  assert.ok(!alive(), `Miniflare's workerd (${workerd}) outlived the kernel`);
 });

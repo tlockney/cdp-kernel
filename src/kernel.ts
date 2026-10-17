@@ -15,7 +15,14 @@ import { BunTarget } from "./bun-target.ts";
 import { Debugger } from "./debugger.ts";
 import { WorkerdTarget } from "./workerd-target.ts";
 import { launchCelld } from "./celld-target.ts";
-import { type CellTransformOptions, CellSyntaxError, objectLiteralCandidate } from "./transform.ts";
+import {
+  type CellTransformOptions,
+  CellSyntaxError,
+  loadTypeStripper,
+  objectLiteralCandidate,
+  type TypeStripper,
+  type TypeStripperName,
+} from "./transform.ts";
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, inspectTarget, utf16ToCodePointIndex } from "./text.ts";
 import { type HistoryEntry, queryHistory } from "./history.ts";
@@ -94,6 +101,7 @@ export class Kernel {
   readonly #conn: ConnectionInfo;
   readonly #runtime: RuntimeName;
   readonly #denoCompat: boolean;
+  readonly #typeStrip: TypeStripperName | TypeStripper;
   // A Deno target in a Deno project uses its config (#13).
   readonly #project: DenoProject | null;
   #projectWarning: string | null = null;
@@ -132,11 +140,18 @@ export class Kernel {
   constructor(
     conn: ConnectionInfo,
     runtime: RuntimeName,
-    options: { denoCompat?: boolean; /** Defaults to the process cwd, which Jupyter sets. */ notebookDir?: string } = {},
+    options: {
+      denoCompat?: boolean;
+      /** Defaults to the process cwd, which Jupyter sets. */
+      notebookDir?: string;
+      /** What strips cells' types; esbuild by default (#238). */
+      typeStrip?: TypeStripperName | TypeStripper;
+    } = {},
   ) {
     this.#conn = conn;
     this.#runtime = runtime;
     this.#denoCompat = options.denoCompat ?? false;
+    this.#typeStrip = options.typeStrip ?? "esbuild";
     this.#project = runtime === "deno" ? this.#loadProject(options.notebookDir ?? process.cwd()) : null;
     this.#debugger = runtime === "node" || runtime === "deno"
       ? new Debugger((event) => this.#publish("debug_event", event), () => this.#transformOptions())
@@ -162,6 +177,8 @@ export class Kernel {
     }
     // A state dump on stderr, for a kernel that has stopped answering (#237).
     if (process.platform !== "win32") process.on("SIGUSR2", () => void this.#logState());
+    // Transforms are synchronous, so the stripper loads before any cell.
+    if (typeof this.#typeStrip === "string") await loadTypeStripper(this.#typeStrip);
     await Promise.all([this.#loop(this.#shell, (m, p) => this.#handleShell(m, p)),
       this.#loop(this.#control, (m, p) => this.#handleControl(m, p)),
       this.#loop(this.#stdin, (m) => this.#handleStdin(m))]);
@@ -200,7 +217,7 @@ export class Kernel {
   }
 
   #transformOptions(): CellTransformOptions {
-    return this.#project?.transform ?? {};
+    return { ...this.#project?.transform, typeStrip: this.#typeStrip };
   }
 
   // --- comms (#9) ------------------------------------------------------------
