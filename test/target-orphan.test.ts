@@ -1,5 +1,6 @@
 // A Node or Deno runtime exits once its host is gone, even when the host
-// was SIGKILLed and ran no cleanup (#127, #219).
+// was SIGKILLed and ran no cleanup (#127, #219), and even when a cell is in
+// a synchronous loop, so the runtime's own watchdog never runs (#240).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -21,8 +22,8 @@ function alive(pid: number): boolean {
   }
 }
 
-for (const runtime of ["node", "deno"] as const) {
-  test(`a ${runtime} target exits when its host is SIGKILLed`, {
+for (const [runtime, busy] of [["node", false], ["deno", false], ["node", true], ["deno", true]] as const) {
+  test(`a ${runtime} target exits when its host is SIGKILLed${busy ? " during a busy cell" : ""}`, {
     skip: process.platform === "win32" ? "no pgrep" : runtime === "deno" && !hasDeno ? "deno not on PATH" : false,
   }, async (t) => {
     const dir = mkdtempSync(join(tmpdir(), "cdpk-orphan-"));
@@ -31,8 +32,9 @@ for (const runtime of ["node", "deno"] as const) {
     writeFileSync(
       host,
       `import { Target } from ${JSON.stringify(TARGET)};\n` +
-        `await Target.launch(${JSON.stringify(runtime)}, { stream() {}, message() {}, exit() {} });\n` +
-        `console.log("ready");\n`,
+        `const target = await Target.launch(${JSON.stringify(runtime)}, { stream() {}, message() {}, exit() {} });\n` +
+        (busy ? `target.evaluate("for (;;) {}").catch(() => {});\n` : "") +
+        `setTimeout(() => console.log("ready"), ${busy ? 500 : 0});\n`,
     );
     const child = spawn(process.execPath, [host], { stdio: ["ignore", "pipe", "inherit"] });
     t.after(() => child.kill("SIGKILL"));
@@ -40,7 +42,7 @@ for (const runtime of ["node", "deno"] as const) {
       child.stdout.on("data", (chunk: Buffer) => chunk.toString().includes("ready") && resolve());
       child.once("exit", (code) => reject(new Error(`host exited (${code})`)));
     });
-    const [pid] = execFileSync("pgrep", ["-P", String(child.pid)], { encoding: "utf8" }).split(/\s+/).filter(Boolean).map(Number);
+    const [pid] = execFileSync("pgrep", ["-P", String(child.pid), "-f", "bootstrap"], { encoding: "utf8" }).split(/\s+/).filter(Boolean).map(Number);
     t.after(() => {
       if (alive(pid)) process.kill(pid, "SIGKILL");
     });
