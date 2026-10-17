@@ -19,7 +19,8 @@ unless noted below.
 
 ## The kernel isn't in the launcher or kernel picker
 
-1. Run `jupyter kernelspec list`. The cdp-kernel kernels are named
+1. Run `cdp-kernel list` (or `jupyter kernelspec list`). The cdp-kernel
+   kernels are named
    `cdp-node`, `cdp-deno`, `cdp-node-deno`, `cdp-bun`, `cdp-workerd` and
    `cdp-celld`, unless installed with `--name`.
 2. If it's missing, run `cdp-kernel install --runtime <runtime>` again
@@ -38,7 +39,7 @@ The kernelspec records absolute paths: the `node` or `deno` that ran
 `install`, and where the package was installed. After upgrading Node
 (including switching versions with nvm, fnm or similar), Deno or
 cdp-kernel, those paths can stop existing. Re-run `install` for each
-runtime you use. `jupyter kernelspec list` shows each kernelspec's
+runtime you use. `cdp-kernel list` shows each kernelspec's
 directory; its `kernel.json` shows the command Jupyter runs.
 
 On release day, a JSR install can fail with "blocked by the minimum
@@ -113,8 +114,10 @@ from those. To pin versions per notebook instead, use a
 Remove each kernelspec by name, then the package:
 
 ```sh
-jupyter kernelspec remove cdp-node
+cdp-kernel uninstall cdp-node    # or --all for every cdp-kernel kernelspec
 npm uninstall -g @tlockney/cdp-kernel
 ```
+
+`jupyter kernelspec remove cdp-node` works too.
 
 The caches under `~/.cache/cdp-kernel` can be deleted too.

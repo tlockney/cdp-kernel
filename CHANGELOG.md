@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- `cdp-kernel list` and `cdp-kernel uninstall [NAME...] [--all]` list and
+  remove the kernelspecs cdp-kernel installed, without Jupyter. They use
+  the same kernels directory as `install` and leave other kernels'
+  kernelspecs alone
+  ([#249](https://github.com/tlockney/cdp-kernel/issues/249)).
 - `--type-strip sucrase` strips cells' types with sucrase, plain JavaScript,
   instead of esbuild's native binary, and an embedder can pass its own type
   stripper. sucrase is an optional dependency, loaded only when picked; it
