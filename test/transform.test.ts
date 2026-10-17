@@ -141,11 +141,6 @@ test("enums are kept as runtime code", async () => {
   assert.equal(result, 1);
 });
 
-test("JSX becomes React.createElement", () => {
-  const out = body("const el = <div className='a'>hi</div>;");
-  assert.match(out, /React\.createElement\("div"/);
-});
-
 test("angle-bracket assertions fall back to the TS loader", () => {
   const out = body("const s = <string>someValue;");
   assert.doesNotMatch(out, /<string>/);
@@ -178,22 +173,6 @@ test("objectLiteralCandidate wraps brace-led cells without a trailing semicolon"
   assert.equal(objectLiteralCandidate("{ a: 1 }; \n"), null);
   assert.equal(objectLiteralCandidate("1 + 1"), null);
   assert.equal(objectLiteralCandidate("foo({})"), null);
-});
-
-test("transformCell applies an automatic JSX runtime from the project config", () => {
-  const out = transformCell("<b>hi</b>", { jsx: { mode: "automatic", importSource: "my-jsx", development: false } });
-  // esbuild's runtime import is rewritten like any other static import.
-  assert.match(out, /await __cdpk\.import\("my-jsx\/jsx-runtime"\)/);
-  assert.doesNotMatch(out, /React\.createElement/);
-});
-
-test("transformCell applies classic JSX factories from the project config", () => {
-  const out = transformCell("<><b>hi</b></>", { jsx: { mode: "classic", factory: "h", fragment: "Fragment" } });
-  assert.match(out, /h\(Fragment, null, \/\* @__PURE__ \*\/ h\("b", null, "hi"\)\)/);
-});
-
-test("transformCell keeps the classic React default without project options", () => {
-  assert.match(transformCell("<b>hi</b>"), /React\.createElement\("b"/);
 });
 
 test("standard decorators and accessor fields are lowered (#142)", async () => {

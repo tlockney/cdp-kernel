@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // cdp-kernel CLI.
-//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild] [--name NAME] [--display NAME]
-//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild] --conn CONNECTION_FILE
+//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--name NAME] [--display NAME]
+//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild|sucrase] --conn CONNECTION_FILE
 //   cdp-kernel version
 //
 // --deno-compat (Node only) adds a `Deno` namespace for notebooks written for
@@ -75,7 +75,7 @@ if (!isRuntime(runtime)) {
 
 const typeStrip = values["type-strip"];
 if (!isTypeStripperName(typeStrip)) {
-  console.error(`unknown type stripper ${typeStrip}; expected esbuild`);
+  console.error(`unknown type stripper ${typeStrip}; expected esbuild or sucrase`);
   process.exit(2);
 }
 
@@ -108,7 +108,7 @@ switch (positionals[0]) {
     break;
   default:
     console.error(
-      "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version",
+      "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version",
     );
     process.exit(2);
 }
