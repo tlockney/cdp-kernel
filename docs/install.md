@@ -100,11 +100,30 @@ deno run -A jsr:@tlockney/cdp-kernel@0.4.0/cli install --runtime deno \
 
 ## Uninstall
 
-Remove a kernelspec with Jupyter, by the name it was installed under:
+List the kernelspecs cdp-kernel installed, then remove one by the name it
+was installed under. Neither needs Jupyter:
+
+```sh
+cdp-kernel list
+cdp-kernel uninstall cdp-node
+```
+
+`list` prints each kernelspec's name, runtime, the cdp-kernel version that
+wrote it, and its directory. `uninstall` takes one or more names (or
+`--name NAME`); `--all` removes every kernelspec cdp-kernel installed. With
+no name it lists them and removes nothing. Both look only at kernelspecs
+cdp-kernel wrote, in the [kernels directory](#files-and-environment) that
+`install` uses, so set `JUPYTER_DATA_DIR` the same way. Kernelspecs from
+other kernels are left alone. From a JSR install, run them as
+`deno run -A jsr:@tlockney/cdp-kernel/cli list` and so on.
+
+With Jupyter or Ganymede installed, these do the same:
 
 ```sh
 jupyter kernelspec list
 jupyter kernelspec remove cdp-node
+ganymede kernelspec list
+ganymede kernelspec remove cdp-node
 ```
 
 Then `npm uninstall -g @tlockney/cdp-kernel` for an npm install. A JSR
@@ -139,7 +158,7 @@ Environment variables the kernel reads:
 
 | Variable | Effect |
 | --- | --- |
-| `JUPYTER_DATA_DIR` | Where `install` writes the kernelspec (see above). |
+| `JUPYTER_DATA_DIR` | Where `install` writes the kernelspec, and where `list` and `uninstall` look (see above). |
 | `XDG_DATA_HOME` | Base of the Linux kernels directory when `JUPYTER_DATA_DIR` isn't set. |
 | `XDG_CACHE_HOME` | Base of all three caches. |
 | `CDPK_CACHE_DIR` | Directory of the npm package cache. |
