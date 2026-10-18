@@ -6,6 +6,10 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The landing page has a "Notebooks without Python" section linking to
+  [Ganymede](https://ganymede-server.com), a Rust Jupyter server that
+  serves JupyterLab with no Python installed
+  ([#325](https://github.com/tlockney/cdp-kernel/issues/325)).
 - CI runs the browser target's test (`test/browser.test.ts`) in
   Playwright's Chromium, WebKit and Firefox; until now it was skipped
   everywhere. `CDPK_BROWSER` picks the engine when running it locally
