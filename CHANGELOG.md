@@ -47,6 +47,9 @@ Issue and pull request numbers refer to
   own cache, found with `deno info`; nothing new is fetched for completion.
   On Bun, `npm:`/`jsr:` types come from Bun's install cache
   ([#275](https://github.com/tlockney/cdp-kernel/issues/275)).
+- The docs describe typed completion and inspection, where types come
+  from, their cost and limits, and `--no-language-service`
+  ([#276](https://github.com/tlockney/cdp-kernel/issues/276)).
 - Node 22.18+ is supported as the host and as a target; `engines` was
   `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
   a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and
