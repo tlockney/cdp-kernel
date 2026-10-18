@@ -6,6 +6,19 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Completion knows declared types: TypeScript's language service runs over
+  the executed cells plus the one being edited, so `x.` lists a typed
+  value's members even before it has a value, completion works inside
+  expressions (`[1, 2].map((n) => n.toF`), and `npm:`/`jsr:` imports
+  complete from their declarations. Runtime-only names are still listed
+  after the typed ones, and JupyterLab shows each match's kind. The service
+  runs in a worker thread started on the first completion (that first
+  request is answered from the runtime alone) and ended after 10 minutes
+  without one; it takes about 150 MB while running. Node targets get
+  `@types/node` from the notebook's project, or installed once into the
+  per-user npm cache. `--no-language-service` turns it off. `typescript` is
+  now a dependency
+  ([#273](https://github.com/tlockney/cdp-kernel/issues/273)).
 - Node 22.18+ is supported as the host and as a target; `engines` was
   `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
   a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and

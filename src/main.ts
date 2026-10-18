@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // cdp-kernel CLI.
-//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--name NAME] [--display NAME]
-//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild|sucrase] --conn CONNECTION_FILE
+//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] [--name NAME] [--display NAME]
+//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] --conn CONNECTION_FILE
 //   cdp-kernel list
 //   cdp-kernel uninstall [NAME...] [--name NAME] [--all]
 //   cdp-kernel version
 //
 // --deno-compat (Node only) adds a `Deno` namespace for notebooks written for
 // `deno jupyter`; see runtime/deno-compat.mjs. --type-strip picks what
-// removes cells' types (src/transform.ts).
+// removes cells' types (src/transform.ts). --no-language-service turns off
+// typed completion (src/language-service.ts), which costs about 150 MB
+// while in use.
 
 import process from "node:process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -31,7 +33,14 @@ function kernelsDir(): string {
   return join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "jupyter", "kernels");
 }
 
-function install(runtime: RuntimeName, denoCompat: boolean, typeStrip: TypeStripperName, name: string, display: string): void {
+function install(
+  runtime: RuntimeName,
+  denoCompat: boolean,
+  typeStrip: TypeStripperName,
+  languageService: boolean,
+  name: string,
+  display: string,
+): void {
   const dir = join(kernelsDir(), name);
   mkdirSync(dir, { recursive: true });
   const spec = {
@@ -41,6 +50,7 @@ function install(runtime: RuntimeName, denoCompat: boolean, typeStrip: TypeStrip
       runtime,
       ...(denoCompat ? ["--deno-compat"] : []),
       ...(typeStrip !== "esbuild" ? ["--type-strip", typeStrip] : []),
+      ...(languageService ? [] : ["--no-language-service"]),
       "--conn",
       "{connection_file}",
     ]),
@@ -146,6 +156,7 @@ const { positionals, values } = parseArgs({
     all: { type: "boolean", default: false },
     "deno-compat": { type: "boolean", default: false },
     "type-strip": { type: "string", default: "esbuild" },
+    "no-language-service": { type: "boolean", default: false },
   },
 });
 
@@ -161,6 +172,8 @@ if (!isTypeStripperName(typeStrip)) {
   process.exit(2);
 }
 
+const languageService = values["no-language-service"] !== true;
+
 // Deno targets have the real namespace; the shim is for Node.
 const denoCompat = values["deno-compat"] === true && runtime === "node";
 
@@ -171,6 +184,7 @@ switch (positionals[0]) {
       runtime,
       denoCompat,
       typeStrip,
+      languageService,
       values.name ?? `cdp-${runtime}${suffix}`,
       values.display ?? `TypeScript (cdp-kernel, ${runtime}${denoCompat ? ", Deno compat" : ""})`,
     );
@@ -181,7 +195,7 @@ switch (positionals[0]) {
       console.error("kernel: --conn CONNECTION_FILE is required");
       process.exit(2);
     }
-    const kernel = new Kernel(parseConnectionInfo(readFileSync(values.conn, "utf8")), runtime, { denoCompat, typeStrip });
+    const kernel = new Kernel(parseConnectionInfo(readFileSync(values.conn, "utf8")), runtime, { denoCompat, typeStrip, languageService });
     await kernel.run();
     break;
   }
@@ -196,7 +210,7 @@ switch (positionals[0]) {
     break;
   default:
     console.error(
-      "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version",
+      "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version",
     );
     process.exit(2);
 }
