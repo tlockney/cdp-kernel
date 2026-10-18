@@ -6,6 +6,15 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- With the debugger's "caught exceptions" filter on, a debug console
+  expression that throws (a typo is enough) no longer pauses the target in
+  the kernel's own call. On Node the request hung until Continue; on Deno
+  the pause ended by itself and the runtime then ran no timers or
+  immediates, so every later cell hung. The kernel's own inspector calls
+  (debug console, rich variable view, Shift-Tab, error descriptions) now
+  run with exception pauses held off
+  ([#307](https://github.com/tlockney/cdp-kernel/issues/307)).
+
 - Notebook output on the docs site reads in dark mode: the MoMA example's
   wall labels set their own text color, SVG charts sit on a light panel,
   and the scrubber widget's year labels follow the page's text color

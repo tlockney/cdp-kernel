@@ -359,6 +359,9 @@ export class Target implements KernelTarget {
   #undelivered = 0;
   #interrupted = false;
   #paused = false;
+  /** What the debugger asked to pause on (#307), and how many kernel calls hold it off. */
+  #pauseOnExceptions = "none";
+  #unpausable = 0;
   /** Set once the main context is gone: the runtime is exiting (#130). */
   #exiting = false;
   readonly #exited: Promise<void>;
@@ -547,11 +550,38 @@ export class Target implements KernelTarget {
   /** The Debugger domain on this target's session, for src/debugger.ts. */
   get debug(): DebugChannel {
     return {
-      send: (method, params = {}) => this.#shell.send(method, params),
+      send: (method, params = {}) => {
+        if (method === "Debugger.setPauseOnExceptions") {
+          this.#pauseOnExceptions = String(params.state ?? "none");
+          // Applied when the kernel's own call in flight finishes.
+          if (this.#unpausable > 0) return Promise.resolve({});
+        }
+        if (method === "Debugger.disable") this.#pauseOnExceptions = "none";
+        return this.#shell.send(method, params);
+      },
       on: (method, listener) => this.#shell.on(method, listener),
       contextId: this.#contextId,
       baselineGlobals: this.#baselineGlobals,
+      withoutPausing: (call) => this.#withoutPausing(call),
     };
+  }
+
+  /**
+   * Runs the kernel's own inspector call with pausing on exceptions off. A
+   * pause inside a call the inspector dispatches holds that call (Node), or
+   * resumes by itself and leaves Deno's event loop stopped for good, so no
+   * later cell runs (#307). A cell that throws meanwhile doesn't pause.
+   */
+  async #withoutPausing<T>(call: () => Promise<T>): Promise<T> {
+    if (this.#pauseOnExceptions === "none" || this.#paused) return call();
+    if (this.#unpausable++ === 0) await this.#shell.send("Debugger.setPauseOnExceptions", { state: "none" });
+    try {
+      return await call();
+    } finally {
+      if (--this.#unpausable === 0 && !this.#exiting) {
+        await this.#shell.send("Debugger.setPauseOnExceptions", { state: this.#pauseOnExceptions }).catch(() => {});
+      }
+    }
   }
 
   // Messages wait until both pipes have caught up to their marker,
@@ -708,12 +738,14 @@ export class Target implements KernelTarget {
    * even a plain return value in a promise it holds only weakly (#55).
    */
   callFunctionOn(functionDeclaration: string, args: CdpParams[]): Promise<CdpParams> {
-    return this.#shell.send("Runtime.callFunctionOn", {
-      functionDeclaration,
-      arguments: args,
-      executionContextId: this.#contextId,
-      returnByValue: true,
-    });
+    return this.#withoutPausing(() =>
+      this.#shell.send("Runtime.callFunctionOn", {
+        functionDeclaration,
+        arguments: args,
+        executionContextId: this.#contextId,
+        returnByValue: true,
+      })
+    );
   }
 
   /**
