@@ -27,6 +27,11 @@ cdp-kernel install --runtime celld
 The kernelspec records the absolute paths of `node` and the installed
 package. Re-run `install` after upgrading either.
 
+npm 11 may warn that esbuild's postinstall script is "not yet covered by
+allowScripts". cdp-kernel works without that script, so you can ignore
+the warning; allowing it (`npm install -g --allow-scripts=esbuild …`)
+does no harm either.
+
 ## From JSR
 
 The host runs on Deno:
