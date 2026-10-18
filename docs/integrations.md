@@ -41,7 +41,7 @@ runtime evaluating cells can be something other than Deno.
   `cdp-kernel kernel --runtime <name> --conn <file>` (`src/main.ts`). It
   runs on Node 22.18+ or Deno, whichever the package was installed with. It
   speaks ZMTP and the wire protocol itself (`src/zmtp.ts`, `src/wire.ts`;
-  no libzmq), handles each request (`src/kernel.ts`), and turns cells into
+  no libzmq), handles each request (`src/kernel-core.ts`), and turns cells into
   scripts (`src/transform.ts`).
 - **The target** is the runtime your cells run in. The host starts it as a
   child process as soon as the host itself starts, and talks to it through a

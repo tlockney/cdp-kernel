@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## 0.6.0 (2026-10-18)
 
+- Experimental: the kernel runs in a web page, with cells in a Web Worker
+  and `npm:` imports from esm.sh. `scripts/build-browser.mjs` bundles it;
+  [The browser](https://cdp-kernel.org/docs/integration-browser) says what
+  works. The kernel's message handling moved to `src/kernel-core.ts`,
+  which has no Node imports; the kernel process is unchanged.
 - Node and Deno targets no longer keep the data of every comm message from
   the frontend, so dragging a widget's slider for a while doesn't grow the
   runtime. V8 kept each message as compiled source; messages now reach the
