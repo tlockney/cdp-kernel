@@ -9,6 +9,8 @@
 import { Buffer } from "node:buffer";
 import { createServer, type Server, type Socket } from "node:net";
 import { randomBytes } from "node:crypto";
+import process from "node:process";
+import { portHolders } from "./port-holder.ts";
 
 const ENC = new TextEncoder();
 
@@ -169,6 +171,14 @@ function listen(port: number, host: string, onConn: (socket: Socket) => void): S
   const deadline = Date.now() + LISTEN_RETRY_MS;
   const onError = (err: Error & { code?: string }) => {
     if (err.code !== "EADDRINUSE" || Date.now() >= deadline) {
+      // Who kept it, for a port that never came free (#257).
+      if (err.code === "EADDRINUSE") {
+        const holders = portHolders(port).map((line) => `  ${line}\n`).join("") || "  unknown\n";
+        process.stderr.write(
+          `[cdp-kernel] port ${port} still in use after ${LISTEN_RETRY_MS} ms; this kernel is pid ${process.pid} ` +
+            `(ppid ${process.ppid}, ${process.execPath} ${process.version}); the port's sockets:\n${holders}`,
+        );
+      }
       server.off("error", onError);
       server.emit("error", err);
       return;
