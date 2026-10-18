@@ -28,6 +28,10 @@ test("StderrFilter drops a notice split across chunks", () => {
   assert.equal(cutEscape.join(""), "");
 });
 
+test("StderrFilter drops Deno's notice for each inspector session (#281)", () => {
+  assert.equal(run("deno", ["Debugger session started.\nDebugger session started.\nasdf\n"]).join(""), "asdf\n");
+});
+
 test("StderrFilter keeps Download lines on Node", () => {
   assert.equal(run("node", ["Download https://x\n"]).join(""), "Download https://x\n");
 });

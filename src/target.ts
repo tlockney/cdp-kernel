@@ -68,7 +68,9 @@ const INSPECTOR_CHATTER = [
   "Visit chrome://inspect",
   "Waiting for the debugger to disconnect",
 ];
-const DENO_CHATTER = [...INSPECTOR_CHATTER, "Download http://", "Download https://"];
+// Deno prints "Debugger session started." for each session the host opens
+// (#281).
+const DENO_CHATTER = [...INSPECTOR_CHATTER, "Debugger session started.", "Download http://", "Download https://"];
 const ANSI_SGR = /\x1b\[[0-9;]*m/g;
 /** A colour code cut off at the end of a chunk. */
 const PARTIAL_SGR = /\x1b(?:\[[0-9;]*)?$/;
