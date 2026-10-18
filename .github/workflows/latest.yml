@@ -1,0 +1,98 @@
+name: latest runtimes
+# The kernel relies on runtime behaviour found by probing rather than
+# documented (#15), and ci.yml tests pinned or range-resolved versions. This
+# runs the unit tests and the e2e suite against the newest release of every
+# runtime each night, so a release that breaks the kernel is found here
+# rather than by a user (#259). Not a required check: it runs on a schedule,
+# not on PRs.
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        channel: [latest]
+        include:
+          # Node nightly, Deno canary and Bun canary: early warning only, so
+          # a failure here neither fails the run nor opens an issue.
+          - os: ubuntu-latest
+            channel: next
+            experimental: true
+    name: test (${{ matrix.os }}, ${{ matrix.channel }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental == true }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.channel == 'next' && 'nightly' || 'latest' }}
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
+      - name: celld
+        run: |
+          case "$RUNNER_OS" in
+            Linux) asset=celld-x86_64-unknown-linux-gnu.gz ;;
+            macOS) asset=celld-aarch64-apple-darwin.gz ;;
+          esac
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/denoland/celld/releases/latest/download/$asset" | gunzip > "$HOME/.local/bin/celld"
+          chmod +x "$HOME/.local/bin/celld"
+      - run: npm ci
+      # workerd and wrangler (whose Miniflare runs Workers projects) are
+      # pinned dev dependencies; take their newest releases instead.
+      - run: npm install --no-save --no-audit --no-fund workerd@latest wrangler@latest
+      - name: Versions
+        run: |
+          {
+            echo "### ${{ matrix.os }}, ${{ matrix.channel }}"
+            echo
+            echo "| Runtime | Version |"
+            echo "|---|---|"
+            echo "| Node | $(node --version) |"
+            echo "| Deno | $(deno --version | head -1) |"
+            echo "| Bun | $(bun --version) |"
+            echo "| workerd | $(node_modules/.bin/workerd --version) |"
+            echo "| wrangler | $(node_modules/.bin/wrangler --version | tail -1) |"
+            echo "| celld | $("$HOME/.local/bin/celld" --version) |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: npm run check
+      - run: npm test
+        timeout-minutes: 10
+      - run: npm run e2e
+        timeout-minutes: 10
+
+  # A failed nightly run opens an issue, or comments on the one still open,
+  # so a breaking release doesn't sit unnoticed on the Actions page.
+  report:
+    needs: test
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: "Nightly run against the latest runtime releases failed"
+      RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          body="The [latest runtimes run]($RUN) failed. Its summary lists the runtime versions it tested."
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Failed again: $RUN"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi
