@@ -6,6 +6,12 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- `kernel_info_request` on shell is answered without waiting for the
+  runtime to start, so clients probing during a slow start get one reply
+  instead of queuing more. Until the runtime is up, the banner leaves out
+  its versions. `interrupt_reply` now waits at most 1 s for the runtime,
+  under the 5 s clients allow control requests
+  ([#253](https://github.com/tlockney/cdp-kernel/issues/253)).
 - `cdp-kernel list` and `cdp-kernel uninstall [NAME...] [--all]` list and
   remove the kernelspecs cdp-kernel installed, without Jupyter. They use
   the same kernels directory as `install` and leave other kernels'

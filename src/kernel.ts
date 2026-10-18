@@ -70,8 +70,11 @@ export function parseConnectionInfo(json: string): ConnectionInfo {
   };
 }
 
-/** How long interrupt_request may wait on the target before it's answered anyway (#121). */
-const INTERRUPT_REPLY_WAIT_MS = 5_000;
+/**
+ * How long interrupt_request may wait on the target before it's answered
+ * anyway (#121). Under the 5 s clients allow control requests (#253).
+ */
+const INTERRUPT_REPLY_WAIT_MS = 1_000;
 
 /** The answer to a target's prompt: a value, or "unwind the cell" (#121). */
 interface InputAnswer {
@@ -414,7 +417,8 @@ export class Kernel {
         codemirror_mode: "typescript",
         nbconvert_exporter: "script",
       },
-      banner: `cdp-kernel on ${this.#runtime} ${versions?.runtime ?? ""} (${versions?.engine || "?"})`,
+      // The runtime's versions are known once it is up.
+      banner: versions ? `cdp-kernel on ${this.#runtime} ${versions.runtime} (${versions.engine || "?"})` : `cdp-kernel on ${this.#runtime}`,
       help_links: [],
       debugger: this.#debugger !== null,
       // What current ipykernel advertises; JupyterLab itself goes by the
@@ -485,7 +489,8 @@ export class Kernel {
     try {
       switch (type) {
         case "kernel_info_request":
-          await this.#ensureTarget().catch(() => null);
+          // Without waiting for the runtime: clients probe with kernel_info
+          // while it starts, and re-send until answered (#253).
           this.#reply(this.#shell, peer, msg, "kernel_info_reply", this.#kernelInfo());
           break;
         case "complete_request":
