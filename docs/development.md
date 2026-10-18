@@ -88,26 +88,30 @@ part of the bump. To release:
 
 1. Bump all three, and set `RELEASE_DATE` in `src/package.ts` to today
    (UTC). Commit, and merge to `main` by a PR.
-2. Start the `release` workflow from the Actions tab (or
-   `gh workflow run release.yml -f version=0.5.1`) with the new version. It
-   checks that `main` has that version, its changelog entry and a current
-   `RELEASE_DATE`, and that the tag doesn't exist yet. Then it tags `main`
-   and starts the `publish` workflow on the tag.
+2. Start the `publish` workflow on `main` from the Actions tab with the
+   new version (or `gh workflow run publish.yml --ref main -f version=0.5.1`).
+   Whoever starts it must be a member of the `@tlockney` scope on JSR,
+   which only accepts a publish run started by a scope member. A run that
+   another workflow starts has `github-actions[bot]` as its actor and fails
+   at the JSR step (#315).
 
    Pushing the tag from a checkout instead
    (`git tag -a v0.5.1 -m v0.5.1 && git push origin v0.5.1`) starts the
-   `publish` workflow the same way.
+   `publish` workflow on the tag.
 
 The `publish` workflow then:
 
-1. Checks that the tag matches the version, and that `RELEASE_DATE` is
-   today or yesterday. A JSR kernelspec's dependency cutoff comes from that
-   date, so a stale one would block the release it ships in.
+1. Checks that the version matches `package.json` and has a changelog
+   entry, that its tag doesn't exist yet (when started with a version), and
+   that `RELEASE_DATE` is today or yesterday. A JSR kernelspec's dependency
+   cutoff comes from that date, so a stale one would block the release it
+   ships in.
 2. Runs the whole CI workflow (`ci.yml`): the type check, unit tests and
    e2e suite on every matrix cell, the e2e suite against the packed npm
    tarball and against a Deno host, `deno publish --dry-run`, and the
    JupyterLab widget test (`lab`).
-3. Once both checks pass, publishes to JSR (`deno publish`) and to npm
+3. Once both checks pass, tags the commit (when started with a version),
+   then publishes to JSR (`deno publish`) and to npm
    (`npm publish`), in two jobs that run in parallel.
 
 Both registries authenticate the workflow through GitHub OIDC, so no tokens
