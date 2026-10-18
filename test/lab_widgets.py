@@ -250,11 +250,14 @@ def check(runtime, port):
             button_is(page, "count is 10")
             print("after kernel set(10):", page.evaluate(BUTTON_TEXT))
 
-            # Shift-Tab after "add(" shows the inspect_reply as a tooltip.
+            # Shift-Tab after "add(" shows the inspect_reply as a tooltip. It
+            # reads "Signature: add(a, b)" from the runtime, or "function
+            # add(a: any, b: any): any" once the language service answers
+            # within its budget (#263), which depends on how warm it is.
             run_cell(page, 3)
             page.evaluate(CURSOR_AT_END, 4)
             page.keyboard.press("Shift+Tab")
-            tooltip = wait_until(page, f"() => {{ const t = ({TOOLTIP_TEXT})(); return t.includes('Signature: add(a, b)') ? t : '' }}",
+            tooltip = wait_until(page, f"() => {{ const t = ({TOOLTIP_TEXT})(); return /Signature: add\\(a, b\\)|function add\\(a: any, b: any\\)/.test(t) ? t : '' }}",
                                  timeout=20, what="the Shift-Tab tooltip")
             print("tooltip:", tooltip.splitlines()[:2])
 
