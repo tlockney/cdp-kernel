@@ -1,0 +1,43 @@
+name: bench
+# Startup and per-cell latency of each runtime (#265), as a trend: runner
+# timings are noisy, so this never gates a merge. The medians go to the
+# job summary and every sample to the bench-results artifact.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, so a quiet week still gets a point
+  workflow_dispatch:
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: astral-sh/setup-uv@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.x # docs/install.md names the tested Bun
+      # celld isn't on npm; its installer puts it in ~/.local/bin, where the
+      # kernel looks first (#25).
+      - name: celld
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz | gunzip > "$HOME/.local/bin/celld"
+          chmod +x "$HOME/.local/bin/celld"
+          "$HOME/.local/bin/celld" --version
+      - run: npm ci
+      - run: npm run bench -- --json "$RUNNER_TEMP/bench.json"
+        timeout-minutes: 20
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: ${{ runner.temp }}/bench.json
+          if-no-files-found: ignore

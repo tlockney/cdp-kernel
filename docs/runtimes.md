@@ -104,6 +104,44 @@ work as on workerd. State stays in `.celld/cdp-kernel` across kernels,
 beside `celld dev`'s own `.celld/dev`. `assets`, `triggers`, `containers`
 and `.dev.vars` aren't copied.
 
+## Startup and latency
+
+Medians from `npm run bench` (`test/bench.py`): five fresh kernels per
+runtime after a warm-up kernel, and 20 round trips per kernel for the cell
+columns.
+
+| Runtime | Launch to `kernel_info_reply` | Launch to first cell reply | Trivial cell | `display` cell | First `npm:` import (cached) | Interrupt a busy cell, to next reply |
+|---|---|---|---|---|---|---|
+| Node | 204 ms | 336 ms | 48 ms | 48 ms | 52 ms | 55 ms |
+| Deno | 196 ms | 331 ms | 52 ms | 48 ms | 61 ms | 56 ms |
+| Bun | 189 ms | 231 ms | 3 ms | 3 ms | 8 ms | 546 ms (restarts) |
+| workerd | 289 ms | 329 ms | 3 ms | 3 ms | 20 ms | 582 ms (restarts) |
+| celld | 211 ms | 362 ms | 3 ms | 3 ms | 11 ms | 667 ms (restarts) |
+
+Measured on 2026-10-18 on Linux x86_64, a 4-core Intel Xeon at 2.10 GHz,
+with Node 26.12.0 as the host and Node target, Deno 2.9.6, Bun 1.4.2,
+workerd 2026-10-15 and celld 0.6.2.
+
+- **Launch to `kernel_info_reply`** is the host process starting. The
+  kernel answers before it starts the target, so this is the same for
+  every runtime.
+- **Launch to first cell reply** adds starting the target and running a
+  cell. It's what you wait for after opening a notebook or restarting.
+- **Trivial cell** (`1`) and **`display` cell** (`await
+  jupyter.display(...)`) are round trips from sending the cell to the
+  kernel going idle. On Node and Deno each output costs about 40 ms more
+  than it should ([#271](https://github.com/tlockney/cdp-kernel/issues/271)).
+- **First `npm:` import** is the first import of `npm:is-odd` in a kernel,
+  with the package already downloaded.
+- **Interrupt a busy cell** is from interrupting `while (true) {}` to the
+  next cell's reply. Bun, workerd and celld restart the target to stop it
+  (and lose the notebook's state); Node and Deno stop it in place.
+
+Your numbers will differ with the machine. The `bench` workflow runs the
+same script on GitHub's Ubuntu runners on every push to `main` and weekly,
+and puts its table in the run's summary. Runner timings are noisy, so
+compare them as a trend.
+
 ## On a shared machine
 
 Cells run as you, with your full permissions: a notebook can read and
