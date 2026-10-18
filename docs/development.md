@@ -49,6 +49,20 @@ completion, and `update_display_data`. Set `CDPK_E2E_OFFLINE=1` to skip the
 registry-dependent checks. Set `CDPK_E2E_CLI` to run it through a different
 CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
 
+### Latest runtime releases
+
+CI tests the versions `ci.yml` names. The `latest runtimes` workflow runs
+the type check, unit tests and e2e suite each night against the newest
+release of Node, Deno, Bun, workerd, wrangler and celld, on Linux and
+macOS, so a runtime release that breaks the kernel shows up before a user
+finds it. Its run summary lists the versions it tested. A failed nightly
+run opens an issue, or comments on the one still open.
+
+One more cell runs Node nightly, Deno canary and Bun canary as an early
+warning; its failures don't fail the run or open an issue. Start the
+workflow by hand from the Actions tab (or `gh workflow run latest.yml`)
+to check a release the day it ships.
+
 ## Releasing
 
 One version number lives in three places: `package.json`, `deno.jsonc` and

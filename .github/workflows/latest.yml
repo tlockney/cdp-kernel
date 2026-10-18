@@ -1,0 +1,126 @@
+name: latest runtimes
+# The kernel relies on runtime behaviour found by probing rather than
+# documented (#15), and ci.yml tests pinned or range-resolved versions. This
+# runs the unit tests and the e2e suite against the newest release of every
+# runtime each night, so a release that breaks the kernel is found here
+# rather than by a user (#259). Not a required check: it runs on a schedule,
+# and on PRs only when this file changes.
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+  # A change to this file is tried on its PR, since a schedule only runs
+  # from main.
+  pull_request:
+    paths: [.github/workflows/latest.yml]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        channel: [latest]
+        include:
+          # Node nightly, Deno canary and Bun canary: early warning only. Its
+          # test steps may fail without failing the job, so the run (and a
+          # PR's checks) stay green and no issue is opened; a failure shows
+          # as a warning on the run instead.
+          - os: ubuntu-latest
+            channel: next
+            experimental: true
+    name: test (${{ matrix.os }}, ${{ matrix.channel }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      # setup-node takes nightlies by major ("27-nightly"): the newest one's.
+      - name: Node nightly major
+        id: nightly
+        if: matrix.channel == 'next'
+        run: |
+          major=$(curl -fsSL https://nodejs.org/download/nightly/index.json | jq -r '.[0].version' | sed -E 's/^v([0-9]+).*/\1/')
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.channel == 'next' && format('{0}-nightly', steps.nightly.outputs.major) || 'latest' }}
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
+      - name: celld
+        run: |
+          case "$RUNNER_OS" in
+            Linux) asset=celld-x86_64-unknown-linux-gnu.gz ;;
+            macOS) asset=celld-aarch64-apple-darwin.gz ;;
+          esac
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/denoland/celld/releases/latest/download/$asset" | gunzip > "$HOME/.local/bin/celld"
+          chmod +x "$HOME/.local/bin/celld"
+      - run: npm ci
+      # workerd and wrangler (whose Miniflare runs Workers projects) are
+      # pinned dev dependencies; take their newest releases instead.
+      - run: npm install --no-save --no-audit --no-fund workerd@latest wrangler@latest
+      - name: Versions
+        run: |
+          {
+            echo "### ${{ matrix.os }}, ${{ matrix.channel }}"
+            echo
+            echo "| Runtime | Version |"
+            echo "|---|---|"
+            echo "| Node | $(node --version) |"
+            echo "| Deno | $(deno --version | head -1) |"
+            echo "| Bun | $(bun --version) |"
+            echo "| workerd | $(node_modules/.bin/workerd --version) |"
+            echo "| wrangler | $(node_modules/.bin/wrangler --version | tail -1) |"
+            echo "| celld | $("$HOME/.local/bin/celld" --version) |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - id: check
+        run: npm run check
+        continue-on-error: ${{ matrix.experimental == true }}
+      - id: unit
+        run: npm test
+        timeout-minutes: 10
+        continue-on-error: ${{ matrix.experimental == true }}
+      - id: e2e
+        run: npm run e2e
+        timeout-minutes: 10
+        continue-on-error: ${{ matrix.experimental == true }}
+      - name: Early-warning result
+        if: matrix.experimental
+        run: |
+          for step in "check:${{ steps.check.outcome }}" "test:${{ steps.unit.outcome }}" "e2e:${{ steps.e2e.outcome }}"; do
+            name=${step%%:*} outcome=${step#*:}
+            if [ "$outcome" != success ]; then
+              echo "::warning::npm run $name: $outcome on Node nightly / Deno canary / Bun canary"
+              echo "- \`npm run $name\`: $outcome" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+  # A failed nightly run opens an issue, or comments on the one still open,
+  # so a breaking release doesn't sit unnoticed on the Actions page.
+  report:
+    needs: test
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: "Nightly run against the latest runtime releases failed"
+      RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          body="The [latest runtimes run]($RUN) failed. Its summary lists the runtime versions it tested."
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Failed again: $RUN"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi
