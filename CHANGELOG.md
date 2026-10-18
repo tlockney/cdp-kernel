@@ -6,6 +6,10 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- CI runs the browser target's test (`test/browser.test.ts`) in
+  Playwright's Chromium, WebKit and Firefox; until now it was skipped
+  everywhere. `CDPK_BROWSER` picks the engine when running it locally
+  ([#319](https://github.com/tlockney/cdp-kernel/issues/319)).
 - With the debugger's "caught exceptions" filter on, a debug console
   expression that throws (a typo is enough) no longer pauses the target in
   the kernel's own call. On Node the request hung until Continue; on Deno

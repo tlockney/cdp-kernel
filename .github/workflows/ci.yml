@@ -91,6 +91,27 @@ jobs:
       - run: docker run --rm -v "$PWD/container:/test:ro" cdp-kernel python /test/smoke-test.py
         timeout-minutes: 10
 
+  # The browser target (src/browser/, test/browser.test.ts) in each of
+  # Playwright's engines. The test is skipped without the playwright
+  # package, which isn't a dependency, so no other job runs it (#319).
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - run: npm ci
+      - run: npm install --no-save --no-audit --no-fund playwright@1.56.1
+      - run: npx playwright install --with-deps chromium webkit firefox
+      - run: CDPK_BROWSER=chromium node --test test/browser.test.ts
+        timeout-minutes: 5
+      - run: CDPK_BROWSER=webkit node --test test/browser.test.ts
+        timeout-minutes: 5
+      - run: CDPK_BROWSER=firefox node --test test/browser.test.ts
+        timeout-minutes: 5
+
   # No Windows job: Windows isn't supported yet, and is its own issue (#32).
 
   # Widgets against the real frontend: JupyterLab with the anywidget
