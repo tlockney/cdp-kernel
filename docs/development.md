@@ -63,6 +63,21 @@ warning; its failures don't fail the run or open an issue. Start the
 workflow by hand from the Actions tab (or `gh workflow run latest.yml`)
 to check a release the day it ships.
 
+### Soak test
+
+`npm run soak` holds one kernel per runtime (Node, Deno, Bun, workerd and
+celld; name some to run only those) through 2000 requests in a seeded
+random mix: plain cells, console output, `display` and `update_display`,
+1 MiB text, PNG results up to 512 KiB, comm messages with binary buffers
+up to 1 MiB, `prompt()`, timers, thrown errors, `kernel_info` and
+interrupts. It checks every reply and output, that state kept across cells
+survives, and that the kernel still answers and runs timers at the end. It
+fails if the host's or the target's resident memory grows by more than
+200 MiB between the session's second fifth and its end.
+`CDPK_SOAK_CELLS`, `CDPK_SOAK_SEED` and `CDPK_SOAK_MAX_GROWTH_MB` change
+those numbers. The `soak` workflow runs it weekly and can be started from
+the Actions tab with a request count.
+
 ## Releasing
 
 One version number lives in three places: `package.json`, `deno.jsonc` and
