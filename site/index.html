@@ -40,15 +40,20 @@
       <div class="tabs" role="tablist">
         <button role="tab" aria-selected="true" data-tab="npm">npm</button>
         <button role="tab" aria-selected="false" data-tab="jsr">JSR</button>
+        <button role="tab" aria-selected="false" data-tab="docker">Docker</button>
       </div>
       <pre data-panel="npm"><code><span class="c"># Node 24+ host</span>
 npm install -g @tlockney/cdp-kernel
 cdp-kernel install --runtime node   <span class="c"># or deno, bun, workerd, celld</span></code></pre>
       <pre data-panel="jsr" hidden><code><span class="c"># Deno host</span>
 deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
+      <pre data-panel="docker" hidden><code><span class="c"># JupyterLab, every runtime, the examples</span>
+docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel</code></pre>
     </div>
     <div class="cta">
       <a class="btn primary" href="docs/install">Install guide</a>
+      <a class="btn" href="https://mybinder.org/v2/gh/tlockney/cdp-kernel/main?urlpath=lab/tree/getting-started.ipynb">Try it on Binder</a>
+      <a class="btn" href="https://codespaces.new/tlockney/cdp-kernel?quickstart=1">Open in Codespaces</a>
       <a class="btn" href="https://github.com/tlockney/cdp-kernel">View on GitHub</a>
     </div>
   </div>

@@ -11,6 +11,22 @@
 - The debugger is for Node and Deno targets only. Breakpoints are per line,
   conditional breakpoints and logpoints aren't supported, variables can't be
   set from the debugger, and "copy to globals" isn't offered.
+- Under [Ganymede](https://ganymede-server.com/docs/workstation), the
+  Python-free Jupyter server, notebooks behave as under `jupyter lab`,
+  with Ganymede's own
+  [known gaps](https://github.com/tlockney/ganymede/blob/main/docs/known-gaps.md).
+  The ones a cdp-kernel user meets:
+  - A kernel that crashes is reported and removed, not restarted
+    automatically.
+  - No terminals, and no export to HTML or PDF.
+  - Ganymede ships a Windows binary, but cdp-kernel doesn't support
+    Windows yet ([#32](https://github.com/tlockney/cdp-kernel/issues/32)),
+    so this setup is Linux and macOS only.
+
+  JupyterLab's visual debugger works over Ganymede: breakpoints, the call
+  stack and variables were checked on a Node kernel with Ganymede 0.2.0
+  and JupyterLab 4.6.4. A Deno kernel's debugger hasn't been tried under
+  Ganymede.
 - `npm:` on Node, Bun, workerd and celld:
   - one npm alias per `name@range` (or exact version, when locked);
   - the cache is shared by every notebook, so peer dependencies resolve by

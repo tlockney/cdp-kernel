@@ -65,12 +65,12 @@
   <!-- Channels -->
   <line class="ln" x1="205" y1="90" x2="535" y2="90" marker-start="url(#a)" marker-end="url(#a)"/>
   <text class="lm" x="370" y="82" text-anchor="middle">evaluate · callFunctionOn · Debugger.*</text>
-  <text class="lm" x="370" y="106" text-anchor="middle">Runtime.bindingCalled (__cdpk_send)</text>
+  <text class="lm" x="370" y="106" text-anchor="middle">Debugger.paused, while debugging</text>
   <line class="ln" x1="205" y1="150" x2="535" y2="150" marker-end="url(#a)"/>
   <text class="lm" x="370" y="142" text-anchor="middle">Runtime.terminateExecution</text>
   <text class="l" x="370" y="166" text-anchor="middle">interrupt, while shell is blocked</text>
   <line class="ln" x1="535" y1="230" x2="205" y2="230" marker-end="url(#a)"/>
-  <text class="l" x="370" y="222" text-anchor="middle">stdout, with barrier markers</text>
+  <text class="l" x="370" y="222" text-anchor="middle">stdout, with barrier markers and messages</text>
   <line class="ln" x1="535" y1="280" x2="205" y2="280" marker-end="url(#a)"/>
   <text class="l" x="370" y="272" text-anchor="middle">stderr, with barrier markers</text>
   <line class="ln" x1="205" y1="330" x2="535" y2="330" marker-end="url(#a)"/>

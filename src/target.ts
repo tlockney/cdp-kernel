@@ -8,7 +8,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, CdpAbandoned, CdpError, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
@@ -53,7 +53,6 @@ export interface KernelTarget {
   kill(): void;
 }
 
-const BINDING = "__cdpk_send";
 /** How long a target may take from spawn to a usable session. */
 const START_TIMEOUT_MS = 60_000;
 const MARKER_RE = /\x1b\[cdpk:(\d+)(m?)\]\x1b/;
@@ -133,7 +132,7 @@ export function esbuildBinary(
   }
 }
 
-/** Messages the bootstrap sends through the CDP binding. */
+/** Messages the bootstrap sends: message records on stdout, or Bun's channel. */
 export type TargetMessage =
   | { kind: "iopub"; msg_type: string; content: CdpParams; metadata: CdpParams; buffers: string[]; barrier: number }
   | { kind: "input_request"; prompt: string; password: boolean; barrier: number };
@@ -154,9 +153,13 @@ export function isTargetMessage(value: unknown): value is TargetMessage {
     typeof (value as { barrier?: unknown }).barrier === "number";
 }
 
-type PipeItem = { text: string } | { barrier: number; gated: boolean };
+type PipeItem = { text: string } | { barrier: number; gated: boolean } | { message: TargetMessage };
 
 const MARKER_PREFIX = "\x1b[cdpk:";
+// A message record: the message's JSON, which never holds a raw ESC, between
+// "\x1b[cdpk:<" and "\x1b]" (#271).
+const RECORD_PREFIX = "\x1b[cdpk:<";
+const RECORD_RE = /\x1b\[cdpk:<([^\x1b]*)\x1b\]/;
 
 function isPartialMarker(tail: string): boolean {
   if (tail.length >= MAX_MARKER_LEN) return false;
@@ -165,10 +168,13 @@ function isPartialMarker(tail: string): boolean {
 
 /**
  * Splits one output pipe into text and barrier markers, and releases them
- * in order. A gated marker (one that announces a binding message) pauses
+ * in order. A gated marker (one that announces a message) pauses
  * the pipe until `gate(n)` resolves, i.e. until that message has been
  * delivered, so later output can't overtake it. A possible partial marker
  * at the end of a chunk is held back until the next chunk decides it.
+ *
+ * With `onMessage`, the pipe also carries message records. A record stands
+ * where its gated marker would, and pauses the pipe the same way.
  */
 export class PipeDemux {
   #buffer = "";
@@ -181,26 +187,46 @@ export class PipeDemux {
   #gatedOn: number | null = null;
   readonly onText: (text: string) => void;
   readonly gate: (n: number) => Promise<void>;
+  readonly onMessage: ((msg: TargetMessage) => void) | null;
 
-  constructor(onText: (text: string) => void, gate: (n: number) => Promise<void> = () => Promise.resolve()) {
+  constructor(
+    onText: (text: string) => void,
+    gate: (n: number) => Promise<void> = () => Promise.resolve(),
+    onMessage: ((msg: TargetMessage) => void) | null = null,
+  ) {
     this.onText = onText;
     this.gate = gate;
+    this.onMessage = onMessage;
   }
 
   push(chunk: string): void {
     this.#buffer += chunk;
     for (;;) {
       const m = MARKER_RE.exec(this.#buffer);
-      if (!m) break;
-      if (m.index > 0) this.#items.push({ text: this.#buffer.slice(0, m.index) });
-      this.#items.push({ barrier: Number(m[1]), gated: m[2] === "m" });
-      this.#buffer = this.#buffer.slice(m.index + m[0].length);
+      const r = this.onMessage ? RECORD_RE.exec(this.#buffer) : null;
+      const first = m && r ? (m.index < r.index ? m : r) : m ?? r;
+      if (!first) break;
+      if (first.index > 0) this.#items.push({ text: this.#buffer.slice(0, first.index) });
+      if (first === m) {
+        this.#items.push({ barrier: Number(m[1]), gated: m[2] === "m" });
+      } else {
+        // Anything else a cell prints in this shape is dropped (#122).
+        const msg = parseJson(first[1]);
+        if (isTargetMessage(msg)) this.#items.push({ message: msg });
+      }
+      this.#buffer = this.#buffer.slice(first.index + first[0].length);
     }
     // Hold back a tail that could still grow into a marker, including one
-    // cut inside the "\x1b[cdpk:" prefix itself.
+    // cut inside the "\x1b[cdpk:" prefix itself, or into a record: one
+    // whose only ESC after its prefix is a final one.
     const esc = this.#buffer.lastIndexOf("\x1b");
     const tail = esc === -1 ? "" : this.#buffer.slice(esc);
-    const holdFrom = esc !== -1 && isPartialMarker(tail) ? esc : this.#buffer.length;
+    let holdFrom = esc !== -1 && isPartialMarker(tail) ? esc : this.#buffer.length;
+    const record = this.onMessage ? this.#buffer.lastIndexOf(RECORD_PREFIX) : -1;
+    if (record !== -1) {
+      const next = this.#buffer.indexOf("\x1b", record + RECORD_PREFIX.length);
+      if (next === -1 || next === this.#buffer.length - 1) holdFrom = Math.min(holdFrom, record);
+    }
     if (holdFrom > 0) {
       this.#items.push({ text: this.#buffer.slice(0, holdFrom) });
       this.#buffer = this.#buffer.slice(holdFrom);
@@ -215,6 +241,16 @@ export class PipeDemux {
       for (let item = this.#items.shift(); item; item = this.#items.shift()) {
         if ("text" in item) {
           this.onText(item.text);
+          continue;
+        }
+        if ("message" in item) {
+          this.#reach(item.message.barrier);
+          this.onMessage?.(item.message);
+          if (!this.#closed) {
+            this.#gatedOn = item.message.barrier;
+            await this.gate(item.message.barrier);
+            this.#gatedOn = null;
+          }
           continue;
         }
         this.#reach(item.barrier);
@@ -375,7 +411,7 @@ export class Target implements KernelTarget {
   #gates: Gates;
   #contextId: number;
   #messages: Promise<void> = Promise.resolve();
-  /** Binding messages received but not yet delivered. */
+  /** Messages received but not yet delivered. */
   #undelivered = 0;
   #interrupted = false;
   #paused = false;
@@ -469,7 +505,15 @@ export class Target implements KernelTarget {
     child.stderr.setEncoding("utf8");
 
     const gates = new Gates();
-    const stdout = new PipeDemux((text) => events.stream("stdout", text), (n) => gates.wait(n));
+    // Messages come only after attach(), so the target exists by then.
+    let target: Target | undefined;
+    const stdout = new PipeDemux(
+      (text) => events.stream("stdout", text),
+      (n) => gates.wait(n),
+      (msg) => {
+        if (target) target.#deliver(msg, events);
+      },
+    );
     const stderr = new PipeDemux((text) => events.stream("stderr", text), (n) => gates.wait(n));
     const filter = new StderrFilter(runtime, (text) => stderr.push(text));
     const pushStderr = (chunk: string) => filter.push(chunk);
@@ -510,22 +554,21 @@ export class Target implements KernelTarget {
       });
     });
     await shell.send("Runtime.enable");
-    await shell.send("Runtime.addBinding", { name: BINDING });
     const contextId = await contextReady;
+    // The inspector socket leaves Nagle's algorithm on, so an event written
+    // just before an evaluate's reply holds that reply until the event is
+    // acknowledged, ~40 ms on Linux (#271). So the shell session, which runs
+    // the cells, takes no Runtime events (console calls among them), and
+    // messages come over stdout. The control session watches for exit.
+    await shell.send("Runtime.disable");
+    await control.send("Runtime.enable");
 
-    const target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
+    target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
     // process.exit() or Deno.exit() destroys the context, then the runtime
     // waits for its inspector clients to disconnect before it exits. Let go,
     // so it exits and the kernel starts a fresh one (#130).
-    shell.on("Runtime.executionContextDestroyed", (params) => {
-      if (params.executionContextId === contextId) target.#onExit();
-    });
-    shell.on("Runtime.bindingCalled", (params) => {
-      if (params.name !== BINDING || typeof params.payload !== "string") return;
-      // __cdpk_send is an ordinary global, so a cell can call it with
-      // anything; that mustn't take the host down (#122).
-      const msg = parseJson(params.payload);
-      if (isTargetMessage(msg)) target.#deliver(msg, events);
+    control.on("Runtime.executionContextDestroyed", (params) => {
+      if (params.executionContextId === contextId && target) target.#onExit();
     });
 
     // Wait for the bootstrap's top-level await to finish installing the
@@ -537,6 +580,7 @@ export class Target implements KernelTarget {
       if (probe.result.value === true) break;
       await new Promise((r) => setTimeout(r, 25));
     }
+    await target.#evaluateSync(`${SHIM}.attach()`);
     const versions = await target.#evaluateSync(
       `JSON.stringify(typeof Deno !== "undefined" ? { runtime: Deno.version.deno, engine: "V8 " + Deno.version.v8 } : { runtime: process.versions.node, engine: "V8 " + process.versions.v8 })`,
     );
@@ -563,7 +607,7 @@ export class Target implements KernelTarget {
     };
   }
 
-  // Binding messages wait until both pipes have caught up to their marker,
+  // Messages wait until both pipes have caught up to their marker,
   // and are delivered strictly in order.
   #deliver(msg: TargetMessage, events: TargetEvents): void {
     this.#undelivered++;
@@ -662,6 +706,9 @@ export class Target implements KernelTarget {
       return await this.#evaluateRaw(script);
     } catch (err) {
       if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Execution interrupted");
+      // The control session's executionContextDestroyed event can arrive
+      // after the shell session's error reply (#271 moved it there).
+      if (err instanceof CdpError && err.message.includes("Execution context was destroyed")) this.#onExit();
       if (this.#exiting) {
         // The child's exit, which drops this target in the kernel, comes
         // first, so the next cell starts a fresh one.

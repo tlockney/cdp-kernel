@@ -10,9 +10,19 @@ inspector speaks CDP works too.
 **Website:** <https://cdp-kernel.org/> ·
 **Docs:** [cdp-kernel.org/docs](https://cdp-kernel.org/docs/)
 
+[![Try it on Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/tlockney/cdp-kernel/main?urlpath=lab/tree/getting-started.ipynb)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/tlockney/cdp-kernel?quickstart=1)
+
+Binder opens JupyterLab with every runtime and the example notebooks,
+nothing installed. A Codespace does the same in VS Code, with the
+repository checked out ([Install › In a container](https://cdp-kernel.org/docs/install#in-a-container)).
+
 This is early software. It passes a conformance suite derived from Deno's
 own Jupyter integration tests on every target, and it's packaged for npm and
 JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet.
+The [support policy](https://cdp-kernel.org/docs/support) says which
+runtime versions and frontends are supported, and what may change before
+1.0.
 
 ## Features
 
@@ -43,10 +53,18 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno
 ```
 
 Each install writes a Jupyter kernelspec (`cdp-node`, `cdp-deno`, …). Pick
-it in JupyterLab or VS Code. Linux and macOS are supported; Windows isn't
-yet. See [Install](https://cdp-kernel.org/docs/install)
-for `--deno-compat`, release-day installs on Deno, target runtime
+it in JupyterLab or VS Code. To run notebooks with no Python installed,
+serve JupyterLab with
+[Ganymede](https://ganymede-server.com/docs/workstation). Linux and macOS
+are supported; Windows isn't yet. See
+[Install](https://cdp-kernel.org/docs/install) for `--deno-compat`, release-day installs on Deno, target runtime
 requirements, and installing from a checkout.
+
+JupyterLab with every runtime and the examples, in a container:
+
+```sh
+docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel
+```
 
 ## Quick start
 
@@ -68,7 +86,8 @@ New to Jupyter? Start with
   [Widgets and comms](https://cdp-kernel.org/docs/widgets),
   [Debugger](https://cdp-kernel.org/docs/debugger)
 - Reference: [Editor types](https://cdp-kernel.org/docs/editor-types),
-  [Known gaps](https://cdp-kernel.org/docs/known-gaps)
+  [Known gaps](https://cdp-kernel.org/docs/known-gaps),
+  [Support policy](https://cdp-kernel.org/docs/support)
 - Internals: [Architecture](https://cdp-kernel.org/docs/architecture),
   [Runtime integrations](https://cdp-kernel.org/docs/integrations)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md),

@@ -2,13 +2,17 @@
 
 Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
 `cdp-node-deno` (Node with the Deno compatibility namespace), `cdp-bun`,
-`cdp-workerd`, or `cdp-celld`. Then pick the kernel in JupyterLab or VS Code.
+`cdp-workerd`, or `cdp-celld`. Then pick the kernel in JupyterLab, VS
+Code, or JupyterLab served by
+[Ganymede](https://ganymede-server.com/docs/workstation), which needs no
+Python.
 
 ## From npm
 
 The host runs on Node 22.18+ (the first Node 22 that strips TypeScript
-types without a flag). CI tests Node 22, 24 and 26 with Deno 2.9
-and the latest 2.x, on Linux and macOS. Windows isn't supported yet.
+types without a flag). CI tests Node 22, 24 and 26 with the latest Deno
+2.x, on Linux and macOS. Windows isn't supported yet. The
+[support policy](support.md) says how long each version stays supported.
 
 ```sh
 npm install -g @tlockney/cdp-kernel
@@ -22,6 +26,11 @@ cdp-kernel install --runtime celld
 
 The kernelspec records the absolute paths of `node` and the installed
 package. Re-run `install` after upgrading either.
+
+npm 11 may warn that esbuild's postinstall script is "not yet covered by
+allowScripts". cdp-kernel works without that script, so you can ignore
+the warning; allowing it (`npm install -g --allow-scripts=esbuild …`)
+does no harm either.
 
 ## From JSR
 
@@ -59,7 +68,14 @@ that.
 builds an image with JupyterLab, every runtime and kernelspec, anywidget
 for [widgets](widgets.md), and the example notebooks. It starts from
 [Jupyter's minimal-notebook image](https://jupyter-docker-stacks.readthedocs.io/),
-so its options (port, token, user) apply. From a clone of the repository:
+so its options (port, token, user) apply. Each release is published as
+`ghcr.io/tlockney/cdp-kernel:<version>` (and `latest`), for amd64 and arm64:
+
+```sh
+docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel
+```
+
+Or build it from a clone of the repository:
 
 ```sh
 docker build -f container/Dockerfile -t cdp-kernel .
@@ -136,11 +152,14 @@ cdp-kernel wrote, in the [kernels directory](#files-and-environment) that
 other kernels are left alone. From a JSR install, run them as
 `deno run -A jsr:@tlockney/cdp-kernel/cli list` and so on.
 
-With Jupyter installed, these do the same:
+With Jupyter or Ganymede installed, these do the same:
 
 ```sh
 jupyter kernelspec list
 jupyter kernelspec remove cdp-node
+
+ganymede kernelspec list
+ganymede kernelspec remove cdp-node
 ```
 
 Then `npm uninstall -g @tlockney/cdp-kernel` for an npm install. A JSR
