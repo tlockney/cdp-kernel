@@ -11,10 +11,10 @@ import { aliasFor } from "../runtime/node-hooks.mjs";
 const repo = join(import.meta.dirname, "..");
 const display = join(repo, "runtime", "display.mjs");
 
-function service(options: { notebookDir?: string; npmCache?: boolean; types?: string[] } = {}) {
+function service(options: { notebookDir?: string; npmCache?: "npm" | "bun" | null; types?: string[] } = {}) {
   return new NotebookTypes(ts, {
     notebookDir: options.notebookDir ?? repo,
-    npmCache: options.npmCache ?? true,
+    npmCache: options.npmCache === undefined ? "npm" : options.npmCache,
     types: options.types ?? [],
     typeFiles: [],
     globals: kernelGlobals(display),
@@ -111,7 +111,7 @@ test("npm: and jsr: imports resolve to the kernel's npm cache, without installin
     types.addCell(`import { other } from "npm:not-installed@2";`);
     assert.deepEqual(names(types, "other."), []);
     // Deno targets resolve npm: themselves; the kernel's cache isn't theirs.
-    const deno = service({ npmCache: false });
+    const deno = service({ npmCache: null });
     deno.addCell(`import { fakeValue } from "npm:fake-pkg@1";`);
     assert.deepEqual(names(deno, "fakeValue."), []);
   } finally {
@@ -146,4 +146,10 @@ test("quick info reaches members of expressions the runtime can't evaluate", () 
   const types = service();
   const code = "[1, 2].map((n) => n.toFixed";
   assert.match(types.quickInfo(code, code.length) ?? "", /^\(method\) Number\.toFixed\(fractionDigits\?: number\): string/);
+});
+
+test("quick info leaves an unresolved import to the runtime", () => {
+  const types = service({ notebookDir: mkdtempSync(join(tmpdir(), "cdpk-nb-")) });
+  types.addCell(`import { missing } from "npm:not-installed@1";`);
+  assert.equal(types.quickInfo("missing", 7), null);
 });

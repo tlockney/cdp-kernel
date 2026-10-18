@@ -19,7 +19,7 @@ test("the worker completes from executed cells and the target's type package", a
   const logs: string[] = [];
   // The repo has @types/node, so nothing is installed.
   const service = new LanguageService(
-    { notebookDir: repo, npmCache: true, typePackages: [{ name: "@types/node", range: "24" }] },
+    { notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [{ name: "@types/node", range: "24" }] },
     { budgetMs: 5_000, log: (text) => logs.push(text) },
   );
   try {
@@ -36,7 +36,7 @@ test("the worker completes from executed cells and the target's type package", a
 });
 
 test("a request the worker can't answer within the budget gets null", async () => {
-  const service = new LanguageService({ notebookDir: repo, npmCache: true, typePackages: [] }, { budgetMs: 1 });
+  const service = new LanguageService({ notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] }, { budgetMs: 1 });
   try {
     // Loading TypeScript alone takes longer than that.
     assert.equal(await service.complete("Math.", 5), null);
@@ -46,7 +46,7 @@ test("a request the worker can't answer within the budget gets null", async () =
 });
 
 test("cells run before the worker started are replayed to it", async () => {
-  const service = new LanguageService({ notebookDir: repo, npmCache: true, typePackages: [] }, { budgetMs: 5_000 });
+  const service = new LanguageService({ notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] }, { budgetMs: 5_000 });
   try {
     service.addCell("let early = 'x';");
     service.close();
@@ -70,7 +70,7 @@ test("a worker module that isn't a local file starts through a data: URL", () =>
 });
 
 test("the worker answers quick info", async () => {
-  const service = new LanguageService({ notebookDir: repo, npmCache: true, typePackages: [] }, { budgetMs: 5_000 });
+  const service = new LanguageService({ notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] }, { budgetMs: 5_000 });
   try {
     service.addCell("/** The answer. */\nconst answer = 42;");
     let info: string | null = null;

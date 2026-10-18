@@ -6,6 +6,8 @@
 // a Target driven over CDP (src/target.ts).
 
 import { Buffer } from "node:buffer";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { decodeMessage, encodeMessage, type JsonObject, makeHeader, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
@@ -26,7 +28,8 @@ import {
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, inspectTarget, utf16ToCodePointIndex } from "./text.ts";
 import { type HistoryEntry, queryHistory } from "./history.ts";
-import { LanguageService } from "./language-service.ts";
+import { LanguageService, type WorkerOptions } from "./language-service.ts";
+import { findWranglerConfig } from "./workers-project.ts";
 import type { EvaluateResult } from "./cdp.ts";
 import { VERSION } from "./package.ts";
 import { watchParent } from "./parent.ts";
@@ -105,6 +108,37 @@ const SHELL_REPLIES: Record<string, string> = {
 /** The target Node's major version, for @types/node: the host's, which is usually the same binary. */
 function nodeMajor(): string {
   return process.versions.node?.split(".")[0] ?? "*";
+}
+
+/**
+ * Where the language service gets each target's globals and imports from
+ * (#273, #275). A `--deno-compat` Node target gets Node's types only: its
+ * `Deno` namespace is partial, and Deno's declarations would promise
+ * members it doesn't have.
+ */
+function languageServiceOptions(
+  runtime: RuntimeName,
+  notebookDir: string,
+  project: DenoProject | null,
+): Omit<WorkerOptions, "display"> {
+  const base = { notebookDir, npmCache: "npm" as const, deno: null, denoTypes: false, typeFiles: [], typePackages: [] };
+  switch (runtime) {
+    case "node":
+      return { ...base, typePackages: [{ name: "@types/node", range: nodeMajor() }] };
+    case "deno":
+      return { ...base, npmCache: null, deno: { config: project?.configPath ?? null }, denoTypes: true };
+    case "bun":
+      return { ...base, npmCache: "bun", typePackages: [{ name: "@types/bun", range: "1" }] };
+    case "workerd":
+    case "celld": {
+      // A Workers project's own types (`wrangler types`) know its bindings.
+      const config = findWranglerConfig(notebookDir);
+      const generated = config === null ? null : join(dirname(config), "worker-configuration.d.ts");
+      return generated !== null && existsSync(generated)
+        ? { ...base, typeFiles: [generated] }
+        : { ...base, typePackages: [{ name: "@cloudflare/workers-types", range: "*" }] };
+    }
+  }
 }
 
 /** Runtime inspection text without its Type and Signature lines, which the declared type replaces. */
@@ -194,12 +228,9 @@ export class Kernel {
     this.#typeStrip = options.typeStrip ?? "esbuild";
     const notebookDir = options.notebookDir ?? process.cwd();
     this.#project = runtime === "deno" ? this.#loadProject(notebookDir) : null;
-    this.#types = options.languageService === false ? null : new LanguageService({
-      notebookDir,
-      // Deno resolves npm:/jsr: itself; the other targets use the kernel's cache.
-      npmCache: runtime !== "deno",
-      typePackages: runtime === "node" ? [{ name: "@types/node", range: nodeMajor() }] : [],
-    }, { log: (text) => this.#log(text) });
+    this.#types = options.languageService === false
+      ? null
+      : new LanguageService(languageServiceOptions(runtime, notebookDir, this.#project), { log: (text) => this.#log(text) });
     this.#debugger = runtime === "node" || runtime === "deno"
       ? new Debugger((event) => this.#publish("debug_event", event), () => this.#transformOptions())
       : null;
