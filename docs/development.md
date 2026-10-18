@@ -26,6 +26,12 @@ npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium 
 uv run --with nbclient --with nbformat python examples/run_notebook.py   # Deno-style notebook on deno + node-deno
 ```
 
+`npm run bench` measures each runtime's startup and per-cell latency
+([Choosing a runtime › Startup and latency](runtimes.md#startup-and-latency)).
+Name runtimes to measure only those (`npm run bench -- node bun`), and add
+`--json PATH` to keep every sample. `CDPK_BENCH_RUNS` (default 5) and
+`CDPK_BENCH_CELLS` (default 20) set the sample counts.
+
 The e2e suite follows Deno's `tests/integration/jupyter_tests.rs` and adds
 the gaps those tests leave: display ordering, TS, imports, `npm:`/`jsr:`,
 completion, and `update_display_data`. Set `CDPK_E2E_OFFLINE=1` to skip the
