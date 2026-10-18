@@ -104,6 +104,14 @@ Once both registries have the version, a `release` job creates the
 GitHub release for the tag, with the version's `CHANGELOG.md` entry as
 its notes.
 
+Once npm has it, an `image` job builds the
+[container image](install.md#in-a-container) from that npm release,
+runs the smoke test on it, and pushes it to
+`ghcr.io/tlockney/cdp-kernel` as the version and `latest`, for amd64 and
+arm64. It authenticates with the workflow's own token. After the first
+push, set the package's visibility to public in its GitHub package
+settings, or pulls need a login.
+
 Neither registry lets a version be republished. Each job skips a version
 its registry already has, so re-running a release only fills in the half
 that failed. To re-run one, start `publish` on its tag:
