@@ -59,7 +59,14 @@ that.
 builds an image with JupyterLab, every runtime and kernelspec, anywidget
 for [widgets](widgets.md), and the example notebooks. It starts from
 [Jupyter's minimal-notebook image](https://jupyter-docker-stacks.readthedocs.io/),
-so its options (port, token, user) apply. From a clone of the repository:
+so its options (port, token, user) apply. Each release is published as
+`ghcr.io/tlockney/cdp-kernel:<version>` (and `latest`), for amd64 and arm64:
+
+```sh
+docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel
+```
+
+Or build it from a clone of the repository:
 
 ```sh
 docker build -f container/Dockerfile -t cdp-kernel .
