@@ -23,14 +23,15 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         channel: [latest]
         include:
-          # Node nightly, Deno canary and Bun canary: early warning only, so
-          # a failure here neither fails the run nor opens an issue.
+          # Node nightly, Deno canary and Bun canary: early warning only. Its
+          # test steps may fail without failing the job, so the run (and a
+          # PR's checks) stay green and no issue is opened; a failure shows
+          # as a warning on the run instead.
           - os: ubuntu-latest
             channel: next
             experimental: true
     name: test (${{ matrix.os }}, ${{ matrix.channel }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental == true }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -78,11 +79,27 @@ jobs:
             echo "| wrangler | $(node_modules/.bin/wrangler --version | tail -1) |"
             echo "| celld | $("$HOME/.local/bin/celld" --version) |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-      - run: npm run check
-      - run: npm test
+      - id: check
+        run: npm run check
+        continue-on-error: ${{ matrix.experimental == true }}
+      - id: unit
+        run: npm test
         timeout-minutes: 10
-      - run: npm run e2e
+        continue-on-error: ${{ matrix.experimental == true }}
+      - id: e2e
+        run: npm run e2e
         timeout-minutes: 10
+        continue-on-error: ${{ matrix.experimental == true }}
+      - name: Early-warning result
+        if: matrix.experimental
+        run: |
+          for step in "check:${{ steps.check.outcome }}" "test:${{ steps.unit.outcome }}" "e2e:${{ steps.e2e.outcome }}"; do
+            name=${step%%:*} outcome=${step#*:}
+            if [ "$outcome" != success ]; then
+              echo "::warning::npm run $name: $outcome on Node nightly / Deno canary / Bun canary"
+              echo "- \`npm run $name\`: $outcome" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
   # A failed nightly run opens an issue, or comments on the one still open,
   # so a breaking release doesn't sit unnoticed on the Actions page.
