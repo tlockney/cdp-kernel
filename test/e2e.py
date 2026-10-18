@@ -581,8 +581,12 @@ def checks(runtime, workdir, offline):
         kinds = [t["type"] for t in reply["metadata"]["_jupyter_types_experimental"]]
         assert kinds == ["property", "property"], reply
         code = "[1, 2].map((n) => n.toF"
-        s.kc.complete(code, len(code))
-        reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+        for _ in range(10):
+            s.kc.complete(code, len(code))
+            reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+            if reply["matches"]:
+                break
+            time.sleep(0.5)
         assert reply["matches"] == ["toFixed"] and reply["cursor_start"] == len(code) - 3, reply
 
     def inspect_reply(s, code, cursor=None):
@@ -591,13 +595,22 @@ def checks(runtime, workdir, offline):
 
     def inspect_tooltips(s):
         # Shift-Tab help (#10): a local function, an object, a builtin.
-        s.run("function add(a: number, b = 2) { return a + b }\nconst cfg = { port: 80, host: 'x' }")
-        fn = inspect_reply(s, "add(")
-        assert fn["found"] and "Signature: add(a, b = 2)" in fn["data"]["text/plain"], fn
+        # The declared signature and JSDoc come from the language service
+        # (#274), warm by now; the value from the runtime.
+        s.run("/** Adds. */\nfunction add(a: number, b = 2) { return a + b }\nconst cfg = { port: 80, host: 'x' }")
+        def typed_reply(code, expected):
+            # A slow runner may miss the service's budget once.
+            for _ in range(10):
+                reply = inspect_reply(s, code)
+                if expected in reply.get("data", {}).get("text/plain", ""):
+                    break
+                time.sleep(0.5)
+            assert reply["found"] and expected in reply["data"]["text/plain"], reply
+            return reply["data"]["text/plain"]
+        assert "Value: " in typed_reply("add(", "function add(a: number, b?: number): number\nAdds.")
         obj = inspect_reply(s, "cfg")
         assert obj["found"] and "Properties: port, host" in obj["data"]["text/plain"], obj
-        builtin = inspect_reply(s, "Math.max")
-        assert builtin["found"] and "Signature: max(" in builtin["data"]["text/plain"], builtin
+        typed_reply("Math.max", "Math.max(...values: number[]): number")
         assert not inspect_reply(s, "noSuchName")["found"]
         detailed = s.kc.inspect("add", 3, detail_level=1)
         reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]

@@ -147,6 +147,31 @@ export class NotebookTypes {
     return { start: cursor - prefix.length, entries };
   }
 
+  /**
+   * The type, signature and JSDoc of the name at `cursor`: the one the
+   * cursor is in or just after, or, right after "name(", that callee.
+   */
+  quickInfo(code: string, cursor: number): string | null {
+    const offset = this.#setDocument(code);
+    const before = code.slice(0, cursor);
+    const call = /[\w$]\(\s*$/.exec(before);
+    // The name's last character when the cursor is just past it.
+    const position = call ? call.index : /[\w$]/.test(code[cursor - 1] ?? "") ? cursor - 1 : cursor;
+    const info = this.#service.getQuickInfoAtPosition(this.#file, offset + position);
+    if (info === undefined) return null;
+    const ts = this.#ts;
+    const lines = [ts.displayPartsToString(info.displayParts)];
+    // What an undeclared name gets, e.g. a global a library set at runtime.
+    if (lines[0] === "any") return null;
+    const docs = ts.displayPartsToString(info.documentation);
+    if (docs !== "") lines.push(docs);
+    for (const tag of info.tags ?? []) {
+      const text = ts.displayPartsToString(tag.text);
+      lines.push(`@${tag.name}${text === "" ? "" : ` ${text}`}`);
+    }
+    return lines.join("\n");
+  }
+
   /** Sets the virtual file to the history plus `code`; returns where `code` starts. */
   #setDocument(code: string): number {
     const history = this.#history(new Set(this.#statements(code).flatMap((s) => s.names)));

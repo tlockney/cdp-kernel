@@ -68,3 +68,15 @@ test("a worker module that isn't a local file starts through a data: URL", () =>
     `import "https://jsr.io/@tlockney/cdp-kernel/0.6.0/src/language-service-worker.ts";`,
   );
 });
+
+test("the worker answers quick info", async () => {
+  const service = new LanguageService({ notebookDir: repo, npmCache: true, typePackages: [] }, { budgetMs: 5_000 });
+  try {
+    service.addCell("/** The answer. */\nconst answer = 42;");
+    let info: string | null = null;
+    for (let i = 0; i < 100 && info === null; i++) info = await service.quickInfo("answer", 6);
+    assert.equal(info, "const answer: 42\nThe answer.");
+  } finally {
+    service.close();
+  }
+});

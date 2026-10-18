@@ -1,4 +1,4 @@
-// The kernel's side of typed completion (#273): starts the language-service
+// The kernel's side of typed completion and inspection (#273, #274): starts the language-service
 // worker (src/language-service-worker.ts) on the first request, keeps it fed
 // with executed cells, and gives each request a time budget, after which
 // the kernel answers from the runtime alone. The worker is ended after a
@@ -23,9 +23,9 @@ export interface WorkerOptions {
 export type WorkerRequest =
   | { type: "cell"; code: string }
   | { type: "reset" }
-  | { type: "complete"; id: number; code: string; cursor: number };
+  | { type: "complete" | "quickInfo"; id: number; code: string; cursor: number };
 
-export type WorkerResponse = { id: number; result: CompletionResult } | { id: number; error: string };
+export type WorkerResponse = { id: number; result: CompletionResult | string | null } | { id: number; error: string };
 
 /**
  * How long a request waits for the worker. JupyterLab gives a kernel's
@@ -86,7 +86,16 @@ export class LanguageService {
   }
 
   /** Typed completions, or null if the service isn't ready within the budget. */
-  complete(code: string, cursor: number): Promise<CompletionResult | null> {
+  async complete(code: string, cursor: number): Promise<CompletionResult | null> {
+    return (await this.#request("complete", code, cursor)) as CompletionResult | null;
+  }
+
+  /** Type, signature and JSDoc for the name at the cursor, or null. */
+  async quickInfo(code: string, cursor: number): Promise<string | null> {
+    return (await this.#request("quickInfo", code, cursor)) as string | null;
+  }
+
+  #request(type: "complete" | "quickInfo", code: string, cursor: number): Promise<CompletionResult | string | null> {
     const worker = this.#ensureWorker();
     if (worker === null) return Promise.resolve(null);
     const id = this.#nextId++;
@@ -95,11 +104,11 @@ export class LanguageService {
       const settle = (response: WorkerResponse | null) => {
         clearTimeout(timer);
         this.#pending.delete(id);
-        if (response !== null && "error" in response) this.#log(`completion failed: ${response.error}`);
+        if (response !== null && "error" in response) this.#log(`${type} failed: ${response.error}`);
         resolve(response !== null && "result" in response ? response.result : null);
       };
       this.#pending.set(id, settle);
-      worker.postMessage({ type: "complete", id, code, cursor } satisfies WorkerRequest);
+      worker.postMessage({ type, id, code, cursor } satisfies WorkerRequest);
     });
   }
 

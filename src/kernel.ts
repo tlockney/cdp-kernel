@@ -107,6 +107,11 @@ function nodeMajor(): string {
   return process.versions.node?.split(".")[0] ?? "*";
 }
 
+/** Runtime inspection text without its Type and Signature lines, which the declared type replaces. */
+function withoutSignature(text: string): string {
+  return text.split("\n").filter((line) => !/^(?:Type|Signature): /.test(line)).join("\n");
+}
+
 /** A TypeScript completion kind as a Jupyter completion type (JupyterLab picks its icon by these). */
 function jupyterType(kind: string | undefined): string {
   switch (kind) {
@@ -584,15 +589,24 @@ export class Kernel {
     }
   }
 
-  /** The tooltip (Shift-Tab) for the name at the cursor (#10). */
+  /**
+   * The tooltip (Shift-Tab) for the name at the cursor (#10): its declared
+   * type, signature and JSDoc when the language service knows them (#274),
+   * then what the runtime finds.
+   */
   async #inspect(msg: Message): Promise<JsonObject> {
     const code = String(msg.content.code ?? "");
     const cursorCp = typeof msg.content.cursor_pos === "number"
       ? msg.content.cursor_pos
       : utf16ToCodePointIndex(code, code.length);
-    const path = inspectTarget(code, codePointToUtf16Index(code, cursorCp));
+    const cursor = codePointToUtf16Index(code, cursorCp);
+    const path = inspectTarget(code, cursor);
     const detail = msg.content.detail_level === 1 ? 1 : 0;
-    const text = path === null ? null : await (await this.#ensureTarget()).inspect(path, detail);
+    const [runtime, typed] = await Promise.all([
+      path === null ? null : (async () => (await this.#ensureTarget()).inspect(path, detail))(),
+      this.#types?.quickInfo(code, cursor) ?? null,
+    ]);
+    const text = typed === null ? runtime : runtime === null ? typed : `${typed}\n\n${withoutSignature(runtime)}`;
     return text === null
       ? { status: "ok", found: false, data: {}, metadata: {} }
       : { status: "ok", found: true, data: { "text/plain": text }, metadata: {} };

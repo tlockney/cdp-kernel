@@ -31,6 +31,11 @@ Issue and pull request numbers refer to
   per-user npm cache. `--no-language-service` turns it off. `typescript` is
   now a dependency
   ([#273](https://github.com/tlockney/cdp-kernel/issues/273)).
+- Shift-Tab inspection shows the declared type, signature and JSDoc from
+  the same language service, then the runtime's value preview and
+  properties. It also works on names that have no value yet and on members
+  of expressions the runtime can't evaluate
+  ([#274](https://github.com/tlockney/cdp-kernel/issues/274)).
 - Node 22.18+ is supported as the host and as a target; `engines` was
   `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
   a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and
