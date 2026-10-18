@@ -320,6 +320,17 @@ export function ensureInstalledAsync({ name, range }, installer = "npm", { lockF
   });
 }
 
+/**
+ * Where `name@range` is installed in the installer's cache, or null if it
+ * isn't: nothing is installed. For type information (#273), which must not
+ * start downloads.
+ */
+export function installedPackageDir({ name, range }, installer = "npm", { lockFile = null } = {}) {
+  const dir = cacheDirPath(installer);
+  const { alias } = lockedRequest(name, range, lockFile);
+  return installedVersion(dir, alias) === null ? null : { dir, alias };
+}
+
 // --- Imported TypeScript (#73) --------------------------------------------------
 // Node strips types in place, so line and column numbers stay those of the
 // file, but it rejects TypeScript that needs code generation. Such a file
