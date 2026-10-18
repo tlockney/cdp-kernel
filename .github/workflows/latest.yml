@@ -4,11 +4,15 @@ name: latest runtimes
 # runs the unit tests and the e2e suite against the newest release of every
 # runtime each night, so a release that breaks the kernel is found here
 # rather than by a user (#259). Not a required check: it runs on a schedule,
-# not on PRs.
+# and on PRs only when this file changes.
 on:
   schedule:
     - cron: "41 4 * * *"
   workflow_dispatch:
+  # A change to this file is tried on its PR, since a schedule only runs
+  # from main.
+  pull_request:
+    paths: [.github/workflows/latest.yml]
 permissions:
   contents: read
 jobs:
