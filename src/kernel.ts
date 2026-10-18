@@ -26,8 +26,10 @@ import {
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, inspectTarget, utf16ToCodePointIndex } from "./text.ts";
 import { type HistoryEntry, queryHistory } from "./history.ts";
+import { LanguageService } from "./language-service.ts";
 import type { EvaluateResult } from "./cdp.ts";
 import { VERSION } from "./package.ts";
+import { watchParent } from "./parent.ts";
 
 export interface ConnectionInfo {
   ip: string;
@@ -100,6 +102,32 @@ const SHELL_REPLIES: Record<string, string> = {
   comm_info_request: "comm_info_reply",
 };
 
+/** The target Node's major version, for @types/node: the host's, which is usually the same binary. */
+function nodeMajor(): string {
+  return process.versions.node?.split(".")[0] ?? "*";
+}
+
+/** A TypeScript completion kind as a Jupyter completion type (JupyterLab picks its icon by these). */
+function jupyterType(kind: string | undefined): string {
+  switch (kind) {
+    case undefined:
+      return "<unknown>";
+    case "var":
+    case "let":
+    case "const":
+    case "local var":
+    case "parameter":
+      return "variable";
+    case "local function":
+      return "function";
+    case "type":
+    case "alias":
+      return "type";
+    default:
+      return kind;
+  }
+}
+
 export class Kernel {
   readonly #conn: ConnectionInfo;
   readonly #runtime: RuntimeName;
@@ -111,6 +139,8 @@ export class Kernel {
   #noticeShownFor: KernelTarget | null = null;
   /** JupyterLab's visual debugger, for targets driven over CDP (#18). */
   readonly #debugger: Debugger | null;
+  /** Typed completion from TypeScript's language service (#273). */
+  readonly #types: LanguageService | null;
   /** Cells run with store_history, for history_request (#10). */
   readonly #history: HistoryEntry[] = [];
   readonly #session = randomUUID();
@@ -149,13 +179,22 @@ export class Kernel {
       notebookDir?: string;
       /** What strips cells' types; esbuild by default (#238). */
       typeStrip?: TypeStripperName | TypeStripper;
+      /** Typed completion from TypeScript's language service; on by default (#273). */
+      languageService?: boolean;
     } = {},
   ) {
     this.#conn = conn;
     this.#runtime = runtime;
     this.#denoCompat = options.denoCompat ?? false;
     this.#typeStrip = options.typeStrip ?? "esbuild";
-    this.#project = runtime === "deno" ? this.#loadProject(options.notebookDir ?? process.cwd()) : null;
+    const notebookDir = options.notebookDir ?? process.cwd();
+    this.#project = runtime === "deno" ? this.#loadProject(notebookDir) : null;
+    this.#types = options.languageService === false ? null : new LanguageService({
+      notebookDir,
+      // Deno resolves npm:/jsr: itself; the other targets use the kernel's cache.
+      npmCache: runtime !== "deno",
+      typePackages: runtime === "node" ? [{ name: "@types/node", range: nodeMajor() }] : [],
+    }, { log: (text) => this.#log(text) });
     this.#debugger = runtime === "node" || runtime === "deno"
       ? new Debugger((event) => this.#publish("debug_event", event), () => this.#transformOptions())
       : null;
@@ -178,6 +217,12 @@ export class Kernel {
         process.exit(code);
       });
     }
+    // A server killed before it could shut the kernel down (#254).
+    watchParent(() => {
+      this.#log(`parent ${process.env.JPY_PARENT_PID} exited; shutting down`);
+      this.#shuttingDown = true;
+      process.exit(1);
+    });
     // A state dump on stderr, for a kernel that has stopped answering (#237).
     if (process.platform !== "win32") process.on("SIGUSR2", () => void this.#logState());
     // Transforms are synchronous, so the stripper loads before any cell.
@@ -312,6 +357,8 @@ export class Kernel {
       message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
       exit: (code, note) => {
         this.#target = null;
+        // What its cells declared died with it.
+        this.#types?.reset();
         // Its prompt, if any, died with it; a late reply is dropped.
         this.#input = null;
         void this.#debugger?.attachTarget(null);
@@ -557,28 +604,57 @@ export class Kernel {
       ? msg.content.cursor_pos
       : utf16ToCodePointIndex(code, code.length);
     const cursor = codePointToUtf16Index(code, cursorCp);
-    const expr = exprAtCursor(code, cursor);
-    const target = await this.#ensureTarget();
-    let matches: string[];
-    let start: number;
-    const dot = expr.lastIndexOf(".");
-    if (dot !== -1) {
-      const prefix = expr.slice(dot + 1);
-      matches = (await target.propertyNames(expr.slice(0, dot)))
-        .filter((name) => name.startsWith(prefix) && !name.startsWith("Symbol("));
-      start = cursor - prefix.length;
-    } else {
-      const names = new Set([...(await target.propertyNames("globalThis")), ...(await target.lexicalNames())]);
-      matches = [...names].filter((name) => name.startsWith(expr) && !name.startsWith("__cdpk")).sort();
-      start = cursor - expr.length;
+    // Both at once: the language service may not answer within its budget.
+    const [runtime, typed] = await Promise.all([
+      this.#runtimeCompletions(code, cursor),
+      this.#types?.complete(code, cursor) ?? null,
+    ]);
+    // Declared types first, then what only the runtime knows (a property
+    // added at runtime, a global defined by a library).
+    let matches = runtime.matches;
+    let start = runtime.start;
+    const kinds = new Map<string, string>();
+    if (typed !== null && typed.start === runtime.start) {
+      for (const entry of typed.entries) kinds.set(entry.name, entry.kind);
+      matches = [...kinds.keys(), ...runtime.matches.filter((name) => !kinds.has(name))];
+    } else if (typed !== null && typed.entries.length > 0 && runtime.matches.length === 0) {
+      // An expression the runtime can't complete, e.g. inside a call.
+      for (const entry of typed.entries) kinds.set(entry.name, entry.kind);
+      matches = [...kinds.keys()];
+      start = typed.start;
     }
+    const cursorStart = utf16ToCodePointIndex(code, start);
     return {
       status: "ok",
       matches,
-      cursor_start: utf16ToCodePointIndex(code, start),
+      cursor_start: cursorStart,
       cursor_end: cursorCp,
-      metadata: {},
+      metadata: kinds.size === 0 ? {} : {
+        // JupyterLab shows each match's type as an icon.
+        _jupyter_types_experimental: matches.map((text) => ({
+          start: cursorStart,
+          end: cursorCp,
+          text,
+          type: jupyterType(kinds.get(text)),
+        })),
+      },
     };
+  }
+
+  /** Completion from the runtime's values: property names, globals, lexical names. */
+  async #runtimeCompletions(code: string, cursor: number): Promise<{ matches: string[]; start: number }> {
+    const expr = exprAtCursor(code, cursor);
+    const target = await this.#ensureTarget();
+    const dot = expr.lastIndexOf(".");
+    if (dot !== -1) {
+      const prefix = expr.slice(dot + 1);
+      const matches = (await target.propertyNames(expr.slice(0, dot)))
+        .filter((name) => name.startsWith(prefix) && !name.startsWith("Symbol("));
+      return { matches, start: cursor - prefix.length };
+    }
+    const names = new Set([...(await target.propertyNames("globalThis")), ...(await target.lexicalNames())]);
+    const matches = [...names].filter((name) => name.startsWith(expr) && !name.startsWith("__cdpk")).sort();
+    return { matches, start: cursor - expr.length };
   }
 
   async #requestInput(prompt: string, password: boolean): Promise<InputAnswer> {
@@ -670,6 +746,8 @@ export class Kernel {
         this.#publish("stream", { name: "stderr", text: `${target.notice}\n` });
       }
       const result = await this.#evaluateCell(target, code);
+      // It ran, so its declarations exist, even if it threw part way.
+      this.#types?.addCell(code);
       if (result.exceptionDetails) {
         const exception = result.exceptionDetails.exception;
         const described = exception

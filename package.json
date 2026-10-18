@@ -20,7 +20,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18"
   },
   "bin": {
     "cdp-kernel": "dist/main.js"
@@ -64,16 +64,17 @@
     "prepack": "npm run build",
     "test": "node --test --test-timeout=300000 test/*.test.ts",
     "e2e": "uv run --with nbclient --with nbformat --with jupyter_client python test/e2e.py",
+    "bench": "uv run --with jupyter_client python test/bench.py",
     "test:lab": "uv run --with jupyterlab --with anywidget --with playwright --with nbformat python test/lab_widgets.py"
   },
   "dependencies": {
     "acorn": "^8.15.0",
     "acorn-walk": "^8.3.4",
-    "esbuild": "^0.25.10"
+    "esbuild": "^0.25.10",
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "typescript": "^5.9.3",
     "vitepress": "^1.6.4",
     "workerd": "1.20261015.1",
     "wrangler": "4.151.0"

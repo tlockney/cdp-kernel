@@ -13,6 +13,9 @@ inspector speaks CDP works too.
 This is early software. It passes a conformance suite derived from Deno's
 own Jupyter integration tests on every target, and it's packaged for npm and
 JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet.
+The [support policy](https://cdp-kernel.org/docs/support) says which
+runtime versions and frontends are supported, and what may change before
+1.0.
 
 ## Features
 
@@ -29,7 +32,7 @@ JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet.
 
 ## Install
 
-Node 24+ host, from npm:
+Node 22.18+ host, from npm:
 
 ```sh
 npm install -g @tlockney/cdp-kernel
@@ -68,10 +71,13 @@ New to Jupyter? Start with
   [Widgets and comms](https://cdp-kernel.org/docs/widgets),
   [Debugger](https://cdp-kernel.org/docs/debugger)
 - Reference: [Editor types](https://cdp-kernel.org/docs/editor-types),
-  [Known gaps](https://cdp-kernel.org/docs/known-gaps)
+  [Known gaps](https://cdp-kernel.org/docs/known-gaps),
+  [Support policy](https://cdp-kernel.org/docs/support)
 - Internals: [Architecture](https://cdp-kernel.org/docs/architecture),
   [Runtime integrations](https://cdp-kernel.org/docs/integrations)
-- Contributing: [Development](https://cdp-kernel.org/docs/development)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md),
+  [Development](https://cdp-kernel.org/docs/development),
+  [Security policy](SECURITY.md)
 
 The [feasibility study](https://cdp-kernel.org/docs/feasibility-study)
 behind the project covers the design, the alternatives considered (workerd,

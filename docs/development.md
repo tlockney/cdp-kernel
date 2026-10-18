@@ -16,6 +16,17 @@ These kernelspecs point at the checkout, so don't move it after installing.
 The target runtimes need to be installed as for a released kernel
 ([Install › Target runtimes](install.md#target-runtimes)).
 
+### In a Codespace or dev container
+
+[`.devcontainer/devcontainer.json`](https://github.com/tlockney/cdp-kernel/blob/main/.devcontainer/devcontainer.json)
+builds the [container image](install.md#in-a-container) from the checkout,
+with every runtime and the six kernelspecs, then runs `npm ci` and installs
+uv. Open the repository in a Codespace, or in VS Code with "Dev Containers:
+Reopen in Container", and the notebooks run with no other setup. Those
+kernelspecs run the checkout as it was when the container was built; after
+changing the kernel, re-run the `install:*` scripts above. `jupyter lab`
+starts JupyterLab on the forwarded port 8888.
+
 ## Tests
 
 ```sh
@@ -25,6 +36,12 @@ npm run e2e    # conformance suite via jupyter_client/libzmq, on every target va
 npm run test:lab   # an anywidget counter in real JupyterLab, headless Chromium (node, deno, bun, workerd, celld)
 uv run --with nbclient --with nbformat python examples/run_notebook.py   # Deno-style notebook on deno + node-deno
 ```
+
+`npm run bench` measures each runtime's startup and per-cell latency
+([Choosing a runtime › Startup and latency](runtimes.md#startup-and-latency)).
+Name runtimes to measure only those (`npm run bench -- node bun`), and add
+`--json PATH` to keep every sample. `CDPK_BENCH_RUNS` (default 5) and
+`CDPK_BENCH_CELLS` (default 20) set the sample counts.
 
 The e2e suite follows Deno's `tests/integration/jupyter_tests.rs` and adds
 the gaps those tests leave: display ordering, TS, imports, `npm:`/`jsr:`,

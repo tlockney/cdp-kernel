@@ -25,6 +25,8 @@ function dump(cmd: string, args: string[]): Map<string, string> {
 const QUOTE_ONLY = ["string", "plain object", "Map", "Set", "long string in object", "multiline string"];
 /** Node's stack also lists its own module-loader frames; the message matches. */
 const STACK_ONLY = ["Error"];
+/** Node before 24 brackets symbol keys, `{ [Symbol(k)]: 1 }`; Node 24+ and Deno don't. */
+const SYMBOL_KEY = Number(process.versions.node.split(".")[0]) < 24 ? ["object with symbol key"] : [];
 
 function swapQuotes(text: string): string {
   return text.replace(/'((?:[^'\\]|\\.)*)'/g, (_, body: string) => `"${body}"`);
@@ -35,11 +37,14 @@ test("Node and Deno format results alike, except for string quotes and Node's in
   const deno = dump("deno", ["run", "--no-config", "--no-lock"]);
   assert.deepEqual([...node.keys()], [...deno.keys()]);
   const differing = [...node.keys()].filter((name) => node.get(name) !== deno.get(name));
-  assert.deepEqual(differing.sort(), [...QUOTE_ONLY, ...STACK_ONLY].sort(), "the catalogued differences, no more and no fewer");
+  assert.deepEqual(differing.sort(), [...QUOTE_ONLY, ...STACK_ONLY, ...SYMBOL_KEY].sort(), "the catalogued differences, no more and no fewer");
   for (const name of QUOTE_ONLY) {
     assert.equal(swapQuotes(node.get(name) ?? ""), deno.get(name), `${name}: only the quotes differ`);
   }
   for (const name of STACK_ONLY) {
     assert.equal(node.get(name)?.split("\n")[0], deno.get(name)?.split("\n")[0], `${name}: the same message`);
+  }
+  for (const name of SYMBOL_KEY) {
+    assert.equal(node.get(name)?.replace(/\[(Symbol\(.*?\))\]/g, "$1"), deno.get(name), `${name}: only the brackets differ`);
   }
 });

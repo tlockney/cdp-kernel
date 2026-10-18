@@ -6,12 +6,36 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Completion knows declared types: TypeScript's language service runs over
+  the executed cells plus the one being edited, so `x.` lists a typed
+  value's members even before it has a value, completion works inside
+  expressions (`[1, 2].map((n) => n.toF`), and `npm:`/`jsr:` imports
+  complete from their declarations. Runtime-only names are still listed
+  after the typed ones, and JupyterLab shows each match's kind. The service
+  runs in a worker thread started on the first completion (that first
+  request is answered from the runtime alone) and ended after 10 minutes
+  without one; it takes about 150 MB while running. Node targets get
+  `@types/node` from the notebook's project, or installed once into the
+  per-user npm cache. `--no-language-service` turns it off. `typescript` is
+  now a dependency
+  ([#273](https://github.com/tlockney/cdp-kernel/issues/273)).
+- Node 22.18+ is supported as the host and as a target; `engines` was
+  `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
+  a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and
+  macOS. The one difference found: Node 22 formats symbol keys as
+  `{ [Symbol(k)]: 1 }`
+  ([#264](https://github.com/tlockney/cdp-kernel/issues/264)).
 - `kernel_info_request` on shell is answered without waiting for the
   runtime to start, so clients probing during a slow start get one reply
   instead of queuing more. Until the runtime is up, the banner leaves out
   its versions. `interrupt_reply` now waits at most 1 s for the runtime,
   under the 5 s clients allow control requests
   ([#253](https://github.com/tlockney/cdp-kernel/issues/253)).
+- The kernel exits, stopping its runtime, when the server named by
+  `JPY_PARENT_PID` exits, as ipykernel does, so a server that is killed or
+  crashes no longer leaves kernels running. Without the variable (a kernel
+  started by hand) nothing changes; on Windows it is ignored
+  ([#254](https://github.com/tlockney/cdp-kernel/issues/254)).
 - `cdp-kernel list` and `cdp-kernel uninstall [NAME...] [--all]` list and
   remove the kernelspecs cdp-kernel installed, without Jupyter. They use
   the same kernels directory as `install` and leave other kernels'
