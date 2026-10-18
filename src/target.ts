@@ -8,7 +8,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { asEvaluateResult, CdpAbandoned, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
+import { asEvaluateResult, CdpAbandoned, CdpError, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
@@ -706,6 +706,9 @@ export class Target implements KernelTarget {
       return await this.#evaluateRaw(script);
     } catch (err) {
       if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Execution interrupted");
+      // The control session's executionContextDestroyed event can arrive
+      // after the shell session's error reply (#271 moved it there).
+      if (err instanceof CdpError && err.message.includes("Execution context was destroyed")) this.#onExit();
       if (this.#exiting) {
         // The child's exit, which drops this target in the kernel, comes
         // first, so the next cell starts a fresh one.
