@@ -6,6 +6,9 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Deno's "Debugger session started." notice no longer shows up in the
+  first cell's output when it arrives late
+  ([#281](https://github.com/tlockney/cdp-kernel/issues/281)).
 - Cells on Node and Deno that show output (a result, `display()`,
   `console.log`) no longer wait ~40 ms for the inspector socket: a trivial
   cell takes 7 ms instead of 48 ms on Node. Messages from the target now
