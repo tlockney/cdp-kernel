@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Node and Deno targets no longer keep the data of every comm message from
+  the frontend, so dragging a widget's slider for a while doesn't grow the
+  runtime. V8 kept each message as compiled source; messages now reach the
+  target over its stdin
+  ([#287](https://github.com/tlockney/cdp-kernel/issues/287)).
 - Node and Deno targets no longer keep every cell's result and thrown
   error in memory. The inspector held each one it returned until released,
   so a session that showed large values (arrays, images) grew without
