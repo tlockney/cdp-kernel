@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { LanguageService } from "../src/language-service.ts";
+import { LanguageService, workerEntry } from "../src/language-service.ts";
 
 const repo = join(import.meta.dirname, "..");
 
@@ -56,4 +56,15 @@ test("cells run before the worker started are replayed to it", async () => {
   } finally {
     service.close();
   }
+});
+
+test("a worker module that isn't a local file starts through a data: URL", () => {
+  const local = new URL("file:///pkg/dist/language-service-worker.js");
+  assert.equal(workerEntry(local), local);
+  const remote = workerEntry(new URL("https://jsr.io/@tlockney/cdp-kernel/0.6.0/src/language-service-worker.ts"));
+  assert.equal(remote.protocol, "data:");
+  assert.equal(
+    decodeURIComponent(remote.href.slice("data:text/javascript,".length)),
+    `import "https://jsr.io/@tlockney/cdp-kernel/0.6.0/src/language-service-worker.ts";`,
+  );
 });

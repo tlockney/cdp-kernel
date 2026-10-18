@@ -41,6 +41,16 @@ const WORKER_URL = new URL(
 );
 const DISPLAY_URL = new URL("../runtime/display.mjs", import.meta.url);
 
+/**
+ * What to start the worker from. Deno's node:worker_threads takes only
+ * file: and data: URLs, so a kernel run from JSR (https:) starts a data:
+ * module that imports the worker.
+ */
+export function workerEntry(url: URL = WORKER_URL): URL {
+  if (url.protocol === "file:") return url;
+  return new URL(`data:text/javascript,${encodeURIComponent(`import ${JSON.stringify(url.href)};`)}`);
+}
+
 export class LanguageService {
   readonly #options: WorkerOptions;
   readonly #budgetMs: number;
@@ -111,7 +121,7 @@ export class LanguageService {
     if (this.#worker !== null) return this.#worker;
     let worker: Worker;
     try {
-      worker = new Worker(WORKER_URL, { workerData: this.#options });
+      worker = new Worker(workerEntry(), { workerData: this.#options });
     } catch (err) {
       this.#broken = true;
       this.#log(`typed completion unavailable: ${err instanceof Error ? err.message : err}`);
