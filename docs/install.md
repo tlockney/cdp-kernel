@@ -53,6 +53,24 @@ with a dependency cutoff of two days after the release
 (`--min-dep-age=<date>`), so it never resolves anything published after
 that.
 
+## In a container
+
+[`container/Dockerfile`](https://github.com/tlockney/cdp-kernel/blob/main/container/Dockerfile)
+builds an image with JupyterLab, every runtime and kernelspec, anywidget
+for [widgets](widgets.md), and the example notebooks. It starts from
+[Jupyter's minimal-notebook image](https://jupyter-docker-stacks.readthedocs.io/),
+so its options (port, token, user) apply. From a clone of the repository:
+
+```sh
+docker build -f container/Dockerfile -t cdp-kernel .
+docker run --rm -p 8888:8888 cdp-kernel
+```
+
+Then open the `http://127.0.0.1:8888/lab?token=...` link it prints. The
+examples are in `/home/jovyan/examples`. The image installs the npm release
+named by the checkout's `package.json`; add
+`--build-arg CDPK_SOURCE=checkout` to build the checkout itself.
+
 ## Target runtimes
 
 Whichever way the host is installed, the target runtime must be present. A
