@@ -1,0 +1,37 @@
+name: Feature request
+description: Something the kernel should do that it doesn't.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        [Known gaps](https://cdp-kernel.org/docs/known-gaps) lists what's already known to be missing; a comment on a related issue may be all that's needed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The notebook task this would help with, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: How you'd like it to work. A cell showing the code you'd write is useful.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds and alternatives
+      description: What you do now instead, or how another kernel (`deno jupyter`, tslab) handles it.
+  - type: dropdown
+    id: runtimes
+    attributes:
+      label: Runtimes it applies to
+      multiple: true
+      options:
+        - All
+        - Node
+        - Deno
+        - Bun
+        - workerd
+        - celld

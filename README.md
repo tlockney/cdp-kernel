@@ -71,7 +71,9 @@ New to Jupyter? Start with
   [Known gaps](https://cdp-kernel.org/docs/known-gaps)
 - Internals: [Architecture](https://cdp-kernel.org/docs/architecture),
   [Runtime integrations](https://cdp-kernel.org/docs/integrations)
-- Contributing: [Development](https://cdp-kernel.org/docs/development)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md),
+  [Development](https://cdp-kernel.org/docs/development),
+  [Security policy](SECURITY.md)
 
 The [feasibility study](https://cdp-kernel.org/docs/feasibility-study)
 behind the project covers the design, the alternatives considered (workerd,
