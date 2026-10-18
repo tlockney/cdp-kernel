@@ -6,6 +6,14 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- With the debugger's "caught exceptions" filter on, a debug console
+  expression that throws (a typo is enough) no longer pauses the target in
+  the kernel's own call. On Node the request hung until Continue; on Deno
+  the pause ended by itself and the runtime then ran no timers or
+  immediates, so every later cell hung. The kernel's own inspector calls
+  (debug console, rich variable view, Shift-Tab, error descriptions) now
+  run with exception pauses held off
+  ([#307](https://github.com/tlockney/cdp-kernel/issues/307)).
 - Releases are cut by starting the `publish` workflow on `main` with a
   version; it tags the commit once CI passes, then publishes. The
   `release` workflow is gone: the publish run it started had

@@ -27,6 +27,8 @@ export interface DebugChannel {
   readonly contextId: number;
   /** Enumerable globals the runtime had before any cell ran. */
   readonly baselineGlobals: ReadonlySet<string>;
+  /** Runs a call of the kernel's own with pausing on exceptions held off (#307). */
+  withoutPausing?<T>(call: () => Promise<T>): Promise<T>;
 }
 
 export type DapMessage = { [key: string]: unknown };
@@ -499,7 +501,9 @@ export class Debugger {
       ? await channel.send("Debugger.evaluateOnCallFrame", { callFrameId: frame.callFrameId, expression, throwOnSideEffect: pure })
       : pure
       ? await channel.send("Runtime.evaluate", { expression, contextId: channel.contextId, throwOnSideEffect: true })
-      : await channel.send("Runtime.evaluate", { expression: expression + SETTLE, contextId: channel.contextId, replMode: true });
+      : await this.#withoutPausing(() =>
+        channel.send("Runtime.evaluate", { expression: expression + SETTLE, contextId: channel.contextId, replMode: true })
+      );
     if (isRecord(res.exceptionDetails)) {
       const exception = res.exceptionDetails.exception as RemoteObject | undefined;
       throw new Error(exception ? describeRemote(exception) : String(res.exceptionDetails.text ?? "evaluation failed"));
@@ -521,12 +525,14 @@ export class Debugger {
     const value = await this.#valueOf(name, frameId, true);
     const arg = value.objectId ? { objectId: value.objectId } : { value: value.value };
     // Synchronous: while the target is paused, no promise would settle.
-    const res = await channel.send("Runtime.callFunctionOn", {
-      functionDeclaration: "function (v) { return globalThis.__cdpk.richBundle(v); }",
-      arguments: [arg],
-      executionContextId: channel.contextId,
-      returnByValue: true,
-    });
+    const res = await this.#withoutPausing(() =>
+      channel.send("Runtime.callFunctionOn", {
+        functionDeclaration: "function (v) { return globalThis.__cdpk.richBundle(v); }",
+        arguments: [arg],
+        executionContextId: channel.contextId,
+        returnByValue: true,
+      })
+    );
     const text = (res.result as RemoteObject | undefined)?.value;
     const data: unknown = typeof text === "string" ? JSON.parse(text) : {};
     return { data: isRecord(data) ? data : {}, metadata: {} };
@@ -556,6 +562,12 @@ export class Debugger {
     } catch {
       // The frontend has the cell itself; the file is a convenience.
     }
+  }
+
+  /** The kernel's own evaluation, unpaused by exceptions; while stopped, nothing more pauses anyway. */
+  #withoutPausing<T>(call: () => Promise<T>): Promise<T> {
+    const channel = this.#channel;
+    return channel?.withoutPausing && !this.#stopped ? channel.withoutPausing(call) : call();
   }
 
   #event(event: string, body: CdpParams): void {

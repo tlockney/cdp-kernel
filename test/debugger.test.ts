@@ -66,7 +66,7 @@ async function session(t: { after(fn: () => void): void }, runtime: "node" | "de
   /** Runs a cell as the kernel does while debugging. */
   const run = (code: string): Promise<EvaluateResult> =>
     within(`running ${JSON.stringify(code)}`, dbg.started ? target.evaluate(dbg.cellScript(code, code)) : target.evaluate(target.transform(code, {})));
-  return { target, dbg, dap, request, next, run };
+  return { target, dbg, dap, request, next, run, within };
 }
 
 const CELL = [
@@ -213,6 +213,28 @@ for (const runtime of ["node", "deno"] as const) {
     await request("disconnect", { restart: false, terminateDebuggee: false });
     assert.equal((await request("debugInfo")).isStarted, false);
     assert.equal((await run("const z = 1;\nz")).result.value, 1, "no breakpoint fires after disconnect");
+  });
+
+  test(`${runtime}: with caught exceptions on, the kernel's own evaluations don't pause the target`, { skip }, async (t) => {
+    // A pause inside a call the inspector dispatches held it on Node, and
+    // left Deno's event loop stopped for good: no later cell ran (#307).
+    const { dbg, dap, request, next, run, within } = await session(t, runtime);
+    await request("initialize");
+    await request("attach");
+    await request("setExceptionBreakpoints", { filters: ["caught"] });
+    await run("const big = { toString() { throw new Error('no text') } };");
+    const typo = await within("evaluate", dbg.handle({ type: "request", seq: 100, command: "evaluate", arguments: { expression: "notDefinedAnywhere", context: "repl" } }));
+    assert.equal(typo.success, false);
+    assert.match(String(typo.message), /notDefinedAnywhere is not defined/);
+    assert.ok((await request("richInspectVariables", { variableName: "big" })).data);
+    assert.ok(!dap.some((e) => e.event === "stopped"), "nothing paused");
+    assert.equal((await run("1 + 1")).result.value, 2, "cells still run");
+    // And a cell's own exception still pauses.
+    const stopped = next("stopped");
+    const result = run("try { throw 1 } catch {}\n3");
+    assert.equal(((await stopped).body as DapMessage).reason, "exception");
+    await request("continue", { threadId: 1 });
+    assert.equal((await result).result.value, 3);
   });
 
   test(`${runtime}: unknown commands fail, and source serves dumped cells`, { skip }, async (t) => {
