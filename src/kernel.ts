@@ -821,6 +821,8 @@ export class Kernel {
     } finally {
       this.#executing = false;
     }
+    // The result and error are shown: nothing refers to them any more (#286).
+    await this.#target?.releaseResults?.();
 
     if (error) {
       if (!silent && msg.content.stop_on_error !== false) {
