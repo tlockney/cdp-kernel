@@ -2,39 +2,78 @@ name: publish
 on:
   push:
     tags: ["v*"]
-  # Run on a tag by release.yml (a tag it pushes starts nothing), or by hand
-  # to retry a release. Run on a branch, the version job fails.
+  # Run on main with a version to cut that release: the run tags main once
+  # CI passes, then publishes. Run on an existing tag, without a version, to
+  # retry a release. Either way the person who starts it is the run's actor,
+  # which JSR requires to be a member of the @tlockney scope (#315).
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release from main, as in package.json (e.g. 0.6.1). Leave empty when running on a tag.
+        required: false
+        type: string
 jobs:
   verify:
     uses: ./.github/workflows/ci.yml
 
   version:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+    env:
+      VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: tag matches package version
-        run: |
-          version="v$(node -p "require('./package.json').version")"
-          if [ "$version" != "$GITHUB_REF_NAME" ]; then
-            echo "tag $GITHUB_REF_NAME does not match package.json $version" >&2
-            exit 1
-          fi
       # A JSR kernelspec relaunches with a dependency cutoff two days after
       # RELEASE_DATE (#12). A stale date would block this very release, so
       # it must be today's or yesterday's (UTC).
-      - name: release date is current
+      - name: ready to release
+        id: check
         run: |
+          fail() { echo "$1" >&2; exit 1; }
+          actual="$(node -p "require('./package.json').version")"
+          if [ -n "$VERSION" ]; then
+            [ "$GITHUB_REF" = refs/heads/main ] || fail "run with a version on main, not $GITHUB_REF_NAME"
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || fail "'$VERSION' is not a version"
+            [ "$actual" = "$VERSION" ] || fail "main's package.json is $actual, not $VERSION; merge the version bump first"
+            tag="v$VERSION"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              fail "$tag already exists; to re-run its publish: gh workflow run publish.yml --ref $tag"
+            fi
+          else
+            [ "$GITHUB_REF_TYPE" = tag ] || fail "run on a tag, or on main with a version"
+            tag="$GITHUB_REF_NAME"
+            [ "$tag" = "v$actual" ] || fail "tag $tag does not match package.json $actual"
+          fi
           released="$(sed -n 's/^export const RELEASE_DATE = "\(.*\)";$/\1/p' src/package.ts)"
           today="$(date -u +%F)"
           yesterday="$(date -u -d yesterday +%F)"
-          if [ "$released" != "$today" ] && [ "$released" != "$yesterday" ]; then
-            echo "src/package.ts RELEASE_DATE is '$released'; set it to $today with the version bump" >&2
-            exit 1
-          fi
+          [ "$released" = "$today" ] || [ "$released" = "$yesterday" ] \
+            || fail "src/package.ts RELEASE_DATE is '$released'; set it to $today (and the CHANGELOG.md heading) with the version bump"
+          grep -qxF "## $actual ($released)" CHANGELOG.md || fail "CHANGELOG.md has no '## $actual ($released)' heading"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  # Run with a version, tags the commit CI just passed on. A tag pushed with
+  # the workflow's token starts no other run. On a tag, there is nothing to do.
+  tag:
+    needs: [verify, version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the tag
+    steps:
+      - if: inputs.version != ''
+        uses: actions/checkout@v4
+      - if: inputs.version != ''
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
 
   jsr:
-    needs: [verify, version]
+    needs: tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -61,7 +100,7 @@ jobs:
         run: deno publish
 
   npm:
-    needs: [verify, version]
+    needs: tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -190,7 +229,7 @@ jobs:
   # The GitHub release for the tag, with the version's CHANGELOG.md entry
   # (test/package.test.ts makes sure there is one) as its notes.
   release:
-    needs: [jsr, npm]
+    needs: [version, jsr, npm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -199,10 +238,11 @@ jobs:
       - name: create the release unless it exists
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "release $GITHUB_REF_NAME already exists; skipping"
+          version="${TAG#v}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; skipping"
             exit 0
           fi
           # The lines between this version's heading and the next one.
@@ -214,4 +254,4 @@ jobs:
             echo "CHANGELOG.md has no entry for $version" >&2
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag

@@ -4,6 +4,13 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- Releases are cut by starting the `publish` workflow on `main` with a
+  version; it tags the commit once CI passes, then publishes. The
+  `release` workflow is gone: the publish run it started had
+  `github-actions[bot]` as its actor, which JSR refused (#315).
+
 ## 0.6.0 (2026-10-18)
 
 - Experimental: the kernel runs in a web page, with cells in a Web Worker
