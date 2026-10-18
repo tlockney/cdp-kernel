@@ -11,6 +11,8 @@ The kernel writes its diagnostics to standard error, prefixed with
 runtimes' own output). The program that started the kernel collects it:
 
 - **JupyterLab or Jupyter Notebook**: the terminal you ran `jupyter lab` in.
+- **Ganymede**: the terminal you ran `ganymede lab` or `ganymede serve`
+  in, each line prefixed with `[kernel <id>]`. `--quiet` discards them.
 - **VS Code**: the **Output** panel, with **Jupyter** picked in its
   drop-down.
 
@@ -19,8 +21,8 @@ unless noted below.
 
 ## The kernel isn't in the launcher or kernel picker
 
-1. Run `cdp-kernel list` (or `jupyter kernelspec list`). The cdp-kernel
-   kernels are named
+1. Run `cdp-kernel list` (or `jupyter kernelspec list`, or
+   `ganymede kernelspec list`). The cdp-kernel kernels are named
    `cdp-node`, `cdp-deno`, `cdp-node-deno`, `cdp-bun`, `cdp-workerd` and
    `cdp-celld`, unless installed with `--name`.
 2. If it's missing, run `cdp-kernel install --runtime <runtime>` again
@@ -31,7 +33,8 @@ unless noted below.
    differently from where `install` ran. Run `install` in the same
    environment as the frontend.
 4. Restart JupyterLab, or in VS Code run **Developer: Reload Window**:
-   both read the kernel list at startup.
+   both read the kernel list at startup. Under Ganymede,
+   `ganymede kernelspec paths` prints the directories it searches.
 
 ## The kernel starts, then dies or never becomes ready
 
@@ -118,6 +121,7 @@ cdp-kernel uninstall cdp-node    # or --all for every cdp-kernel kernelspec
 npm uninstall -g @tlockney/cdp-kernel
 ```
 
-`jupyter kernelspec remove cdp-node` works too.
+`jupyter kernelspec remove cdp-node` and `ganymede kernelspec remove
+cdp-node` work too.
 
 The caches under `~/.cache/cdp-kernel` can be deleted too.

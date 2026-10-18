@@ -2,7 +2,10 @@
 
 Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
 `cdp-node-deno` (Node with the Deno compatibility namespace), `cdp-bun`,
-`cdp-workerd`, or `cdp-celld`. Then pick the kernel in JupyterLab or VS Code.
+`cdp-workerd`, or `cdp-celld`. Then pick the kernel in JupyterLab, VS
+Code, or JupyterLab served by
+[Ganymede](https://ganymede-server.com/docs/workstation), which needs no
+Python.
 
 ## From npm
 
@@ -117,11 +120,14 @@ cdp-kernel wrote, in the [kernels directory](#files-and-environment) that
 other kernels are left alone. From a JSR install, run them as
 `deno run -A jsr:@tlockney/cdp-kernel/cli list` and so on.
 
-With Jupyter installed, these do the same:
+With Jupyter or Ganymede installed, these do the same:
 
 ```sh
 jupyter kernelspec list
 jupyter kernelspec remove cdp-node
+
+ganymede kernelspec list
+ganymede kernelspec remove cdp-node
 ```
 
 Then `npm uninstall -g @tlockney/cdp-kernel` for an npm install. A JSR

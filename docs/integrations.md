@@ -19,10 +19,10 @@ cell's TypeScript becomes something a runtime can run, see
 
 ## Background: what a Jupyter kernel is
 
-A Jupyter frontend (JupyterLab, VS Code, `nbclient`) doesn't run code
-itself. It starts a separate *kernel* process, using the command in a
-*kernelspec* (`kernel.json`), and hands it a connection file naming five
-ZeroMQ sockets: shell (requests such as `execute_request` and
+A Jupyter frontend (JupyterLab, VS Code, `nbclient`, `ganymede execute`)
+doesn't run code itself. It starts a separate *kernel* process, using the
+command in a *kernelspec* (`kernel.json`), and hands it a connection file
+naming five ZeroMQ sockets: shell (requests such as `execute_request` and
 `complete_request`), iopub (output broadcast to every frontend), control
 (interrupt and shutdown), stdin (`input_request` for `prompt()`), and a
 heartbeat. Every message is a signed JSON envelope; this is the Jupyter

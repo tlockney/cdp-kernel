@@ -42,12 +42,14 @@ You need two things: a Jupyter frontend and the kernel.
 - [VS Code](https://code.visualstudio.com/docs/datascience/jupyter-notebooks)
   with the Jupyter extension. VS Code still needs Jupyter's kernel
   registry, which the `cdp-kernel install` step below writes to.
-- [Ganymede](https://github.com/tlockney/ganymede), a
-  Jupyter server in Rust that installs and serves JupyterLab's frontend
-  with no Python. Its
-  [workstation install](https://tlockney.github.io/ganymede/docs/workstation)
+- [Ganymede](https://ganymede-server.com), a Jupyter server in Rust that
+  serves JupyterLab's frontend with no Python installed. One binary
+  replaces `jupyter lab`, `jupyter kernelspec` and `jupyter execute`, and
+  also serves VS Code. Its
+  [workstation install](https://ganymede-server.com/docs/workstation)
   goes from a clean Linux or macOS machine to this kernel running in
-  JupyterLab, step by step.
+  JupyterLab, step by step; the commands below show the Ganymede
+  equivalent where they differ.
 
 **The kernel.** With Node 24 or later:
 
@@ -57,10 +59,12 @@ cdp-kernel install --runtime node
 ```
 
 `install` registers a kernel named `cdp-node`, shown in menus as
-"TypeScript (cdp-kernel, node)". Check that Jupyter sees it:
+"TypeScript (cdp-kernel, node)". Check that the frontend will see it:
 
 ```sh
-jupyter kernelspec list
+cdp-kernel list              # what cdp-kernel installed
+jupyter kernelspec list      # what Jupyter sees
+ganymede kernelspec list     # what Ganymede sees
 ```
 
 To run notebooks on Deno, Bun, workerd or celld instead, install a kernel
@@ -74,7 +78,7 @@ Start JupyterLab in the directory you want to work in:
 
 ```sh
 mkdir scratch && cd scratch
-jupyter lab
+jupyter lab                  # or: ganymede lab
 ```
 
 In the launcher, pick **TypeScript (cdp-kernel, node)** under Notebook. In
