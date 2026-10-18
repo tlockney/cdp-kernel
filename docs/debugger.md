@@ -5,8 +5,9 @@ for Python. Bun, workerd and celld don't run over an inspector, so they
 have no debugger.
 
 This page is about JupyterLab (and Jupyter Notebook 7, which shares its
-debugger). VS Code's notebook debugging (Debug Cell, Run by Line) is
-documented for Python kernels and hasn't been tested with cdp-kernel.
+debugger), whether served by Jupyter or by
+[Ganymede](https://ganymede-server.com/docs/workstation) with no Python.
+VS Code's notebook debugging (Debug Cell, Run by Line) is documented for Python kernels and hasn't been tested with cdp-kernel.
 
 ## Using the debugger
 

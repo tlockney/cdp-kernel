@@ -47,6 +47,12 @@ export function ensureInstalledAsync(
     run?: (...args: Parameters<InstallRunner>) => ReturnType<InstallRunner> | Promise<ReturnType<InstallRunner>>;
   },
 ): Promise<{ dir: string; alias: string }>;
+/** Where a package is installed in the cache, or null; never installs. */
+export function installedPackageDir(
+  pkg: { name: string; range: string },
+  installer?: Installer,
+  options?: { lockFile?: string | null },
+): { dir: string; alias: string } | null;
 
 export const LOCK_FILE: string;
 export interface Lock {

@@ -70,11 +70,11 @@
   "dependencies": {
     "acorn": "^8.15.0",
     "acorn-walk": "^8.3.4",
-    "esbuild": "^0.25.10"
+    "esbuild": "^0.25.10",
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "typescript": "^5.9.3",
     "vitepress": "^1.6.4",
     "workerd": "1.20261015.1",
     "wrangler": "4.151.0"

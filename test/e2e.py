@@ -567,6 +567,24 @@ def checks(runtime, workdir, offline):
         reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
         assert "myLocalThing" in reply["matches"], reply
 
+    def typed_complete(s):
+        # Declared types complete where the runtime has no value (#273). The
+        # first request starts the language service, which may miss its budget.
+        s.run("interface Point { east: number; north: number }\nlet here: Point = undefined as any")
+        for _ in range(40):
+            s.kc.complete("here.", 5)
+            reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+            if reply["matches"]:
+                break
+            time.sleep(0.5)
+        assert reply["matches"] == ["east", "north"] and reply["cursor_start"] == 5, reply
+        kinds = [t["type"] for t in reply["metadata"]["_jupyter_types_experimental"]]
+        assert kinds == ["property", "property"], reply
+        code = "[1, 2].map((n) => n.toF"
+        s.kc.complete(code, len(code))
+        reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
+        assert reply["matches"] == ["toFixed"] and reply["cursor_start"] == len(code) - 3, reply
+
     def inspect_reply(s, code, cursor=None):
         s.kc.inspect(code, len(code) if cursor is None else cursor)
         return s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
@@ -872,7 +890,7 @@ def checks(runtime, workdir, offline):
         display_ordering, display_symbol, markdown_template, update_display,
         png_bytes, node_builtin_import, relative_ts_import, import_meta,
         prompt_stdin, prompt_without_stdin, uncaught_later,
-        complete, is_complete, inspect_tooltips, inspect_runs_nothing, history_tail, kernelspec_debugger,
+        complete, typed_complete, is_complete, inspect_tooltips, inspect_runs_nothing, history_tail, kernelspec_debugger,
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
         silent_publishes_only_status, control_status_and_shell_interrupt,

@@ -39,6 +39,17 @@ Python kernel is involved. If the extension is missing, a widget shows up
 as plain text such as `Widget(4f9c…)`; see
 [Troubleshooting](#troubleshooting).
 
+**JupyterLab served by Ganymede.**
+[Ganymede](https://ganymede-server.com/docs/workstation) serves JupyterLab
+without Python, and `ganymede lab install` installs anywidget's frontend
+along with JupyterLab's, so there is nothing more to do. If you skipped it with `--no-default-extensions`, add it with:
+
+```sh
+ganymede lab extension install anywidget
+```
+
+That also brings `jupyterlab_widgets`, which anywidget depends on.
+
 **VS Code.** The Jupyter extension draws widgets itself and downloads
 anywidget's JavaScript from a CDN (jsDelivr or unpkg), so it needs
 internet access. It only looks in a Python environment for a Python
@@ -488,8 +499,9 @@ kernel restart, re-run the cells that create them.
 
 - **The output is text like `Widget(4f9c…)` instead of a widget.** The
   frontend doesn't have the anywidget extension. Install it with
-  `pip install anywidget` in the environment Jupyter runs from, then reload
-  the page.
+  `pip install anywidget` in the environment Jupyter runs from (under
+  Ganymede, `ganymede lab extension install anywidget`), then reload the
+  page.
 - **VS Code says "Widgets require us to download supporting files from a
   3rd party website" or "Unable to find widget 'anywidget'".** Choose
   **Enable Downloads**, or set `jupyter.widgetScriptSources` as shown in
