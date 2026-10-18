@@ -196,7 +196,7 @@ for (const runtime of ["node", "deno"] as const) {
     assert.equal((await result).result.value, 10);
   });
 
-  test(`${runtime}: pause on exceptions, then disconnect stops pausing`, { skip }, async (t) => {
+  for (let rep = 0; rep < (process.env.CDPK_REPEAT_292 ? 60 : 1); rep++) test(`${runtime}: pause on exceptions, then disconnect stops pausing ${rep}`, { skip }, async (t) => {
     const { dbg, request, next, run } = await session(t, runtime);
     await request("initialize");
     await request("attach");
