@@ -6,7 +6,8 @@ Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
 
 ## From npm
 
-The host runs on Node 24+. CI tests Node 24 and 26 with Deno 2.9
+The host runs on Node 22.18+ (the first Node 22 that strips TypeScript
+types without a flag). CI tests Node 22, 24 and 26 with Deno 2.9
 and the latest 2.x, on Linux and macOS. Windows isn't supported yet.
 
 ```sh

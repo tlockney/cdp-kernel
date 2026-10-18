@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node: [24, 26]
+        node: [22, 24, 26]
         # One Deno: v2.x and the 2.9.x LTS line resolve to the same release
         # while Deno stays on 2.9 (denoland/deno#37030), so a second value
         # would only repeat every cell (#146). Add one back when they diverge.

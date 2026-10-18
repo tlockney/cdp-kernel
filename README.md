@@ -29,7 +29,7 @@ JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet.
 
 ## Install
 
-Node 24+ host, from npm:
+Node 22.18+ host, from npm:
 
 ```sh
 npm install -g @tlockney/cdp-kernel
