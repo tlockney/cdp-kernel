@@ -83,10 +83,10 @@ jobs:
         run: npm run check
         continue-on-error: ${{ matrix.experimental == true }}
       - id: unit
-        run: node --test --test-timeout=300000 test/debugger.test.ts
+        run: for i in 1 2 3; do npm test || exit 1; done
         env:
           CDPK_REPEAT_292: "1"
-        timeout-minutes: 20
+        timeout-minutes: 30
         continue-on-error: ${{ matrix.experimental == true }}
       - id: e2e
         if: false
