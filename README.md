@@ -32,7 +32,7 @@ runtime versions and frontends are supported, and what may change before
 
 ## Install
 
-Node 24+ host, from npm:
+Node 22.18+ host, from npm:
 
 ```sh
 npm install -g @tlockney/cdp-kernel

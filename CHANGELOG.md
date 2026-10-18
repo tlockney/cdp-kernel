@@ -6,12 +6,23 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Node 22.18+ is supported as the host and as a target; `engines` was
+  `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
+  a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and
+  macOS. The one difference found: Node 22 formats symbol keys as
+  `{ [Symbol(k)]: 1 }`
+  ([#264](https://github.com/tlockney/cdp-kernel/issues/264)).
 - `kernel_info_request` on shell is answered without waiting for the
   runtime to start, so clients probing during a slow start get one reply
   instead of queuing more. Until the runtime is up, the banner leaves out
   its versions. `interrupt_reply` now waits at most 1 s for the runtime,
   under the 5 s clients allow control requests
   ([#253](https://github.com/tlockney/cdp-kernel/issues/253)).
+- The kernel exits, stopping its runtime, when the server named by
+  `JPY_PARENT_PID` exits, as ipykernel does, so a server that is killed or
+  crashes no longer leaves kernels running. Without the variable (a kernel
+  started by hand) nothing changes; on Windows it is ignored
+  ([#254](https://github.com/tlockney/cdp-kernel/issues/254)).
 - `cdp-kernel list` and `cdp-kernel uninstall [NAME...] [--all]` list and
   remove the kernelspecs cdp-kernel installed, without Jupyter. They use
   the same kernels directory as `install` and leave other kernels'

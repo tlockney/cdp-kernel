@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node: [24, 26]
+        node: [22, 24, 26]
         # One Deno: v2.x and the 2.9.x LTS line resolve to the same release
         # while Deno stays on 2.9 (denoland/deno#37030), so a second value
         # would only repeat every cell (#146). Add one back when they diverge.
@@ -79,6 +79,17 @@ jobs:
         if: matrix.shipped
         timeout-minutes: 10
         run: CDPK_E2E_CLI="deno run -A src/main.ts" npm run e2e
+
+  # The container image (container/Dockerfile, #267), built from the
+  # checkout, with a cell run on every kernelspec inside it.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f container/Dockerfile --build-arg CDPK_SOURCE=checkout -t cdp-kernel .
+      - run: docker run --rm -v "$PWD/container:/test:ro" cdp-kernel python /test/smoke-test.py
+        timeout-minutes: 10
 
   # No Windows job: Windows isn't supported yet, and is its own issue (#32).
 

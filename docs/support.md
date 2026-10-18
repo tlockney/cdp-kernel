@@ -13,9 +13,9 @@ Linux and macOS, for every pull request.
 
 | | Supported | Tested today |
 | --- | --- | --- |
-| Host: Node | Node release lines in active or maintenance LTS, and the current release | 24, 26 |
+| Host: Node | Node release lines in active or maintenance LTS, and the current release (22 from 22.18) | 22, 24, 26 |
 | Host: Deno | The latest Deno 2 minor release | latest 2.x |
-| Target: Node | The `node` that runs the host | 24, 26 |
+| Target: Node | The `node` that runs the host | 22, 24, 26 |
 | Target: Deno | The latest Deno 2 minor release | latest 2.x |
 | Target: Bun | The latest Bun minor release | 1.4 |
 | Target: workerd | The version CI pins | 2026-10-15 |
