@@ -2,8 +2,8 @@
 //   node --inspect=127.0.0.1:0 runtime/bootstrap.mjs
 //   deno run -A --inspect=127.0.0.1:0 runtime/bootstrap.mjs
 // then drives it over CDP. Everything the host needs from inside the
-// runtime lives on globalThis.__cdpk; output to the host goes through the
-// `__cdpk_send` CDP binding (Runtime.addBinding) plus plain stdout/stderr.
+// runtime lives on globalThis.__cdpk; output to the host goes over plain
+// stdout/stderr, with messages as records on stdout (see send below).
 // Bun is launched as `bun runtime/bootstrap.mjs` and driven over a pipe
 // instead; see bun-channel.mjs.
 //
@@ -38,11 +38,12 @@ function base64(bytes) {
 }
 
 // --- Output ordering ----------------------------------------------------
-// stdout/stderr reach the host over pipes; display messages over the
-// WebSocket. To keep them in order, every binding message is preceded by a
-// numbered marker written to both pipes. The host holds the message until
-// both pipes have delivered that marker, and a gated marker ("m") holds
-// later pipe output until the message has gone out.
+// stdout/stderr reach the host over pipes, and so do messages: as records
+// on stdout on Node and Deno, over Bun's channel on Bun. Every message has
+// a number; stderr gets a gated marker ("m") with it, and stdout the record
+// (Bun: a gated marker on both pipes). The host holds the message until
+// both pipes have reached that number, and holds later pipe output until
+// the message has gone out.
 let barrierSeq = 0;
 function barrier(gated = false) {
   const n = ++barrierSeq;
@@ -52,15 +53,32 @@ function barrier(gated = false) {
   return n;
 }
 
+// Node and Deno: messages were a CDP binding's events, but an event just
+// before an evaluate's reply delays the reply ~40 ms (#271). A record is
+// the message's JSON, which holds no raw ESC, between "\x1b[cdpk:<" and
+// "\x1b]". Cells can call this too; the host drops what isn't a message
+// (#122).
+let attached = false;
+function sendRecord(text) {
+  text = String(text);
+  if (attached && !text.includes("\x1b")) writeOut(`\x1b[cdpk:<${text}\x1b]`);
+}
+if (!isBun) globalThis.__cdpk_send = sendRecord;
+
 function send(payload) {
-  const binding = globalThis.__cdpk_send;
-  if (typeof binding !== "function") return; // host not attached yet
+  if (isBun ? typeof globalThis.__cdpk_send !== "function" : !attached) return; // host not attached yet
   // Serialize before writing the marker: if the payload can't be
   // serialized (a BigInt, a cycle), the error reaches the cell without a
   // gated marker the host would wait on forever (#129). `payload` always
   // has a `kind`, so `body` is never "{}".
   const body = JSON.stringify(payload);
-  binding(`{"barrier":${barrier(true)},${body.slice(1)}`);
+  if (isBun) {
+    globalThis.__cdpk_send(`{"barrier":${barrier(true)},${body.slice(1)}`);
+    return;
+  }
+  const n = ++barrierSeq;
+  writeErr(`\x1b[cdpk:${n}m]\x1b`);
+  sendRecord(`{"barrier":${n},${body.slice(1)}`);
 }
 
 const jupyter = createJupyter({
@@ -170,6 +188,8 @@ const yieldTask = () => new Promise((resolve) => setImmediate(resolve));
 let explainError = (text) => text;
 
 globalThis.__cdpk = {
+  // The host calls this once it reads message records (Node and Deno).
+  attach: () => void (attached = true),
   // Cell code awaits this first; see PRELUDE in src/transform.ts.
   tick: yieldTask,
   // Node: the resolve hook re-parents these imports. Deno would resolve
@@ -316,6 +336,10 @@ if (isBun) {
   });
 }
 
+function writeAllSync(stream, bytes) {
+  while (bytes.length > 0) bytes = bytes.subarray(stream.writeSync(bytes));
+}
+
 async function platform() {
   if (isDeno) {
     const stdinBuf = new Uint8Array(1);
@@ -323,8 +347,9 @@ async function platform() {
       inspect: (v) => Deno.inspect(v, { colors: true, depth: 4 }),
       inspectPlain: (v) => Deno.inspect(v, { colors: false, depth: 2 }),
       readFile: (p) => Deno.readFileSync(p),
-      writeOut: (s) => Deno.stdout.writeSync(ENC.encode(s)),
-      writeErr: (s) => Deno.stderr.writeSync(ENC.encode(s)),
+      // writeSync can write part of the buffer; a record must go out whole.
+      writeOut: (s) => writeAllSync(Deno.stdout, ENC.encode(s)),
+      writeErr: (s) => writeAllSync(Deno.stderr, ENC.encode(s)),
       readStdinLine: () => readLine(() => (Deno.stdin.readSync(stdinBuf) ? stdinBuf[0] : null)),
     };
   }
@@ -343,8 +368,10 @@ async function platform() {
     inspect: (v) => util.inspect(v, { colors: true, depth: 4 }),
     inspectPlain: (v) => util.inspect(v, { colors: false, depth: 2 }),
     readFile: (p) => fs.readFileSync(p),
-    writeOut: (s) => process.stdout.write(s),
-    writeErr: (s) => process.stderr.write(s),
+    // Bound now: a cell or library that patches process.stdout.write to
+    // capture output must not swallow message records (#271).
+    writeOut: process.stdout.write.bind(process.stdout),
+    writeErr: process.stderr.write.bind(process.stderr),
     readStdinLine: () =>
       readLine(() => {
         for (;;) {

@@ -58,13 +58,22 @@ out of stderr, so they don't show up in the notebook.
 
 The host opens two CDP sessions on the same WebSocket URL:
 
-- **shell** carries everything ordinary: `Runtime.enable`,
-  `Runtime.addBinding`, `Runtime.evaluate`, `Runtime.callFunctionOn`,
-  `Runtime.getProperties`, and the `Debugger` domain while debugging. It
-  also receives events: `Runtime.bindingCalled` and `Debugger.paused`.
-- **control** is used for one thing: `Runtime.terminateExecution`. While a
-  cell runs, the shell session is waiting on its `Runtime.evaluate`, so an
-  interrupt needs a session that isn't.
+- **shell** carries everything ordinary: `Runtime.evaluate`,
+  `Runtime.callFunctionOn`, `Runtime.getProperties`, and the `Debugger`
+  domain while debugging. It enables the `Runtime` domain only long enough
+  to learn the context id, so no events arrive on it while a cell runs
+  (`Debugger.paused` aside, while debugging).
+- **control** sends `Runtime.terminateExecution`. While a cell runs, the
+  shell session is waiting on its `Runtime.evaluate`, so an interrupt
+  needs a session that isn't. It also keeps the `Runtime` domain enabled,
+  to see `Runtime.executionContextDestroyed` when the runtime exits.
+
+Events stay off the shell session because the runtimes' inspector servers
+leave Nagle's algorithm on their sockets. An event written just before an
+evaluate's reply (a `Runtime.consoleAPICalled` for each `console.log`,
+say) holds that reply until the host's TCP stack acknowledges the event,
+about 40 ms on Linux
+([#271](https://github.com/tlockney/cdp-kernel/issues/271)).
 
 ## Running a cell
 
@@ -112,7 +121,7 @@ The reply is a `RemoteObject` or `exceptionDetails`. The host then:
 - Otherwise, unless the value is `undefined`, calls
   `__cdpk.broadcastResult(count, value)` the same way. This runs in the
   target, where `display.mjs` can call the value's display hooks, and
-  sends `execute_result` through the binding.
+  sends `execute_result` as a message.
 - Calls `flush()`: one `__cdpk.barrier()` evaluation, then waits until
   both pipes and every pending message have caught up to that barrier.
   Only then does it send `execute_reply`.
@@ -126,10 +135,11 @@ value use plain `Runtime.evaluate` or `callFunctionOn` without
 
 ## Messages back to the host
 
-`Runtime.addBinding({ name: "__cdpk_send" })` installs a function
-`globalThis.__cdpk_send` in the target. When code calls it with a string,
-the inspector fires `Runtime.bindingCalled` on the shell session with that
-string as the payload. `bootstrap.mjs` sends two kinds of message this way:
+Messages travel on the target's stdout, as records: the message's JSON
+between `ESC[cdpk:<` and `ESC]`. JSON never holds a raw ESC, so the first
+`ESC]` ends the record. `bootstrap.mjs` writes them through
+`globalThis.__cdpk_send`, once the host has called `__cdpk.attach()`, and
+sends two kinds of message:
 
 - `{ kind: "iopub", msg_type, content, metadata, buffers, barrier }`:
   `display_data`, `update_display_data`, `execute_result` and comm
@@ -138,14 +148,16 @@ string as the payload. `bootstrap.mjs` sends two kinds of message this way:
   `confirm()` and password input.
 
 Every message carries a barrier number, and the target writes the matching
-marker to stdout and stderr just before sending it. The host's
+gated marker to stderr just before the record. A cell can call
+`__cdpk_send` or print a record itself; the host drops anything that
+isn't a well-formed message. The host's
 `PipeDemux` uses the markers to keep pipe output and messages in order.
 [Output ordering](integrations.md#output-ordering) shows how.
 
 ## Synchronous input
 
 `prompt()` must return a string synchronously, as in a browser and in
-Deno. The target sends an `input_request` through the binding, then blocks
+Deno. The target sends an `input_request` record, then blocks
 on a byte-at-a-time `readSync` of its own stdin until a newline arrives.
 The host forwards the request to the frontend on the stdin socket and
 writes the reply to the child's stdin as one JSON line,

@@ -36,7 +36,7 @@
   <text class="t" x="20" y="34">What the target sends (time runs left to right)</text>
   <text class="s" x="20" y="84">stdout pipe</text>
   <text class="s" x="20" y="134">stderr pipe</text>
-  <text class="s" x="20" y="184">binding / fd 3</text>
+  <text class="s" x="20" y="184">record / fd 3</text>
   <line class="ln" x1="130" y1="80" x2="520" y2="80" stroke-dasharray="3 4"/>
   <line class="ln" x1="130" y1="130" x2="520" y2="130" stroke-dasharray="3 4"/>
   <line class="ln" x1="130" y1="180" x2="520" y2="180" stroke-dasharray="3 4"/>
