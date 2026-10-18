@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { decodeMessage, encodeMessage, type JsonObject, makeHeader, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
-import { PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
+import { listening, PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
 import { Interrupted, type KernelTarget, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
 import { BunTarget } from "./bun-target.ts";
 import { Debugger } from "./debugger.ts";
@@ -187,6 +187,8 @@ export class Kernel {
   readonly #control: RouterSocket;
   readonly #stdin: RouterSocket;
   readonly #iopub: PubSocket;
+  /** Settles once all five ports are bound (#257). */
+  readonly #bound: Promise<unknown>;
   #target: KernelTarget | null = null;
   #targetStarting: Promise<KernelTarget> | null = null;
   #executionCount = 0;
@@ -234,11 +236,14 @@ export class Kernel {
     this.#debugger = runtime === "node" || runtime === "deno"
       ? new Debugger((event) => this.#publish("debug_event", event), () => this.#transformOptions())
       : null;
-    startHeartbeat(conn.hb_port, conn.ip);
+    const heartbeat = startHeartbeat(conn.hb_port, conn.ip);
     this.#shell = new RouterSocket(conn.shell_port, conn.ip);
     this.#control = new RouterSocket(conn.control_port, conn.ip);
     this.#stdin = new RouterSocket(conn.stdin_port, conn.ip);
     this.#iopub = new PubSocket(conn.iopub_port, conn.ip);
+    this.#bound = Promise.all(
+      [heartbeat, this.#shell.server, this.#control.server, this.#stdin.server, this.#iopub.server].map(listening),
+    );
   }
 
   async run(): Promise<void> {
@@ -374,7 +379,10 @@ export class Kernel {
 
   #ensureTarget(): Promise<KernelTarget> {
     if (this.#target) return Promise.resolve(this.#target);
-    this.#targetStarting ??= this.#launchTarget().then(async (target) => {
+    // Not before the kernel's own ports are bound: a Deno runtime binds its
+    // inspector to port 0 within milliseconds of starting and can take a
+    // connection-file port the kernel is still binding (#257).
+    this.#targetStarting ??= this.#bound.then(() => this.#launchTarget()).then(async (target) => {
       // Before any cell runs on it, so breakpoints already apply.
       await this.#debugger?.attachTarget(target.debug ?? null);
       this.#target = target;
