@@ -4,6 +4,13 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- Notebook output on the docs site reads in dark mode: the MoMA example's
+  wall labels set their own text color, SVG charts sit on a light panel,
+  and the scrubber widget's year labels follow the page's text color
+  ([#312](https://github.com/tlockney/cdp-kernel/issues/312)).
+
 ## 0.6.0 (2026-10-18)
 
 - Experimental: the kernel runs in a web page, with cells in a Web Worker

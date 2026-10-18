@@ -138,6 +138,7 @@
 .nb-markdown > :first-child, .nb-html > :first-child { margin-top: 0; }
 .nb-markdown > :last-child, .nb-html > :last-child { margin-bottom: 0; }
 .nb-image { max-width: 100%; }
+.dark .nb-svg { background: #fff; padding: 0.5rem; border-radius: 4px; }
 .ansi-b { font-weight: 600; }
 .ansi-dim, .ansi-gray { color: var(--vp-c-text-3); }
 .ansi-i { font-style: italic; }

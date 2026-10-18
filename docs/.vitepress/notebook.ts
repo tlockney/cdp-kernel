@@ -126,8 +126,10 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown, widge
   if (typeof svg === "string") {
     // As an <img>, so its styles stay its own. That needs the SVG namespace,
     // which SVG built with a server-side DOM (linkedom) often leaves out.
+    // An <img> doesn't inherit the page's text color (currentColor is black),
+    // so dark mode puts it on a light panel (nb-svg in custom.css).
     const doc = /<svg\b[^>]*\bxmlns=/.test(svg) ? svg : svg.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
-    return `<img class="nb-image" alt="SVG output" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(doc)}">`;
+    return `<img class="nb-image nb-svg" alt="SVG output" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(doc)}">`;
   }
   for (const mime of ["image/png", "image/jpeg", "image/gif"]) {
     const img = get(mime);
