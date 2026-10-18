@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Notebook output on the docs site reads in dark mode: the MoMA example's
+  wall labels set their own text color, SVG charts sit on a light panel,
+  and the scrubber widget's year labels follow the page's text color
+  ([#312](https://github.com/tlockney/cdp-kernel/issues/312)).
+
 - Node and Deno targets no longer keep the data of every comm message from
   the frontend, so dragging a widget's slider for a while doesn't grow the
   runtime. V8 kept each message as compiled source; messages now reach the
