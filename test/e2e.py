@@ -249,6 +249,34 @@ def checks(runtime, workdir, offline):
         assert reply["status"] == "ok", reply
         assert "helloWorld" in result_of(out)["text/plain"], out
 
+    def typed_jsr_import(s):
+        # After jsr_import: the package's declarations, from the cache the
+        # target installed it into (#273), or Deno's own (#275).
+        for _ in range(10):
+            reply = inspect_reply(s, "toCamelCase")
+            text = reply.get("data", {}).get("text/plain", "")
+            if "input: string" in text:
+                break
+            time.sleep(0.5)
+        assert "function toCamelCase(input: string): string" in text, reply
+
+    def typed_globals(s):
+        # Each target's own globals are typed (#275): @types/node, @types/bun
+        # and Workers types install into the cache in the background, once.
+        code, expected = {
+            "bun": ("Bun.file", "BunFile"),
+            "workerd": ("new HTMLRewriter().on", "(method) HTMLRewriter.on("),
+            "celld": ("new HTMLRewriter().on", "(method) HTMLRewriter.on("),
+            "deno": ("Deno.readTextFile", "function Deno.readTextFile("),
+        }.get(runtime, ("process.cwd", "NodeJS.Process.cwd("))
+        for _ in range(120):
+            reply = inspect_reply(s, code)
+            text = reply.get("data", {}).get("text/plain", "")
+            if expected in text:
+                break
+            time.sleep(0.5)
+        assert expected in text, reply
+
     def prompt_stdin(s):
         reply, out = s.run(
             'const name = prompt("Name?");\nconsole.log(`Hello, ${name}!`)',
@@ -736,8 +764,15 @@ def checks(runtime, workdir, offline):
         s.kc.complete("Deno.readT", 10)
         reply = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
         assert "readTextFile" in reply["matches"], reply
-        tip = inspect_reply(s, "Deno.readTextFile")
-        assert tip["found"] and "Type: function" in tip["data"]["text/plain"], tip
+        # Deno targets add `deno types` (#275); the partial --deno-compat
+        # namespace is left to the runtime.
+        expected = "function Deno.readTextFile(" if runtime == "deno" else "Type: function"
+        for _ in range(10):
+            tip = inspect_reply(s, "Deno.readTextFile")
+            if expected in tip.get("data", {}).get("text/plain", ""):
+                break
+            time.sleep(0.5)
+        assert tip["found"] and expected in tip["data"]["text/plain"], tip
 
     def deno_compat_missing(s):
         # A member the shim lacks says so (#172), and feature checks still work.
@@ -926,7 +961,7 @@ def checks(runtime, workdir, offline):
     if runtime in ("node", "deno", "node-deno"):
         tests.append(exit_restarts)
     if not offline:
-        tests += [npm_import, jsr_import]
+        tests += [npm_import, jsr_import, typed_jsr_import, typed_globals]
         # Deno targets resolve npm: themselves; the lockfile is the kernel's.
         if not runtime.startswith("deno"):
             tests.append(npm_lockfile)

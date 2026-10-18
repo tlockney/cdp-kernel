@@ -13,7 +13,14 @@ export type { CompletionEntry, CompletionResult } from "./notebook-types.ts";
 /** What the worker is started with. */
 export interface WorkerOptions {
   notebookDir: string;
-  npmCache: boolean;
+  /** See NotebookTypesOptions.npmCache. */
+  npmCache: "npm" | "bun" | null;
+  /** A Deno target: resolve imports with `deno info`, under this project config if any. */
+  deno: { config: string | null } | null;
+  /** Add `deno types` (the Deno namespace) to the globals. */
+  denoTypes: boolean;
+  /** Declaration files for the target's globals, e.g. a Workers project's worker-configuration.d.ts. */
+  typeFiles: string[];
   /** runtime/display.mjs, which types `jupyter`; null if not a local file. */
   display: string | null;
   /** Type packages for the target's globals, e.g. @types/node. */
