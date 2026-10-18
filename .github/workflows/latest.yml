@@ -34,9 +34,16 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      # setup-node takes nightlies by major ("27-nightly"): the newest one's.
+      - name: Node nightly major
+        id: nightly
+        if: matrix.channel == 'next'
+        run: |
+          major=$(curl -fsSL https://nodejs.org/download/nightly/index.json | jq -r '.[0].version' | sed -E 's/^v([0-9]+).*/\1/')
+          echo "major=$major" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.channel == 'next' && 'nightly' || 'latest' }}
+          node-version: ${{ matrix.channel == 'next' && format('{0}-nightly', steps.nightly.outputs.major) || 'latest' }}
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
