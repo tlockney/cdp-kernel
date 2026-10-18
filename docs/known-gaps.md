@@ -27,7 +27,7 @@
 - The debugger is for Node and Deno targets only. Breakpoints are per line,
   conditional breakpoints and logpoints aren't supported, variables can't be
   set from the debugger, and "copy to globals" isn't offered.
-- Under [Ganymede](https://ganymede-server.com/docs/workstation), the
+- Under [Ganymede](https://ganymede-server.com/docs/install), the
   Python-free Jupyter server, notebooks behave as under `jupyter lab`,
   with Ganymede's own
   [known gaps](https://github.com/tlockney/ganymede/blob/main/docs/known-gaps.md).

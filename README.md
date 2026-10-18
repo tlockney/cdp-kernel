@@ -55,7 +55,7 @@ deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno
 Each install writes a Jupyter kernelspec (`cdp-node`, `cdp-deno`, …). Pick
 it in JupyterLab or VS Code. To run notebooks with no Python installed,
 serve JupyterLab with
-[Ganymede](https://ganymede-server.com/docs/workstation). Linux and macOS
+[Ganymede](https://ganymede-server.com/docs/install). Linux and macOS
 are supported; Windows isn't yet. See
 [Install](https://cdp-kernel.org/docs/install) for `--deno-compat`, release-day installs on Deno, target runtime
 requirements, and installing from a checkout.

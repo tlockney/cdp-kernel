@@ -46,7 +46,7 @@ You need two things: a Jupyter frontend and the kernel.
   serves JupyterLab's frontend with no Python installed. One binary
   replaces `jupyter lab`, `jupyter kernelspec` and `jupyter execute`, and
   also serves VS Code. Its
-  [workstation install](https://ganymede-server.com/docs/workstation)
+  [install guide](https://ganymede-server.com/docs/install)
   goes from a clean Linux or macOS machine to this kernel running in
   JupyterLab, step by step; the commands below show the Ganymede
   equivalent where they differ.
