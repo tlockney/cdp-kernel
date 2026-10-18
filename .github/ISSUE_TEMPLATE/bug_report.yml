@@ -1,0 +1,84 @@
+name: Bug report
+description: Something in the kernel doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. [Troubleshooting](https://cdp-kernel.org/docs/troubleshooting) covers common problems, and [Known gaps](https://cdp-kernel.org/docs/known-gaps) lists what isn't supported yet.
+        Security problems go through a [private report](https://github.com/tlockney/cdp-kernel/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: cell
+    attributes:
+      label: Smallest cell that shows it
+      description: The fewest cells, in order, that reproduce the problem in a fresh kernel. Leave out unrelated imports and data.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output and kernel messages
+      description: The cell's output or error, and any lines starting with `[cdp-kernel]` from the server log (the terminal that ran `jupyter lab`, or VS Code's Output panel with Jupyter selected).
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: cdp-kernel version
+      description: The output of `cdp-kernel version` (or the `version` column of `cdp-kernel list`).
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed from
+      options:
+        - npm (Node host)
+        - JSR (Deno host)
+        - A checkout
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Kernel (target runtime)
+      multiple: true
+      options:
+        - cdp-node
+        - cdp-deno
+        - cdp-node-deno
+        - cdp-bun
+        - cdp-workerd
+        - cdp-celld
+    validations:
+      required: true
+  - type: input
+    id: runtime-versions
+    attributes:
+      label: Host and target runtime versions
+      description: "`node --version`, `deno --version`, `bun --version`, `workerd --version` or `celld --version`, for the host and the target."
+      placeholder: "host node v26.1.0, target deno 2.9.6"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 26.1 (arm64), Ubuntu 24.04"
+    validations:
+      required: true
+  - type: input
+    id: frontend
+    attributes:
+      label: Frontend and its version
+      placeholder: "JupyterLab 4.5.0, VS Code 1.106 with Jupyter 2025.10, nbclient 0.10"
+    validations:
+      required: true

@@ -28,6 +28,7 @@ import { checkIsComplete, codePointToUtf16Index, exprAtCursor, inspectTarget, ut
 import { type HistoryEntry, queryHistory } from "./history.ts";
 import type { EvaluateResult } from "./cdp.ts";
 import { VERSION } from "./package.ts";
+import { watchParent } from "./parent.ts";
 
 export interface ConnectionInfo {
   ip: string;
@@ -178,6 +179,12 @@ export class Kernel {
         process.exit(code);
       });
     }
+    // A server killed before it could shut the kernel down (#254).
+    watchParent(() => {
+      this.#log(`parent ${process.env.JPY_PARENT_PID} exited; shutting down`);
+      this.#shuttingDown = true;
+      process.exit(1);
+    });
     // A state dump on stderr, for a kernel that has stopped answering (#237).
     if (process.platform !== "win32") process.on("SIGUSR2", () => void this.#logState());
     // Transforms are synchronous, so the stripper loads before any cell.

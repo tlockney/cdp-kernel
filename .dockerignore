@@ -1,0 +1,9 @@
+# Build context for container/Dockerfile: the checkout, less what
+# npm ci and the build recreate.
+.git
+.claude
+node_modules
+dist
+docs/.vitepress/dist
+docs/.vitepress/cache
+.wrangler
