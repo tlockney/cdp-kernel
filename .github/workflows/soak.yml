@@ -1,0 +1,46 @@
+name: soak
+# One long kernel session per runtime: thousands of mixed requests, large
+# and binary outputs, interrupts, and a memory check (#260). Too slow and
+# too broad for every PR, so it runs weekly, by hand, and on PRs that
+# change it. Not a required check.
+on:
+  schedule:
+    - cron: "23 5 * * 3"
+  workflow_dispatch:
+    inputs:
+      cells:
+        description: Requests per runtime
+        default: "2000"
+  pull_request:
+    paths: [.github/workflows/soak.yml, test/soak.py]
+permissions:
+  contents: read
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: astral-sh/setup-uv@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.x # docs/install.md names the tested Bun
+      # celld isn't on npm; its installer puts it in ~/.local/bin, where the
+      # kernel looks first (#25).
+      - name: celld
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/denoland/celld/releases/download/v0.6.2/celld-x86_64-unknown-linux-gnu.gz | gunzip > "$HOME/.local/bin/celld"
+          chmod +x "$HOME/.local/bin/celld"
+          "$HOME/.local/bin/celld" --version
+      - run: npm ci
+      - run: npm run soak
+        timeout-minutes: 30
+        env:
+          CDPK_SOAK_CELLS: ${{ inputs.cells || '2000' }}

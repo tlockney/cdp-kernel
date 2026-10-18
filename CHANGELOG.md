@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Node and Deno targets no longer keep every cell's result and thrown
+  error in memory. The inspector held each one it returned until released,
+  so a session that showed large values (arrays, images) grew without
+  bound; the kernel now releases them once the cell's output is shown
+  ([#286](https://github.com/tlockney/cdp-kernel/issues/286)).
 - Deno's "Debugger session started." notice no longer shows up in the
   first cell's output when it arrives late
   ([#281](https://github.com/tlockney/cdp-kernel/issues/281)).
@@ -39,6 +44,14 @@ Issue and pull request numbers refer to
   properties. It also works on names that have no value yet and on members
   of expressions the runtime can't evaluate
   ([#274](https://github.com/tlockney/cdp-kernel/issues/274)).
+- Typed completion and inspection know each target's globals: `deno types`
+  on Deno, `@types/bun` on Bun, and on workerd and celld a Workers
+  project's `worker-configuration.d.ts` (from `wrangler types`), else
+  `@cloudflare/workers-types`. On Deno, imports an executed cell made
+  (`npm:`, `jsr:`, URLs, the project's import map) are typed from Deno's
+  own cache, found with `deno info`; nothing new is fetched for completion.
+  On Bun, `npm:`/`jsr:` types come from Bun's install cache
+  ([#275](https://github.com/tlockney/cdp-kernel/issues/275)).
 - Node 22.18+ is supported as the host and as a target; `engines` was
   `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
   a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and

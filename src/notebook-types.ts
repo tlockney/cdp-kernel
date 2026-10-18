@@ -14,14 +14,21 @@
 import type TS from "typescript";
 import { join } from "node:path";
 import { findLockFile, installedPackageDir, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
+import type { DenoResolver } from "./deno-types.ts";
 
 export interface NotebookTypesOptions {
   notebookDir: string;
   /**
-   * Resolve npm: and jsr: imports from the kernel's npm cache, where
-   * Node-hosted targets install them. Deno targets resolve them natively.
+   * The installer cache npm: and jsr: imports resolve from: where the
+   * target installs them (Bun's own for Bun, npm's for the rest). Null for
+   * Deno targets, which resolve them natively (see `deno`).
    */
-  npmCache: boolean;
+  npmCache: "npm" | "bun" | null;
+  /**
+   * For Deno targets: where Deno put what the executed cells imported
+   * (npm:, jsr:, URLs, the project's import map).
+   */
+  deno?: DenoResolver;
   /** compilerOptions.types: type packages found from the notebook's directory. */
   types: string[];
   /** Declaration files every cell sees, e.g. runtime types. */
@@ -65,7 +72,13 @@ export class NotebookTypes {
   readonly #service: TS.LanguageService;
   #compilerOptions: TS.CompilerOptions;
   readonly #resolutionCache: TS.ModuleResolutionCache;
+  /** ts.sys, plus the remote modules a Deno target fetched (virtual paths). */
+  readonly #resolutionHost: TS.ModuleResolutionHost;
   readonly #cells: Cell[] = [];
+  /** Specifiers executed cells imported: the target has fetched them. */
+  readonly #imported = new Set<string>();
+  /** Declaration files that exist only in memory, e.g. `deno types`. */
+  readonly #virtualTypes = new Map<string, string>();
   #typeFiles: string[];
   #text = PREFIX;
   #version = 0;
@@ -89,6 +102,17 @@ export class NotebookTypes {
       lib: ["lib.esnext.d.ts"],
       types: options.types,
     };
+    const deno = options.deno;
+    this.#resolutionHost = {
+      ...ts.sys,
+      fileExists: (f) => deno?.localFile(f) !== undefined || ts.sys.fileExists(f),
+      readFile: (f) => {
+        const local = deno?.localFile(f);
+        return ts.sys.readFile(local ?? f);
+      },
+      directoryExists: (d) => (deno !== undefined && d.startsWith(deno.root)) || ts.sys.directoryExists(d),
+      getCurrentDirectory: () => options.notebookDir,
+    };
     const host = this.#host();
     this.#resolutionCache = ts.createModuleResolutionCache(options.notebookDir, (f) => f, this.#compilerOptions);
     this.#service = ts.createLanguageService(host, ts.createDocumentRegistry());
@@ -97,6 +121,13 @@ export class NotebookTypes {
   /** An executed cell: its declarations are in scope for later ones. */
   addCell(code: string): void {
     this.#cells.push({ code, statements: this.#statements(code) });
+    const ts = this.#ts;
+    const sf = ts.createSourceFile("cell.ts", code, ts.ScriptTarget.ESNext, false, ts.ScriptKind.TS);
+    for (const stmt of sf.statements) {
+      if ((ts.isImportDeclaration(stmt) || ts.isExportDeclaration(stmt)) && stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)) {
+        this.#imported.add(stmt.moduleSpecifier.text);
+      }
+    }
   }
 
   /** The runtime restarted and lost its state. */
@@ -107,6 +138,12 @@ export class NotebookTypes {
   /** Adds declaration files, e.g. runtime types installed after startup. */
   addTypeFiles(files: string[]): void {
     this.#typeFiles.push(...files.filter((f) => !this.#typeFiles.includes(f)));
+    this.#projectVersion++;
+  }
+
+  /** Adds a declaration file held in memory, e.g. the output of `deno types`. */
+  addVirtualTypeFile(name: string, text: string): void {
+    this.#virtualTypes.set(join(this.#options.notebookDir, name), text);
     this.#projectVersion++;
   }
 
@@ -160,9 +197,12 @@ export class NotebookTypes {
     const info = this.#service.getQuickInfoAtPosition(this.#file, offset + position);
     if (info === undefined) return null;
     const ts = this.#ts;
-    const lines = [ts.displayPartsToString(info.displayParts)];
-    // What an undeclared name gets, e.g. a global a library set at runtime.
-    if (lines[0] === "any") return null;
+    // An imported name's "import x" line repeats the cell; alone, the import
+    // didn't resolve. "any" alone is what an undeclared name gets, e.g. a
+    // global a library set at runtime.
+    const display = ts.displayPartsToString(info.displayParts).split("\n").filter((l) => !/^import [\w$]+$/.test(l)).join("\n");
+    if (display === "" || display === "any") return null;
+    const lines = [display];
     const docs = ts.displayPartsToString(info.documentation);
     if (docs !== "") lines.push(docs);
     for (const tag of info.tags ?? []) {
@@ -234,7 +274,8 @@ export class NotebookTypes {
       const pkg = specifier.startsWith("npm:")
         ? parsePackageSpecifier(specifier.slice(4))
         : jsrToNpm(specifier.slice(4));
-      const installed = installedPackageDir(pkg, "npm", { lockFile: findLockFile(this.#options.notebookDir) });
+      const installer = this.#options.npmCache ?? "npm";
+      const installed = installedPackageDir(pkg, installer, { lockFile: findLockFile(this.#options.notebookDir) });
       return installed === null ? null : { ...installed, subpath: pkg.subpath };
     } catch {
       return null;
@@ -243,27 +284,46 @@ export class NotebookTypes {
 
   #resolve(name: string, containingFile: string): TS.ResolvedModuleWithFailedLookupLocations {
     const ts = this.#ts;
-    if (this.#options.npmCache && /^(?:npm|jsr):/.test(name)) {
+    const deno = this.#options.deno;
+    // Only what an executed cell imported (or a fetched module imports):
+    // looking a specifier up never makes Deno fetch something new.
+    if (deno !== undefined && !/^(?:\.{0,2}\/|node:)/.test(name) && (this.#imported.has(name) || containingFile.startsWith(deno.root))) {
+      const found = deno.lookup(name);
+      if (found?.kind === "npm") {
+        return ts.resolveModuleName(join(found.dir, found.subpath), containingFile, this.#compilerOptions, this.#resolutionHost, this.#resolutionCache);
+      }
+      const extension = found?.kind === "remote" ? extensionOf(ts, found.path) : undefined;
+      if (found?.kind === "remote" && extension !== undefined) {
+        return { resolvedModule: { resolvedFileName: found.path, extension, isExternalLibraryImport: false } };
+      }
+    }
+    if (this.#options.npmCache !== null && /^(?:npm|jsr):/.test(name)) {
       const cached = this.#cachedPackage(name);
       // Resolved as its alias from the cache directory, so package.json
       // "exports" and "types" apply as for any package.
       if (cached !== null) {
         const from = join(cached.dir, "__cdpk__.ts");
-        return ts.resolveModuleName(cached.alias + cached.subpath, from, this.#compilerOptions, ts.sys, this.#resolutionCache);
+        return ts.resolveModuleName(cached.alias + cached.subpath, from, this.#compilerOptions, this.#resolutionHost, this.#resolutionCache);
       }
     }
-    return ts.resolveModuleName(name, containingFile, this.#compilerOptions, ts.sys, this.#resolutionCache);
+    return ts.resolveModuleName(name, containingFile, this.#compilerOptions, this.#resolutionHost, this.#resolutionCache);
   }
 
   #host(): TS.LanguageServiceHost {
     const ts = this.#ts;
     const file = this.#file;
     const globalsFile = this.#globalsFile;
-    const virtual = (f: string) => (f === file ? this.#text : f === globalsFile ? this.#options.globals : undefined);
+    const deno = this.#options.deno;
+    const virtual = (f: string) => {
+      if (f === file) return this.#text;
+      if (f === globalsFile) return this.#options.globals;
+      const local = deno?.localFile(f);
+      return local !== undefined ? ts.sys.readFile(local) : this.#virtualTypes.get(f);
+    };
     return {
       getCompilationSettings: () => this.#compilerOptions,
       getProjectVersion: () => `${this.#projectVersion}.${this.#version}`,
-      getScriptFileNames: () => [file, globalsFile, ...this.#typeFiles],
+      getScriptFileNames: () => [file, globalsFile, ...this.#virtualTypes.keys(), ...this.#typeFiles],
       getScriptVersion: (f) => (f === file ? String(this.#version) : "0"),
       getScriptSnapshot: (f) => {
         const text = virtual(f) ?? ts.sys.readFile(f);
@@ -271,7 +331,7 @@ export class NotebookTypes {
       },
       getCurrentDirectory: () => this.#options.notebookDir,
       getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
-      fileExists: (f) => virtual(f) !== undefined || ts.sys.fileExists(f),
+      fileExists: (f) => f === file || f === globalsFile || this.#virtualTypes.has(f) || deno?.localFile(f) !== undefined || ts.sys.fileExists(f),
       readFile: (f) => virtual(f) ?? ts.sys.readFile(f),
       readDirectory: ts.sys.readDirectory,
       directoryExists: ts.sys.directoryExists,
@@ -280,6 +340,14 @@ export class NotebookTypes {
         literals.map((literal) => this.#resolve(literal.text, containingFile)),
     };
   }
+}
+
+/** The extension TypeScript should load a remote module's path as, if it's one it can. */
+function extensionOf(ts: typeof TS, path: string): TS.Extension | undefined {
+  for (const ext of [ts.Extension.Dts, ts.Extension.Dmts, ts.Extension.Ts, ts.Extension.Mts, ts.Extension.Tsx, ts.Extension.Js, ts.Extension.Mjs, ts.Extension.Jsx]) {
+    if (path.endsWith(ext)) return ext;
+  }
+  return undefined;
 }
 
 /**
