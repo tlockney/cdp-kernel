@@ -49,7 +49,7 @@ You need two things: a Jupyter frontend and the kernel.
   goes from a clean Linux or macOS machine to this kernel running in
   JupyterLab, step by step.
 
-**The kernel.** With Node 24 or later:
+**The kernel.** With Node 22.18 or later:
 
 ```sh
 npm install -g @tlockney/cdp-kernel

@@ -6,6 +6,12 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Node 22.18+ is supported as the host and as a target; `engines` was
+  `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
+  a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and
+  macOS. The one difference found: Node 22 formats symbol keys as
+  `{ [Symbol(k)]: 1 }`
+  ([#264](https://github.com/tlockney/cdp-kernel/issues/264)).
 - `kernel_info_request` on shell is answered without waiting for the
   runtime to start, so clients probing during a slow start get one reply
   instead of queuing more. Until the runtime is up, the banner leaves out

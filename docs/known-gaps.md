@@ -21,10 +21,12 @@
 - Results are formatted by each runtime's own inspector: `util.inspect` on
   Node, Bun, workerd and celld, and `Deno.inspect` on Deno. On a fixture of
   30 typical values, 23 format identically on Node and Deno. The rest
-  differ in two ways:
+  differ in two ways, and on Node 22 in a third:
   - strings are quoted `'…'` on Node and `"…"` on Deno, wherever they
     appear;
-  - a displayed `Error`'s stack also lists Node's own module-loader frames.
+  - a displayed `Error`'s stack also lists Node's own module-loader frames;
+  - on Node 22, symbol keys are bracketed: `{ [Symbol(k)]: 1 }` where
+    Node 24+ and Deno show `{ Symbol(k): 1 }`.
 
   That's deliberate: each runtime's users see the format they expect, and
   Node's inspector has no quote-style option, short of porting Deno's
