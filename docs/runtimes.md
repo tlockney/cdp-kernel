@@ -112,11 +112,11 @@ columns.
 
 | Runtime | Launch to `kernel_info_reply` | Launch to first cell reply | Trivial cell | `display` cell | First `npm:` import (cached) | Interrupt a busy cell, to next reply |
 |---|---|---|---|---|---|---|
-| Node | 204 ms | 336 ms | 48 ms | 48 ms | 52 ms | 55 ms |
-| Deno | 196 ms | 331 ms | 52 ms | 48 ms | 61 ms | 56 ms |
-| Bun | 189 ms | 231 ms | 3 ms | 3 ms | 8 ms | 546 ms (restarts) |
-| workerd | 289 ms | 329 ms | 3 ms | 3 ms | 20 ms | 582 ms (restarts) |
-| celld | 211 ms | 362 ms | 3 ms | 3 ms | 11 ms | 667 ms (restarts) |
+| Node | 213 ms | 335 ms | 7 ms | 6 ms | 12 ms | 12 ms |
+| Deno | 209 ms | 307 ms | 9 ms | 8 ms | 18 ms | 15 ms |
+| Bun | 215 ms | 262 ms | 3 ms | 3 ms | 8 ms | 553 ms (restarts) |
+| workerd | 268 ms | 314 ms | 3 ms | 3 ms | 19 ms | 582 ms (restarts) |
+| celld | 297 ms | 382 ms | 4 ms | 3 ms | 14 ms | 686 ms (restarts) |
 
 Measured on 2026-10-18 on Linux x86_64, a 4-core Intel Xeon at 2.10 GHz,
 with Node 26.12.0 as the host and Node target, Deno 2.9.6, Bun 1.4.2,
@@ -129,8 +129,7 @@ workerd 2026-10-15 and celld 0.6.2.
   cell. It's what you wait for after opening a notebook or restarting.
 - **Trivial cell** (`1`) and **`display` cell** (`await
   jupyter.display(...)`) are round trips from sending the cell to the
-  kernel going idle. On Node and Deno each output costs about 40 ms more
-  than it should ([#271](https://github.com/tlockney/cdp-kernel/issues/271)).
+  kernel going idle.
 - **First `npm:` import** is the first import of `npm:is-odd` in a kernel,
   with the package already downloaded.
 - **Interrupt a busy cell** is from interrupting `while (true) {}` to the
