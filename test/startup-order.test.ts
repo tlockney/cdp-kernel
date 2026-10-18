@@ -9,6 +9,7 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { freePort } from "./ports.ts";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const MAIN = join(REPO, "src", "main.ts");
@@ -22,7 +23,7 @@ function runtimes(pid: number): number[] {
   }
 }
 
-async function listen(port = 0): Promise<Server> {
+async function listen(port: number): Promise<Server> {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   return server;
@@ -32,11 +33,7 @@ test("the runtime starts after the kernel's ports are bound", { skip: process.pl
   const dir = mkdtempSync(join(tmpdir(), "cdpk-order-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const ports: number[] = [];
-  for (let i = 0; i < 5; i++) {
-    const server = await listen();
-    ports.push((server.address() as { port: number }).port);
-    await new Promise((resolve) => server.close(resolve));
-  }
+  for (let i = 0; i < 5; i++) ports.push(await freePort());
   // The control port is taken while the kernel starts.
   const held = await listen(ports[1]);
   t.after(() => held.close());

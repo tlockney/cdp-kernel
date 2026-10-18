@@ -3,11 +3,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { connectionFile } from "./ports.ts";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const MAIN = join(REPO, "src", "main.ts");
@@ -21,22 +21,6 @@ function alive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-async function freePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as { port: number };
-  await new Promise((resolve) => server.close(resolve));
-  return port;
-}
-
-async function connectionFile(dir: string): Promise<string> {
-  const ports = { shell_port: 0, control_port: 0, stdin_port: 0, iopub_port: 0, hb_port: 0 };
-  for (const name of Object.keys(ports) as (keyof typeof ports)[]) ports[name] = await freePort();
-  const path = join(dir, "conn.json");
-  writeFileSync(path, JSON.stringify({ ...ports, ip: "127.0.0.1", key: "", transport: "tcp", signature_scheme: "hmac-sha256" }));
-  return path;
 }
 
 /**
