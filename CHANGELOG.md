@@ -6,6 +6,10 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Releases are cut by starting the `publish` workflow on `main` with a
+  version; it tags the commit once CI passes, then publishes. The
+  `release` workflow is gone: the publish run it started had
+  `github-actions[bot]` as its actor, which JSR refused (#315).
 - Notebook output on the docs site reads in dark mode: the MoMA example's
   wall labels set their own text color, SVG charts sit on a light panel,
   and the scrubber widget's year labels follow the page's text color
