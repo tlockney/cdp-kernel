@@ -5,41 +5,22 @@
 // WebCrypto's async HMAC is replaced with node:crypto's synchronous one.
 
 import { Buffer } from "node:buffer";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { type Header, type JsonObject, type KernelMessage, makeHeader, type ReceivedHeader } from "./message.ts";
+
+export { makeHeader, PROTOCOL_VERSION } from "./message.ts";
+export type { Header, JsonObject, ReceivedHeader } from "./message.ts";
 
 const ENC = new TextEncoder();
 const DEC = new TextDecoder();
 
 export const DELIMITER = ENC.encode("<IDS|MSG>");
-export const PROTOCOL_VERSION = "5.3";
 
-export type JsonObject = { [key: string]: unknown };
-
-export interface Header extends JsonObject {
-  msg_id: string;
-  session: string;
-  date: string;
-  username: string;
-  msg_type: string;
-  version: string;
-}
-
-/** A header as received: the fields the kernel relies on, plus whatever else came. */
-export interface ReceivedHeader extends JsonObject {
-  msg_id: string;
-  msg_type: string;
-}
-
-export interface Message {
+export interface Message extends KernelMessage {
   identities: Uint8Array[];
   sig: string;
   /** Raw bytes of header, parent_header, metadata, content as received. */
   signedParts: Uint8Array[];
-  header: ReceivedHeader;
-  parentHeader: JsonObject;
-  metadata: JsonObject;
-  content: JsonObject;
-  buffers: Uint8Array[];
 }
 
 export function sign(key: string, parts: Uint8Array[]): string {
@@ -58,17 +39,6 @@ export function verify(key: string, parts: Uint8Array[], sig: string): boolean {
   const expected = Buffer.from(sign(key, parts), "hex");
   const actual = Buffer.from(sig, "hex");
   return expected.length === actual.length && timingSafeEqual(expected, actual);
-}
-
-export function makeHeader(session: string, msgType: string): Header {
-  return {
-    msg_id: randomUUID(),
-    session,
-    date: new Date().toISOString(),
-    username: "kernel",
-    msg_type: msgType,
-    version: PROTOCOL_VERSION,
-  };
 }
 
 export interface EncodeOptions {

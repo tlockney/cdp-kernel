@@ -11,6 +11,13 @@ Issue and pull request numbers refer to
   and the scrubber widget's year labels follow the page's text color
   ([#312](https://github.com/tlockney/cdp-kernel/issues/312)).
 
+## 0.6.0 (2026-10-18)
+
+- Experimental: the kernel runs in a web page, with cells in a Web Worker
+  and `npm:` imports from esm.sh. `scripts/build-browser.mjs` bundles it;
+  [The browser](https://cdp-kernel.org/docs/integration-browser) says what
+  works. The kernel's message handling moved to `src/kernel-core.ts`,
+  which has no Node imports; the kernel process is unchanged.
 - Node and Deno targets no longer keep the data of every comm message from
   the frontend, so dragging a widget's slider for a while doesn't grow the
   runtime. V8 kept each message as compiled source; messages now reach the
@@ -98,6 +105,29 @@ Issue and pull request numbers refer to
   rejects decorators, `accessor` fields and namespaces
   ([#234](https://github.com/tlockney/cdp-kernel/issues/234),
   [#238](https://github.com/tlockney/cdp-kernel/issues/238)).
+- A kernel that is SIGKILLed no longer leaves runtimes behind: a helper
+  process started with the kernel kills the runtimes it registered, and
+  removes their temp directories, when the kernel dies. This covers celld
+  and a Node or Deno runtime busy in a cell ([#240](https://github.com/tlockney/cdp-kernel/issues/240)), and Miniflare's
+  workerd ([#241](https://github.com/tlockney/cdp-kernel/issues/241)).
+- When the kernel can't bind a connection-file port, it writes what holds
+  the port (sockets and their processes, from `/proc` on Linux) to stderr
+  ([#257](https://github.com/tlockney/cdp-kernel/issues/257)).
+- The debugger moves a breakpoint off a line the type stripper blanked to
+  the next line that runs ([#239](https://github.com/tlockney/cdp-kernel/issues/239)), and esbuild is loaded only when a
+  cell needs it ([#238](https://github.com/tlockney/cdp-kernel/issues/238)).
+- A container image with JupyterLab and every runtime
+  ([#267](https://github.com/tlockney/cdp-kernel/issues/267)), published to `ghcr.io/tlockney/cdp-kernel` with each release
+  ([#269](https://github.com/tlockney/cdp-kernel/issues/269)), a devcontainer built from it ([#268](https://github.com/tlockney/cdp-kernel/issues/268)), and Binder and
+  Codespaces links ([#270](https://github.com/tlockney/cdp-kernel/issues/270)).
+- Docs: Ganymede as a way to run notebooks without Python ([#250](https://github.com/tlockney/cdp-kernel/issues/250)), what
+  VS Code needs to draw widgets ([#228](https://github.com/tlockney/cdp-kernel/issues/228)), the support policy and 1.0
+  checklist ([#261](https://github.com/tlockney/cdp-kernel/issues/261)), and `CONTRIBUTING.md`, `SECURITY.md` and issue
+  templates ([#262](https://github.com/tlockney/cdp-kernel/issues/262)).
+- CI runs the tests nightly against the latest runtime releases
+  ([#259](https://github.com/tlockney/cdp-kernel/issues/259)), adds a soak test of one long session per runtime ([#260](https://github.com/tlockney/cdp-kernel/issues/260)),
+  and benchmarks startup and per-cell latency ([#265](https://github.com/tlockney/cdp-kernel/issues/265)). Releases can be
+  cut from the Actions tab with the `release` workflow ([#235](https://github.com/tlockney/cdp-kernel/issues/235)).
 
 ## 0.5.0 (2026-10-16)
 

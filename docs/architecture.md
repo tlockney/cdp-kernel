@@ -16,7 +16,9 @@ Deno 2.9's kernel is already two halves joined by thirteen ops
 So the extraction is:
 
 - Port the protocol half to `node:net` and `node:crypto`: `src/zmtp.ts`,
-  `src/wire.ts`, `src/kernel.ts`.
+  `src/wire.ts`, `src/kernel.ts`. The message handling itself is
+  `src/kernel-core.ts`, which imports nothing from Node, so it also runs in
+  a page ([The browser](integration-browser.md)).
 - Point the CDP half at another runtime's `--inspect` WebSocket:
   `src/target.ts`, `src/cdp.ts`.
 - Replace what Deno's module loader did with esbuild + acorn
@@ -180,7 +182,7 @@ TypeScript 6 in process rather than TypeScript 7's LSP server, are in
 
 ## Provenance
 
-`src/zmtp.ts`, `src/wire.ts`, `src/kernel.ts`, `src/text.ts` and
+`src/zmtp.ts`, `src/wire.ts`, `src/kernel-core.ts`, `src/text.ts` and
 `runtime/display.mjs` are ports of Deno's `cli/js/jupyter_kernel.js` and
 `cli/js/40_jupyter.js` at v2.9.6 (commit `e518fbd`), Copyright 2018-2026 the
 Deno authors, MIT license. Each file header says which parts.

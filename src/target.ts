@@ -13,47 +13,10 @@ import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
+import { type CdpRuntime, Interrupted, isTargetMessage, type KernelTarget, parseJson, type RuntimeName, type TargetEvents, type TargetMessage } from "./target-api.ts";
 
-/** Targets driven over CDP. */
-export type CdpRuntime = "node" | "deno";
-/** Bun, workerd and celld have their own backends: src/bun-target.ts, src/workerd-target.ts, src/celld-target.ts. */
-export type RuntimeName = CdpRuntime | "bun" | "workerd" | "celld";
-
-/** What the kernel needs from a target runtime. */
-export interface KernelTarget {
-  readonly runtime: RuntimeName;
-  readonly versions: { runtime: string; engine: string };
-  /** Shown once, in the first cell: e.g. which project's bindings loaded. */
-  readonly notice?: string;
-  /** Turns a cell into the script evaluate() takes. */
-  transform(code: string, options: CellTransformOptions): string;
-  /** Runs a transformed cell. Rejects with Interrupted after interrupt(). */
-  evaluate(script: string): Promise<EvaluateResult>;
-  interrupt(): Promise<void>;
-  /** Resolves once all output and messages sent so far have been delivered. */
-  flush(): Promise<void>;
-  broadcastResult(executionCount: number, result: RemoteObject): Promise<void>;
-  dispatchComm(
-    msgType: string,
-    content: CdpParams,
-    metadata: CdpParams,
-    buffers: Uint8Array[],
-  ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }>;
-  describeError(exception: RemoteObject): Promise<{ name: string; message: string; stack: string }>;
-  propertyNames(expression: string): Promise<string[]>;
-  lexicalNames(): Promise<string[]>;
-  /** inspect_request (#10): text describing a dotted path's value, without running anything. */
-  inspect(path: string, detail: number): Promise<string | null>;
-  /** The Debugger domain, on targets driven over CDP (#18). */
-  readonly debug?: DebugChannel;
-  /** Answers the target's pending prompt; `interrupted` makes it throw instead (#121). */
-  replyInput(value: string | null, interrupted?: boolean): void;
-  /** What the host waits on, for a kernel that has stopped answering (#237). */
-  diagnose?(): Promise<CdpParams>;
-  /** Lets go of the last cell's result and error, once they are shown (#286). */
-  releaseResults?(): Promise<void>;
-  kill(): void;
-}
+export { Interrupted, isTargetMessage, parseJson };
+export type { CdpRuntime, KernelTarget, RuntimeName, TargetEvents, TargetMessage } from "./target-api.ts";
 
 /**
  * The inspector keeps every object it returns a remote reference to alive
@@ -143,27 +106,6 @@ export function esbuildBinary(
   } catch {
     return null;
   }
-}
-
-/** Messages the bootstrap sends: message records on stdout, or Bun's channel. */
-export type TargetMessage =
-  | { kind: "iopub"; msg_type: string; content: CdpParams; metadata: CdpParams; buffers: string[]; barrier: number }
-  | { kind: "input_request"; prompt: string; password: boolean; barrier: number };
-
-/** The parsed value, or undefined for text that isn't JSON. */
-export function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-export function isTargetMessage(value: unknown): value is TargetMessage {
-  if (typeof value !== "object" || value === null) return false;
-  const kind = (value as { kind?: unknown }).kind;
-  return (kind === "iopub" || kind === "input_request") &&
-    typeof (value as { barrier?: unknown }).barrier === "number";
 }
 
 type PipeItem = { text: string } | { barrier: number; gated: boolean } | { message: TargetMessage };
@@ -393,17 +335,6 @@ export class Gates {
     for (const entry of this.#map.values()) entry.resolve();
     this.#map.clear();
   }
-}
-
-export interface TargetEvents {
-  stream(name: "stdout" | "stderr", text: string): void;
-  message(msg: TargetMessage): void;
-  /** `note` says why, when the target was stopped on purpose. */
-  exit(code: number | null, note?: string): void;
-}
-
-export class Interrupted extends Error {
-  override name = "Interrupted";
 }
 
 /** A catch handler: a call interrupt() abandoned becomes Interrupted. */

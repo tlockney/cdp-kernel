@@ -76,6 +76,7 @@ export function groups(site: string): Group[] {
         { text: "Node and Deno", link: "/integration-cdp" },
         { text: "Bun", link: "/integration-bun" },
         { text: "workerd and celld", link: "/integration-workers" },
+        { text: "The browser", link: "/integration-browser" },
         { text: "Feasibility study", link: "/feasibility-study" },
       ],
     },
