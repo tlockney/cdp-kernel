@@ -13,6 +13,8 @@ import { loadTypeStripper } from "../src/transform.ts";
 await loadTypeStripper("esbuild");
 
 const hasDeno = spawnSync("deno", ["--version"], { stdio: "ignore" }).status === 0;
+/** A step that takes longer has stalled: fail it with what the target was doing, not at the file's timeout. */
+const STEP_TIMEOUT = 30_000;
 
 async function session(t: { after(fn: () => void): void }, runtime: "node" | "deno") {
   const events: TargetEvents = { stream: () => {}, message: () => {}, exit: () => {} };
@@ -24,17 +26,46 @@ async function session(t: { after(fn: () => void): void }, runtime: "node" | "de
     dap.push(event);
     waiters = waiters.filter((w) => (w.event === event.event ? (w.resolve(event), false) : true));
   });
+  // Every pause, where it stopped: a step that stalls says why (#292).
+  const urls = new Map<string, string>();
+  const pauses: string[] = [];
+  target.debug.on("Debugger.scriptParsed", (p) => void urls.set(String(p.scriptId), String(p.url)));
+  target.debug.on("Debugger.paused", (p) => {
+    const frames = (p.callFrames as { functionName: string; location: { scriptId: string; lineNumber: number } }[])
+      .slice(0, 6)
+      .map((f) => `${f.functionName || "(anonymous)"} ${urls.get(f.location.scriptId) || "(no url)"}:${f.location.lineNumber + 1}`);
+    const data = p.data as { description?: string } | undefined;
+    pauses.push(`${String(p.reason)}${data?.description ? ` (${data.description.split("\n")[0]})` : ""}: ${frames.join(" < ")}`);
+  });
   await dbg.attachTarget(target.debug);
+  const within = async <T>(what: string, promise: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_, reject) => {
+      // Not target.diagnose(): its probe pause and resume would let a
+      // paused target go, and hide what held it.
+      timer = setTimeout(() =>
+        reject(new Error([
+          `${what}: no answer in ${STEP_TIMEOUT / 1000} s${dbg.stopped ? ", target paused" : ""}`,
+          `DAP events: ${dap.map((e) => e.event).join(", ") || "none"}`,
+          `pauses:${pauses.map((p) => `\n  ${p}`).join("") || " none"}`,
+        ].join("\n"))), STEP_TIMEOUT);
+    });
+    try {
+      return await Promise.race([promise, stalled]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   let seq = 0;
   const request = async (command: string, args: DapMessage = {}) => {
-    const reply = await dbg.handle({ type: "request", seq: ++seq, command, arguments: args });
+    const reply = await within(command, dbg.handle({ type: "request", seq: ++seq, command, arguments: args }));
     assert.equal(reply.success, true, `${command}: ${String(reply.message)}`);
     return reply.body as DapMessage;
   };
-  const next = (event: string) => new Promise<DapMessage>((resolve) => waiters.push({ event, resolve }));
+  const next = (event: string) => within(`waiting for ${event}`, new Promise<DapMessage>((resolve) => waiters.push({ event, resolve })));
   /** Runs a cell as the kernel does while debugging. */
   const run = (code: string): Promise<EvaluateResult> =>
-    dbg.started ? target.evaluate(dbg.cellScript(code, code)) : target.evaluate(target.transform(code, {}));
+    within(`running ${JSON.stringify(code)}`, dbg.started ? target.evaluate(dbg.cellScript(code, code)) : target.evaluate(target.transform(code, {})));
   return { target, dbg, dap, request, next, run };
 }
 
@@ -165,7 +196,7 @@ for (const runtime of ["node", "deno"] as const) {
     assert.equal((await result).result.value, 10);
   });
 
-  test(`${runtime}: pause on exceptions, then disconnect stops pausing`, { skip }, async (t) => {
+  for (let rep = 0; rep < (process.env.CDPK_REPEAT_292 ? 60 : 1); rep++) test(`${runtime}: pause on exceptions, then disconnect stops pausing ${rep}`, { skip }, async (t) => {
     const { dbg, request, next, run } = await session(t, runtime);
     await request("initialize");
     await request("attach");
