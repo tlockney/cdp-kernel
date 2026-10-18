@@ -102,7 +102,7 @@ Windows build).
 ## Install options
 
 ```sh
-cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [--name NAME] [--display NAME]
+cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [--no-language-service] [--name NAME] [--display NAME]
 ```
 
 - `--runtime` is `node` (the default), `deno`, `bun`, `workerd` or `celld`.
@@ -116,6 +116,10 @@ cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [
   `accessor` fields or namespaces (other than `declare namespace`); a cell
   that uses them fails with a `SyntaxError`. See
   [Stripping types](architecture.md#stripping-types-typescript-to-javascript).
+- `--no-language-service` turns off typed completion and inspection, which
+  take about 150 MB while in use. Tab and Shift-Tab then show runtime
+  values only. See
+  [Inspection and completion](notebooks.md#inspection-completion-and-history).
 - `--name` sets the kernelspec's directory name, which is also the name
   Jupyter uses for the kernel. The default is `cdp-<runtime>`, or
   `cdp-node-deno` with `--deno-compat`.

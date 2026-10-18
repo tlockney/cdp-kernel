@@ -86,12 +86,40 @@ restarts the runtime (see [Choosing a runtime](runtimes.md)).
 
 ## Inspection, completion and history
 
-**Shift-Tab** shows a tooltip for the name at the cursor: its type, a
-function's signature (and its source at the second press), a preview, and
-its properties. Nothing is run to get it. On Node and Deno the value is
-evaluated with V8's side-effect check (`throwOnSideEffect`), which also
-guards completion. Bun, workerd and celld look the name up by property,
-without calling getters.
+**Tab** completes from two sources. TypeScript's language service reads
+the cells you've run plus the one you're editing, so it knows declared
+types: `user.` lists a `User`'s fields even before `user` has a value,
+completion works inside expressions such as `[1, 2].map((n) => n.toF`, and
+imported packages complete from their declarations. The runtime then adds
+names only it knows, such as a property set at runtime. JupyterLab shows
+each match's kind (method, property, variable, ...) beside it.
+
+**Shift-Tab** shows a tooltip for the name at the cursor: its declared type,
+signature and JSDoc, then the runtime's view of the value, a preview and its
+properties (and a function's source at the second press). Nothing is run to
+get it. On Node and Deno the value is evaluated with V8's side-effect check
+(`throwOnSideEffect`), which also guards completion. Bun, workerd and celld
+look the name up by property, without calling getters.
+
+Types for each runtime's globals and for your imports come from:
+
+| Runtime | Globals | `npm:` and `jsr:` imports |
+|---|---|---|
+| Node | `@types/node` | the kernel's package cache |
+| Deno | `deno types` | Deno's cache, found with `deno info` (the project's import map applies) |
+| Bun | `@types/bun` | Bun's package cache |
+| workerd, celld | the project's `worker-configuration.d.ts` (`wrangler types`), else `@cloudflare/workers-types` | the kernel's package cache |
+
+A type package your project already has (in its `node_modules`) is used as
+is. Otherwise it's installed once into the kernel's package cache, in the
+background; until then, and when offline, completion goes on without it.
+Looking up types never downloads a package your cells haven't imported.
+
+The language service runs in a worker thread. It starts on the first Tab or
+Shift-Tab, which is answered from the runtime alone while it loads (well
+under a second), and stops after 10 minutes without a request. While it
+runs it takes about 150 MB. To turn it off, install the kernel with
+`--no-language-service` ([Install options](install.md#install-options)).
 
 Executed cells are kept for `history_request` (tail, range and search).
 

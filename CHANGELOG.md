@@ -6,11 +6,21 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Node and Deno targets no longer keep the data of every comm message from
+  the frontend, so dragging a widget's slider for a while doesn't grow the
+  runtime. V8 kept each message as compiled source; messages now reach the
+  target over its stdin
+  ([#287](https://github.com/tlockney/cdp-kernel/issues/287)).
 - Node and Deno targets no longer keep every cell's result and thrown
   error in memory. The inspector held each one it returned until released,
   so a session that showed large values (arrays, images) grew without
   bound; the kernel now releases them once the cell's output is shown
   ([#286](https://github.com/tlockney/cdp-kernel/issues/286)).
+- The kernel starts its runtime only after it has bound all five ports
+  from the connection file. A Deno runtime binds its inspector to a random
+  port within milliseconds of starting and could take one of them, so the
+  kernel died at startup with `EADDRINUSE`
+  ([#257](https://github.com/tlockney/cdp-kernel/issues/257)).
 - Deno's "Debugger session started." notice no longer shows up in the
   first cell's output when it arrives late
   ([#281](https://github.com/tlockney/cdp-kernel/issues/281)).
@@ -52,6 +62,9 @@ Issue and pull request numbers refer to
   own cache, found with `deno info`; nothing new is fetched for completion.
   On Bun, `npm:`/`jsr:` types come from Bun's install cache
   ([#275](https://github.com/tlockney/cdp-kernel/issues/275)).
+- The docs describe typed completion and inspection, where types come
+  from, their cost and limits, and `--no-language-service`
+  ([#276](https://github.com/tlockney/cdp-kernel/issues/276)).
 - Node 22.18+ is supported as the host and as a target; `engines` was
   `>=24`. 22.18 is the first Node 22 that strips TypeScript types without
   a flag, which imported `.ts` files rely on. CI adds Node 22 on Linux and

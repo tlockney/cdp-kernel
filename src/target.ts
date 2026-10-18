@@ -488,6 +488,9 @@ export class Target implements KernelTarget {
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
     killOnExit(child);
+    // Prompt replies and comm messages go to stdin; one written as the
+    // runtime exits fails with EPIPE, and the exit is handled on its own.
+    child.stdin.on("error", () => {});
     // A start that fails or stalls must not leave the runtime running: its
     // pipes and inspector sockets would keep this process alive (#52).
     const sessions: CdpSession[] = [];
@@ -823,17 +826,19 @@ export class Target implements KernelTarget {
     buffers: Uint8Array[],
   ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }> {
     this.#interrupted = false;
+    // Over stdin, not as call arguments: V8 caches an argument's source,
+    // so the data would stay in the target's memory (#287).
+    const record = Buffer.from(JSON.stringify({
+      msgType,
+      content,
+      metadata,
+      buffers: buffers.map((b) => Buffer.from(b).toString("base64")),
+    }));
+    this.#child.stdin.write(`comm ${record.length}\n`);
+    this.#child.stdin.write(record);
     let res: CdpParams;
     try {
-      res = await this.#callAsyncFunctionOn(
-        `function (t, c, m, b) { return globalThis.${SHIM}.commDispatch(t, c, m, b); }`,
-        [
-          { value: msgType },
-          { value: content },
-          { value: metadata },
-          { value: buffers.map((b) => Buffer.from(b).toString("base64")) },
-        ],
-      );
+      res = await this.#callAsyncFunctionOn(`function () { return globalThis.${SHIM}.commDispatchFromStdin(); }`, []);
     } catch (err) {
       if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Comm handler interrupted");
       throw err;

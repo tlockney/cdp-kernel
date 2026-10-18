@@ -2,12 +2,28 @@
 
 - Widgets are anywidget-style (`jupyter.widget`). The classic ipywidgets
   controls (sliders, dropdowns) are Python classes, so they're not available.
-- Inspection tooltips show what's found at runtime (type, signature,
-  preview, properties), not TypeScript types or JSDoc. On Bun, workerd and
-  celld, a getter on the path is reported but not called, and completion
-  works only on a plain dotted path (`a.b.c`): any other expression
-  completes to nothing. History is kept
-  for the current kernel session only.
+- Typed completion and inspection
+  ([Inspection and completion](notebooks.md#inspection-completion-and-history))
+  have limits:
+  - the first request after the kernel starts (or after 10 idle minutes)
+    is answered from runtime values only, while the language service
+    loads;
+  - the language service knows only what cells declare: a property added
+    at runtime or a global set by a library is still completed, from the
+    runtime, but has no type;
+  - a cell that ran is taken as declared even if it threw part way, and a
+    name it declared keeps its type after `delete`;
+  - imports in the cell being edited have no types until it runs, and an
+    `npm:` package without its own declarations has none (`@types/...`
+    packages aren't fetched for it);
+  - on Deno, `node:` imports are untyped, and on the `--deno-compat` Node
+    kernel, `Deno` is untyped;
+  - a kernel run from JSR doesn't type `jupyter`.
+
+  Where the runtime answers alone on Bun, workerd and celld, a getter on
+  the path is reported but not called, and completion works only on a
+  plain dotted path (`a.b.c`). History is kept for the current kernel
+  session only.
 - The debugger is for Node and Deno targets only. Breakpoints are per line,
   conditional breakpoints and logpoints aren't supported, variables can't be
   set from the debugger, and "copy to globals" isn't offered.
