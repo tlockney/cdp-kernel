@@ -127,3 +127,23 @@ test("relative imports resolve from the notebook's directory", () => {
   types.addCell(`import { helper } from "./helper.ts";`);
   assert.deepEqual(names(types, "helper."), ["gamma"]);
 });
+
+test("quick info gives the declared type, signature and JSDoc (#274)", () => {
+  const types = service();
+  types.addCell("/**\n * Adds two numbers.\n * @param a the first\n */\nfunction add(a: number, b: number) { return a + b; }");
+  const expected = "function add(a: number, b: number): number\nAdds two numbers.\n@param a the first";
+  assert.equal(types.quickInfo("add", 3), expected);
+  assert.equal(types.quickInfo("add(", 4), expected, "right after the call's parenthesis");
+  assert.equal(types.quickInfo("add", 1), expected, "inside the name");
+  // An undeclared name: the runtime may still know it.
+  assert.equal(types.quickInfo("notDeclared", 11), null);
+  types.addCell("let pending: Promise<string[]> | undefined;");
+  assert.equal(types.quickInfo("pending", 7), "let pending: Promise<string[]> | undefined");
+  assert.equal(types.quickInfo("  ", 1), null);
+});
+
+test("quick info reaches members of expressions the runtime can't evaluate", () => {
+  const types = service();
+  const code = "[1, 2].map((n) => n.toFixed";
+  assert.match(types.quickInfo(code, code.length) ?? "", /^\(method\) Number\.toFixed\(fractionDigits\?: number\): string/);
+});

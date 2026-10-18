@@ -52,8 +52,11 @@ parentPort?.on("message", (request: WorkerRequest) => {
       types.reset();
       return;
     case "complete":
+    case "quickInfo":
       try {
-        response = { id: request.id, result: types.complete(request.code, request.cursor) };
+        response = request.type === "complete"
+          ? { id: request.id, result: types.complete(request.code, request.cursor) }
+          : { id: request.id, result: types.quickInfo(request.code, request.cursor) };
       } catch (err) {
         response = { id: request.id, error: err instanceof Error ? err.stack ?? err.message : String(err) };
       }
