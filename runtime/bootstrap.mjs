@@ -27,7 +27,7 @@ const cwdUrl = pathToFileURL(cwd.endsWith("/") ? cwd : cwd + "/");
 // Stand-in referrer for cell code, like Deno's ./$deno$jupyter_repl.mts.
 const replUrl = new URL("$cdpk$repl.mjs", cwdUrl);
 
-const { inspect, inspectPlain, readFile, writeOut, writeErr, readStdinLine } = await platform();
+const { inspect, inspectPlain, readFile, writeOut, writeErr, readStdin } = await platform();
 
 function base64(bytes) {
   let binary = "";
@@ -92,7 +92,7 @@ const jupyter = createJupyter({
   // stdin for its JSON-line reply.
   input(prompt, password) {
     send({ kind: "input_request", prompt, password });
-    const line = readStdinLine();
+    const line = readInputReply();
     if (line === null) return null;
     const reply = JSON.parse(line);
     if (reply.interrupted === true) {
@@ -228,6 +228,15 @@ globalThis.__cdpk = {
     const buffers = buffers64.map((b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0)));
     return await jupyter.commDispatch(msgType, content, metadata, buffers);
   },
+  // The same, for a message the host wrote to stdin (Node and Deno). A
+  // value passed as a CDP call argument is compiled as source, and V8's
+  // compilation cache keeps that source until the heap nears its limit, so
+  // each message's data would stay in memory (#287). Read before the first
+  // await, so messages are taken in the order the host wrote them.
+  commDispatchFromStdin() {
+    const { msgType, content, metadata, buffers } = readCommRecord();
+    return globalThis.__cdpk.commDispatch(msgType, content, metadata, buffers);
+  },
   describeError(value) {
     if (value instanceof Error) {
       const message = explainError(value.message);
@@ -342,7 +351,6 @@ function writeAllSync(stream, bytes) {
 
 async function platform() {
   if (isDeno) {
-    const stdinBuf = new Uint8Array(1);
     return {
       inspect: (v) => Deno.inspect(v, { colors: true, depth: 4 }),
       inspectPlain: (v) => Deno.inspect(v, { colors: false, depth: 2 }),
@@ -350,12 +358,11 @@ async function platform() {
       // writeSync can write part of the buffer; a record must go out whole.
       writeOut: (s) => writeAllSync(Deno.stdout, ENC.encode(s)),
       writeErr: (s) => writeAllSync(Deno.stderr, ENC.encode(s)),
-      readStdinLine: () => readLine(() => (Deno.stdin.readSync(stdinBuf) ? stdinBuf[0] : null)),
+      readStdin: (bytes) => Deno.stdin.readSync(bytes) ?? 0,
     };
   }
   const util = await import("node:util");
   const fs = await import("node:fs");
-  const buf = Buffer.alloc(1);
   // Node writes to a pipe without blocking and queues what doesn't fit for
   // the event loop to flush. input() blocks the main thread in readSync, so
   // queued output, and the input_request's barrier marker after it, would
@@ -372,17 +379,16 @@ async function platform() {
     // capture output must not swallow message records (#271).
     writeOut: process.stdout.write.bind(process.stdout),
     writeErr: process.stderr.write.bind(process.stderr),
-    readStdinLine: () =>
-      readLine(() => {
-        for (;;) {
-          try {
-            return fs.readSync(0, buf, 0, 1, null) === 1 ? buf[0] : null;
-          } catch (err) {
-            if (err.code !== "EAGAIN") throw err;
-            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
-          }
+    readStdin: (bytes) => {
+      for (;;) {
+        try {
+          return fs.readSync(0, bytes, 0, bytes.length, null);
+        } catch (err) {
+          if (err.code !== "EAGAIN") throw err;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
         }
-      }),
+      }
+    },
   };
 }
 
@@ -411,12 +417,51 @@ async function syncBunOutput() {
   }
 }
 
-function readLine(nextByte) {
+// The host writes two kinds of record to stdin, both read synchronously: a
+// prompt's reply, as one JSON line, and a frontend comm message (#287), as
+// a `comm <length>` line followed by that many bytes of JSON.
+const COMM_HEADER = /^comm (\d+)$/;
+
+/** `n` bytes from stdin, or null if it ends first. */
+function readExactly(n) {
+  const bytes = new Uint8Array(n);
+  for (let at = 0; at < n;) {
+    const got = readStdin(bytes.subarray(at));
+    if (!got) return null;
+    at += got;
+  }
+  return bytes;
+}
+
+function readLine() {
   const bytes = [];
   for (;;) {
-    const byte = nextByte();
+    const byte = readExactly(1)?.[0] ?? null;
     if (byte === null) return bytes.length ? new TextDecoder().decode(new Uint8Array(bytes)) : null;
     if (byte === 0x0a) return new TextDecoder().decode(new Uint8Array(bytes));
     bytes.push(byte);
+  }
+}
+
+/** The next prompt reply's line, past any comm record left unread. */
+function readInputReply() {
+  for (;;) {
+    const line = readLine();
+    const comm = line === null ? null : COMM_HEADER.exec(line);
+    if (comm === null) return line;
+    readExactly(Number(comm[1]));
+  }
+}
+
+/** The next comm message, past any prompt reply left unread. */
+function readCommRecord() {
+  for (;;) {
+    const line = readLine();
+    if (line === null) throw new Error("stdin closed before a comm message arrived");
+    const comm = COMM_HEADER.exec(line);
+    if (comm === null) continue;
+    const body = readExactly(Number(comm[1]));
+    if (body === null) throw new Error("stdin closed in the middle of a comm message");
+    return JSON.parse(new TextDecoder().decode(body));
   }
 }

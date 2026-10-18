@@ -150,6 +150,7 @@ So on every runtime, a cell and an imported `.ts` or `.tsx` file accept the same
 | A busy loop inside `Runtime.evaluate` blocks every inspector message, so interrupt is never seen | Each cell starts with `await __cdpk.tick()` (one macrotask), so user code runs as an ordinary task. `Runtime.terminateExecution` then arrives on a second CDP session. The host abandons the evaluate, whose promise never settles. |
 | stdout/stderr arrive over pipes and display messages over the WebSocket, so they race | Every display message is preceded by a numbered marker on both pipes. The host releases the message only after both pipes reach the marker, and holds later pipe output until the message is out. |
 | `prompt()` must be synchronous | The target sends an `input_request` as a record on stdout, then blocks on a `readSync` of stdin. The host writes the reply as one JSON line. |
+| A value passed as a CDP call argument stays in the target's memory | V8 compiles each argument as source and keeps that source in its compilation cache until the heap nears its limit. Frontend comm messages, which can be large and frequent, go to the target's stdin instead, as a `comm <length>` line and that many bytes of JSON, and the call that runs the handlers takes no arguments. |
 | Uncaught errors from timers would kill the target | `uncaughtException` and `unhandledrejection` handlers report them to stderr. |
 
 ## Provenance
