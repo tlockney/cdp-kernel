@@ -40,7 +40,7 @@ as plain text such as `Widget(4f9c…)`; see
 [Troubleshooting](#troubleshooting).
 
 **JupyterLab served by Ganymede.**
-[Ganymede](https://ganymede-server.com/docs/workstation) serves JupyterLab
+[Ganymede](https://ganymede-server.com/docs/install) serves JupyterLab
 without Python, and `ganymede lab install` installs anywidget's frontend
 along with JupyterLab's, so there is nothing more to do. If you skipped it with `--no-default-extensions`, add it with:
 

@@ -4,7 +4,7 @@ Each install writes a Jupyter kernelspec: `cdp-node`, `cdp-deno`,
 `cdp-node-deno` (Node with the Deno compatibility namespace), `cdp-bun`,
 `cdp-workerd`, or `cdp-celld`. Then pick the kernel in JupyterLab, VS
 Code, or JupyterLab served by
-[Ganymede](https://ganymede-server.com/docs/workstation), which needs no
+[Ganymede](https://ganymede-server.com/docs/install), which needs no
 Python.
 
 ## From npm
