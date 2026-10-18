@@ -70,6 +70,9 @@ export default defineConfig({
     },
   },
   themeConfig: {
+    // The site title goes to the landing page, outside VitePress, so it needs
+    // a full page load like the Home nav item.
+    logoLink: { link: `${site}/`, target: "_self" },
     nav: [
       { text: "Home", link: `${site}/`, target: "_self", noIcon: true },
       { text: "Get started", link: "/getting-started" },
