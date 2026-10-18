@@ -1,0 +1,25 @@
+// Codespaces and VS Code Dev Containers (#268): the container image
+// (container/Dockerfile) built from this checkout, so every runtime and
+// kernelspec is installed, plus what the test suite needs.
+{
+  "name": "cdp-kernel",
+  "build": {
+    "dockerfile": "../container/Dockerfile",
+    "context": "..",
+    "args": { "CDPK_SOURCE": "checkout" }
+  },
+  "remoteUser": "jovyan",
+  // npm ci for running the kernel and tests from the checkout
+  // (docs/development.md); uv for the e2e and JupyterLab suites.
+  "postCreateCommand": "npm ci --no-audit --no-fund && pip install --quiet uv",
+  "forwardPorts": [8888],
+  "portsAttributes": { "8888": { "label": "JupyterLab" } },
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["docs/public/notebooks/getting-started.ipynb"]
+    },
+    "vscode": {
+      "extensions": ["ms-toolsai.jupyter", "ms-python.python"]
+    }
+  }
+}
