@@ -114,8 +114,9 @@ string. A few things worth knowing early:
   straight from npm without an install step: `import { z } from
   "npm:zod@3"`. The package downloads on first use.
 - **Interrupt** (the ■ button) stops a long cell and keeps your variables.
-- **Shift-Tab** on a name shows what it is: its type, a function's
-  signature, a preview of its value.
+- **Tab** completes names and members, from declared types as well as
+  values. **Shift-Tab** on a name shows what it is: its type, a function's
+  signature and documentation, a preview of its value.
 - **Rich output.** `jupyter.md`, `jupyter.html`, `jupyter.svg` and
   `jupyter.image` render their content, and `jupyter.display(...)` shows
   something without ending the cell. See [The jupyter namespace](jupyter-api.md)

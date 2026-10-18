@@ -176,7 +176,9 @@ running user code another way. For `obj.<Tab>` and Shift+Tab it resolves a
 dotted path such as `a.b.c` one property at a time with
 `Object.getOwnPropertyDescriptor`, walking up prototypes, and stops at an
 accessor instead of calling it (`resolvePath` in `runtime/introspect.mjs`).
-Completion on an expression that isn't a plain path returns nothing.
+For an expression that isn't a plain path the runtime returns nothing, and
+only the kernel's language service, which reads types rather than values,
+completes it ([Typed completion](architecture.md#typed-completion-and-inspection)).
 
 ## Interrupts
 

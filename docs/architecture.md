@@ -142,6 +142,31 @@ by the target runtime itself:
 
 So on every runtime, a cell and an imported `.ts` or `.tsx` file accept the same syntax.
 
+## Typed completion and inspection
+
+Tab and Shift-Tab merge two answers: the target's runtime values, and
+TypeScript's language service (`typescript` 6) running in a worker thread
+of the kernel host (`src/language-service.ts`, `src/language-service-worker.ts`).
+The worker keeps one virtual file in the notebook's directory, so relative
+imports resolve as the target resolves them: every cell that ran, then the
+cell being edited (`src/notebook-types.ts`). A REPL redeclares names all the
+time, which in one file would be an error that keeps the first type, so a
+top-level declaration is dropped when a later cell, or the edited one,
+declares all its names again.
+
+The worker's module resolution follows the target. `npm:` and `jsr:` map to
+the package already installed in the kernel's (or Bun's) cache, never
+installing one. On Deno, `deno info --json` says where Deno put a
+specifier an executed cell imported (`src/deno-types.ts`); remote modules,
+which Deno caches under hashed names, appear under virtual paths built
+from their URLs, so imports between them still resolve.
+
+Each request gets 500 ms, since JupyterLab gives a kernel's completions a
+second; past that the kernel answers from the runtime alone, so a slow
+first load never delays Tab. The design and its measurements, including why
+TypeScript 6 in process rather than TypeScript 7's LSP server, are in
+[`probes/ts-language-service.md`](https://github.com/tlockney/cdp-kernel/blob/main/probes/ts-language-service.md).
+
 ## How the tricky parts work
 
 | Problem | Approach |
