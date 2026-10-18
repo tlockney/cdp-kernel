@@ -57,7 +57,7 @@ they finish:
 or, if handling the request threw, `{ "kind": "reply", "id": 7, "failure": "<stack>" }`.
 Between replies, `display()` and the other display functions send
 `{ "kind": "iopub", ... }` and `{ "kind": "input_request", ... }` lines,
-the same messages the CDP binding carries on Node and Deno.
+the same messages Node and Deno send as records on stdout.
 
 The requests mirror the CDP calls the kernel makes of the other targets:
 
@@ -73,7 +73,7 @@ The requests mirror the CDP calls the kernel makes of the other targets:
 | `ping` | Answers at once | none; used by interrupts |
 
 Bun writes to fd 3 synchronously (`fs.writeSync`, retrying on `EAGAIN`),
-like a CDP binding call. That keeps a message's position relative to the
+as Node and Deno write their records. That keeps a message's position relative to the
 `console.log` calls around it, which the barrier markers depend on.
 
 stdout and stderr are written the same way. Once `process.stdout` exists,
@@ -162,7 +162,7 @@ Bun transpiles any TypeScript file a cell imports itself, `enum` included.
 ## Output ordering
 
 stdout and stderr are ordinary pipes, as on Node and Deno, and fd 3 plays
-the binding's part. So the Bun target uses the same barrier markers and
+the part of Node's and Deno's stdout records. So the Bun target uses the same barrier markers and
 the same `PipeDemux` and `Gates` classes from `src/target.ts`. See
 [Output ordering](integrations.md#output-ordering).
 

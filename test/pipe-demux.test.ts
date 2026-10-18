@@ -100,6 +100,78 @@ test("PipeDemux ungated marker does not call the gate", async () => {
   assert.deepEqual(gateCalls, []);
 });
 
+// Node and Deno send messages as records on stdout (#271).
+const record = (barrier: number, extra = "") =>
+  `\x1b[cdpk:<{"barrier":${barrier},"kind":"iopub","msg_type":"stream"${extra}}\x1b]`;
+
+test("PipeDemux delivers a record in order and gates later text on it", async () => {
+  const c = collector();
+  const messages: unknown[] = [];
+  let release: () => void = () => {};
+  const demux = new PipeDemux(
+    c.onText,
+    () => new Promise<void>((resolve) => (release = resolve)),
+    (msg) => void messages.push(msg),
+  );
+  demux.push(`one${record(3)}two`);
+  await tick();
+  assert.equal(c.joined(), "one");
+  assert.deepEqual(messages, [{ barrier: 3, kind: "iopub", msg_type: "stream" }]);
+  await demux.waitFor(3);
+  assert.equal(demux.state().gatedOn, 3);
+  release();
+  await tick();
+  assert.equal(c.joined(), "onetwo");
+});
+
+test("PipeDemux holds a record split across chunks, however long", async () => {
+  const c = collector();
+  const messages: unknown[] = [];
+  const demux = new PipeDemux(c.onText, undefined, (msg) => void messages.push(msg));
+  const text = `before${record(1, `,"data":"${"x".repeat(100_000)}"`)}after`;
+  // Cut inside the prefix, the body, and between the terminator's two characters.
+  const cuts = [text.indexOf("\x1b") + 3, 50_000, text.lastIndexOf("]")];
+  let at = 0;
+  for (const cut of cuts) {
+    demux.push(text.slice(at, cut));
+    at = cut;
+    await tick();
+    assert.equal(c.joined(), "before");
+    assert.equal(messages.length, 0);
+  }
+  demux.push(text.slice(at));
+  await tick();
+  assert.equal(c.joined(), "beforeafter");
+  assert.equal(messages.length, 1);
+});
+
+test("PipeDemux drops a record that isn't a message, and passes records through without onMessage", async () => {
+  const c = collector();
+  const messages: unknown[] = [];
+  const demux = new PipeDemux(c.onText, undefined, (msg) => void messages.push(msg));
+  demux.push("a\x1b[cdpk:<not json\x1b]b\x1b[cdpk:<{}\x1b]c");
+  await tick();
+  assert.equal(c.joined(), "abc");
+  assert.deepEqual(messages, []);
+
+  const plain = collector();
+  const stderr = new PipeDemux(plain.onText);
+  stderr.push(`x${record(1)}y`);
+  await tick();
+  assert.equal(plain.joined(), `x${record(1)}y`);
+});
+
+test("PipeDemux releases a record prefix once another escape shows it isn't one", async () => {
+  const c = collector();
+  const demux = new PipeDemux(c.onText, undefined, () => {});
+  demux.push("\x1b[cdpk:<oops");
+  await tick();
+  assert.equal(c.joined(), "");
+  demux.push(" \x1b[31mred\x1b[0m");
+  await tick();
+  assert.equal(c.joined(), "\x1b[cdpk:<oops \x1b[31mred\x1b[0m");
+});
+
 test("PipeDemux close flushes held text and releases waiters", async () => {
   const c = collector();
   const demux = new PipeDemux(c.onText);

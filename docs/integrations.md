@@ -105,7 +105,7 @@ the inspector:
 |---|---|---|---|
 | Channel | CDP over the inspector WebSocket | JSON lines on a pipe (fd 3) | One WebSocket session to a driver Worker |
 | Cells run by | `Runtime.evaluate` with `replMode` | Indirect `eval` of global code | `UnsafeEval` (workerd) or `eval` (celld) of global code |
-| Output | Pipes + CDP binding, ordered by barrier markers | Pipes + fd 3, ordered by barrier markers | All on the session, already in order |
+| Output | Pipes, messages as records on stdout, ordered by barrier markers | Pipes + fd 3, ordered by barrier markers | All on the session, already in order |
 | Imports resolved by | Node resolve hooks / Deno's loader | `bootstrap.mjs`, with `bun add` | The host, which bundles them with esbuild |
 | Interrupt | `Runtime.terminateExecution`; state kept | Ping, else kill and restart | Ping, else kill and restart |
 | `prompt()` | Yes, over stdin | Yes, over stdin | Returns `null` |
@@ -151,14 +151,16 @@ the inspector:
 
 A cell's output reaches the host by two routes: plain `stdout`/`stderr`
 pipes (`console.log`, and anything a library writes), and messages
-(`display()`, `prompt()`, comm messages) over the CDP binding or fd 3. The
-two routes race, so on Node, Deno and Bun the target numbers every message
-and writes a matching marker to both pipes first:
+(`display()`, `prompt()`, comm messages) as records on stdout (Node,
+Deno) or over fd 3 (Bun). The two routes race, so on Node, Deno and Bun
+the target numbers every message and writes a matching marker to the
+pipes first:
 
 ![The target writes a marker numbered 7 to stdout and stderr before sending message 7. The host publishes the message only after both pipes reach marker 7, and holds pipe text after the marker until the message is out, so the frontend sees "a", the display, then "b".](images/integrations/output-ordering.svg)
 
 The markers are `ESC[cdpk:<n>m]ESC` sequences, which `PipeDemux` in
-`src/target.ts` strips out. workerd and celld don't need them: there,
+`src/target.ts` strips out. On Node and Deno a message record on stdout,
+`ESC[cdpk:<{...}ESC]`, takes the place of its stdout marker. workerd and celld don't need them: there,
 `console` writes into the same WebSocket as everything else.
 
 ## Interrupts
