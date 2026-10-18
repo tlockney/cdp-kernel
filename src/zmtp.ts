@@ -211,6 +211,11 @@ export class Queue<T> {
   }
 }
 
+/** Resolves once `server` is listening, after any retries. */
+export function listening(server: Server): Promise<void> {
+  return server.listening ? Promise.resolve() : new Promise((resolve) => server.once("listening", () => resolve()));
+}
+
 /** REP socket for the heartbeat channel: echo everything. */
 export function startHeartbeat(port: number, host: string): Server {
   return listen(port, host, (socket) => {

@@ -16,6 +16,11 @@ Issue and pull request numbers refer to
   so a session that showed large values (arrays, images) grew without
   bound; the kernel now releases them once the cell's output is shown
   ([#286](https://github.com/tlockney/cdp-kernel/issues/286)).
+- The kernel starts its runtime only after it has bound all five ports
+  from the connection file. A Deno runtime binds its inspector to a random
+  port within milliseconds of starting and could take one of them, so the
+  kernel died at startup with `EADDRINUSE`
+  ([#257](https://github.com/tlockney/cdp-kernel/issues/257)).
 - Deno's "Debugger session started." notice no longer shows up in the
   first cell's output when it arrives late
   ([#281](https://github.com/tlockney/cdp-kernel/issues/281)).
