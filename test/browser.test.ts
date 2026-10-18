@@ -1,7 +1,8 @@
 // The browser target end to end: the kernel (src/browser/mod.ts) and its
-// driver Worker, bundled by scripts/build-browser.mjs, in headless
-// Chromium, with a page standing in for the frontend. Skipped without
-// Playwright.
+// driver Worker, bundled by scripts/build-browser.mjs, in a headless
+// browser, with a page standing in for the frontend. Skipped without
+// Playwright. CDPK_BROWSER picks Playwright's engine: chromium (the
+// default), webkit or firefox (#319).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -12,7 +13,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type Playwright = { chromium: { launch(options?: object): Promise<Browser> } };
+const ENGINES = ["chromium", "webkit", "firefox"] as const;
+type Engine = typeof ENGINES[number];
+type Playwright = Record<Engine, { launch(options?: object): Promise<Browser> }>;
 type Browser = { newPage(): Promise<Page>; close(): Promise<void> };
 type Page = {
   goto(url: string): Promise<unknown>;
@@ -27,6 +30,9 @@ try {
   // Not installed: skip.
 }
 const skip = playwright === null ? "needs the playwright package" : false;
+
+const engine = (process.env.CDPK_BROWSER || "chromium") as Engine;
+if (!ENGINES.includes(engine)) throw new Error(`CDPK_BROWSER must be one of ${ENGINES.join(", ")}, not ${engine}`);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -91,7 +97,7 @@ async function open(t: { after(fn: () => unknown): void }) {
   execFileSync(process.execPath, [join(ROOT, "scripts/build-browser.mjs"), dir], { cwd: ROOT, stdio: "pipe" });
   const { server, url } = await serve(dir);
   t.after(() => server.close());
-  const browser = await playwright!.chromium.launch();
+  const browser = await playwright![engine].launch();
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.goto(url);

@@ -52,7 +52,9 @@ kernel.send("shell", {
 });
 ```
 
-`test/browser.test.ts` runs a page like this in headless Chromium.
+`test/browser.test.ts` runs a page like this in headless Chromium, WebKit
+and Firefox, through Playwright; CI runs it in all three. Safari itself,
+on macOS or iOS, isn't tested.
 
 ## What works
 
