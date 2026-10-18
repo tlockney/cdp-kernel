@@ -157,13 +157,21 @@ function hold(value) {
   return promise;
 }
 
+// Yields one macrotask. Code the inspector dispatches calls this, and Node
+// and Deno dispatch a message that arrives while JavaScript runs from a V8
+// interrupt, which can land inside their timer code. A setTimeout there can
+// create a timer list while the timer heap is mid-update, and the heap then
+// loses it: every later setTimeout of that duration never fires (#237).
+// setImmediate only appends to a linked list.
+const yieldTask = () => new Promise((resolve) => setImmediate(resolve));
+
 // Adds the cause to an error from a Deno member the --deno-compat shim
 // lacks (#172); the identity everywhere else.
 let explainError = (text) => text;
 
 globalThis.__cdpk = {
   // Cell code awaits this first; see PRELUDE in src/transform.ts.
-  tick: () => new Promise((resolve) => setTimeout(resolve, 0)),
+  tick: yieldTask,
   // Node: the resolve hook re-parents these imports. Deno would resolve
   // relative paths against this file, so denoImport does it here.
   import: (specifier, options) =>
@@ -196,7 +204,7 @@ globalThis.__cdpk = {
   // Frontend comm messages (#9), from the host's shell channel. Handlers
   // run after one macrotask, like cells, so interrupt can reach them.
   async commDispatch(msgType, content, metadata, buffers64) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await yieldTask();
     const buffers = buffers64.map((b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0)));
     return await jupyter.commDispatch(msgType, content, metadata, buffers);
   },
