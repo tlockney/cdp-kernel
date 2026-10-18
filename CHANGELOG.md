@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Node and Deno targets no longer keep every cell's result and thrown
+  error in memory. The inspector held each one it returned until released,
+  so a session that showed large values (arrays, images) grew without
+  bound; the kernel now releases them once the cell's output is shown
+  ([#286](https://github.com/tlockney/cdp-kernel/issues/286)).
 - Deno's "Debugger session started." notice no longer shows up in the
   first cell's output when it arrives late
   ([#281](https://github.com/tlockney/cdp-kernel/issues/281)).

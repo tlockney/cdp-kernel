@@ -50,8 +50,19 @@ export interface KernelTarget {
   replyInput(value: string | null, interrupted?: boolean): void;
   /** What the host waits on, for a kernel that has stopped answering (#237). */
   diagnose?(): Promise<CdpParams>;
+  /** Lets go of the last cell's result and error, once they are shown (#286). */
+  releaseResults?(): Promise<void>;
   kill(): void;
 }
+
+/**
+ * The inspector keeps every object it returns a remote reference to alive
+ * until it is released, so a cell's result would never be collected (#286).
+ * Cells and lookups put theirs in these groups, which are released once the
+ * kernel is done with them.
+ */
+const CELL_GROUP = "cdpk-cell";
+const LOOKUP_GROUP = "cdpk-lookup";
 
 /** How long a target may take from spawn to a usable session. */
 const START_TIMEOUT_MS = 60_000;
@@ -697,7 +708,13 @@ export class Target implements KernelTarget {
 
   #evaluateRaw(expression: string, session = this.#shell): Promise<EvaluateResult> {
     return session
-      .send("Runtime.evaluate", { expression, contextId: this.#contextId, replMode: true, awaitPromise: true })
+      .send("Runtime.evaluate", {
+        expression,
+        contextId: this.#contextId,
+        replMode: true,
+        awaitPromise: true,
+        objectGroup: CELL_GROUP,
+      })
       .then(asEvaluateResult);
   }
 
@@ -719,6 +736,11 @@ export class Target implements KernelTarget {
       }
       throw err;
     }
+  }
+
+  async releaseResults(): Promise<void> {
+    if (this.#exiting) return;
+    await this.#shell.send("Runtime.releaseObjectGroup", { objectGroup: CELL_GROUP }).catch(() => {});
   }
 
   #onExit(): void {
@@ -842,12 +864,24 @@ export class Target implements KernelTarget {
    */
   #evaluatePure(expression: string): Promise<EvaluateResult | null> {
     return this.#shell
-      .send("Runtime.evaluate", { expression, contextId: this.#contextId, throwOnSideEffect: true })
+      .send("Runtime.evaluate", { expression, contextId: this.#contextId, throwOnSideEffect: true, objectGroup: LOOKUP_GROUP })
       .then(asEvaluateResult)
       .catch(() => null);
   }
 
+  #releaseLookup(): Promise<void> {
+    return this.#shell.send("Runtime.releaseObjectGroup", { objectGroup: LOOKUP_GROUP }).then(() => {}, () => {});
+  }
+
   async propertyNames(expression: string): Promise<string[]> {
+    try {
+      return await this.#propertyNames(expression);
+    } finally {
+      await this.#releaseLookup();
+    }
+  }
+
+  async #propertyNames(expression: string): Promise<string[]> {
     const evaluated = await this.#evaluatePure(`(${expression})`);
     const objectId = evaluated?.result.objectId;
     if (!objectId || evaluated?.exceptionDetails) return [];
@@ -857,6 +891,14 @@ export class Target implements KernelTarget {
   }
 
   async inspect(path: string, detail: number): Promise<string | null> {
+    try {
+      return await this.#inspect(path, detail);
+    } finally {
+      await this.#releaseLookup();
+    }
+  }
+
+  async #inspect(path: string, detail: number): Promise<string | null> {
     const found = await this.#evaluatePure(path);
     if (!found || found.exceptionDetails) return null;
     const value = found.result;
