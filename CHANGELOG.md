@@ -12,6 +12,12 @@ Issue and pull request numbers refer to
   travel on its stdout, and the session that runs cells receives no
   inspector events
   ([#271](https://github.com/tlockney/cdp-kernel/issues/271)).
+- A Node or Deno runtime could stop running `setTimeout` callbacks for
+  good, leaving the kernel waiting on a cell or comm message forever. A
+  kernel request that arrived while the runtime's own timer code ran
+  could make the runtime lose its 1 ms timer list. Cells and comm
+  handlers now yield with `setImmediate` instead
+  ([#237](https://github.com/tlockney/cdp-kernel/issues/237)).
 - Completion knows declared types: TypeScript's language service runs over
   the executed cells plus the one being edited, so `x.` lists a typed
   value's members even before it has a value, completion works inside
