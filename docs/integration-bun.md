@@ -94,7 +94,7 @@ result (or the thrown error) in a map under a handle such as `h3` and
 returns `{ type, objectId: "h3" }`. A later `broadcast` or `describe`
 request names the handle, and the evaluator takes the value out of the
 map. The map is cleared at the start of each `eval`, so values don't pile
-up across cells. With the same shapes as CDP, `src/kernel.ts` treats a Bun
+up across cells. With the same shapes as CDP, `src/kernel-core.ts` treats a Bun
 target exactly like a Node one.
 
 ## Running a cell without replMode

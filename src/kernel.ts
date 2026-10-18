@@ -1,38 +1,23 @@
-// Jupyter message handling: shell, control, stdin and iopub.
-//
-// Ported from startJupyterKernel in Deno's cli/js/jupyter_kernel.js
-// (v2.9.6), which is Copyright 2018-2026 the Deno authors, MIT license.
-// The thirteen op_jupyter_* calls into Deno's REPL isolate are replaced by
-// a Target driven over CDP (src/target.ts).
+// The kernel process: KernelCore (src/kernel-core.ts) on the connection
+// file's ZeroMQ ports, with a target runtime launched as a child process,
+// the language service in a worker thread, and the visual debugger.
 
-import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
-import { randomUUID } from "node:crypto";
-import { decodeMessage, encodeMessage, type JsonObject, makeHeader, type Message, PROTOCOL_VERSION, verify } from "./wire.ts";
-import { listening, PubSocket, RouterSocket, startHeartbeat } from "./zmtp.ts";
-import { Interrupted, type KernelTarget, type RuntimeName, Target, type TargetEvents, type TargetMessage } from "./target.ts";
+import { type RuntimeName, Target } from "./target.ts";
 import { BunTarget } from "./bun-target.ts";
 import { Debugger } from "./debugger.ts";
 import { WorkerdTarget } from "./workerd-target.ts";
 import { launchCelld } from "./celld-target.ts";
-import {
-  type CellTransformOptions,
-  CellSyntaxError,
-  loadTypeStripper,
-  objectLiteralCandidate,
-  type TypeStripper,
-  type TypeStripperName,
-} from "./transform.ts";
+import type { TypeStripper, TypeStripperName } from "./transform.ts";
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
-import { checkIsComplete, codePointToUtf16Index, exprAtCursor, inspectTarget, utf16ToCodePointIndex } from "./text.ts";
-import { type HistoryEntry, queryHistory } from "./history.ts";
 import { LanguageService, type WorkerOptions } from "./language-service.ts";
 import { findWranglerConfig } from "./workers-project.ts";
-import type { EvaluateResult } from "./cdp.ts";
 import { VERSION } from "./package.ts";
 import { watchParent } from "./parent.ts";
+import { KernelCore } from "./kernel-core.ts";
+import { ZmqChannels } from "./zmq-channels.ts";
 
 export interface ConnectionInfo {
   ip: string;
@@ -75,35 +60,9 @@ export function parseConnectionInfo(json: string): ConnectionInfo {
   };
 }
 
-/**
- * How long interrupt_request may wait on the target before it's answered
- * anyway (#121). Under the 5 s clients allow control requests (#253).
- */
-const INTERRUPT_REPLY_WAIT_MS = 1_000;
-
-/** The answer to a target's prompt: a value, or "unwind the cell" (#121). */
-interface InputAnswer {
-  value: string | null;
-  interrupted: boolean;
+function log(text: string): void {
+  process.stderr.write(`[cdp-kernel] ${text}\n`);
 }
-
-const NO_INPUT: InputAnswer = { value: null, interrupted: false };
-
-interface ErrorContent extends JsonObject {
-  ename: string;
-  evalue: string;
-  traceback: string[];
-}
-
-/** Shell requests other than execute_request, and their reply types. */
-const SHELL_REPLIES: Record<string, string> = {
-  kernel_info_request: "kernel_info_reply",
-  complete_request: "complete_reply",
-  is_complete_request: "is_complete_reply",
-  inspect_request: "inspect_reply",
-  history_request: "history_reply",
-  comm_info_request: "comm_info_reply",
-};
 
 /** The target Node's major version, for @types/node: the host's, which is usually the same binary. */
 function nodeMajor(): string {
@@ -141,75 +100,13 @@ function languageServiceOptions(
   }
 }
 
-/** Runtime inspection text without its Type and Signature lines, which the declared type replaces. */
-function withoutSignature(text: string): string {
-  return text.split("\n").filter((line) => !/^(?:Type|Signature): /.test(line)).join("\n");
-}
-
-/** A TypeScript completion kind as a Jupyter completion type (JupyterLab picks its icon by these). */
-function jupyterType(kind: string | undefined): string {
-  switch (kind) {
-    case undefined:
-      return "<unknown>";
-    case "var":
-    case "let":
-    case "const":
-    case "local var":
-    case "parameter":
-      return "variable";
-    case "local function":
-      return "function";
-    case "type":
-    case "alias":
-      return "type";
-    default:
-      return kind;
-  }
-}
-
+/**
+ * A kernel on its connection file's ports, running cells on a target
+ * runtime launched as a child process. The message handling is
+ * KernelCore's (src/kernel-core.ts); this is its Node wiring.
+ */
 export class Kernel {
-  readonly #conn: ConnectionInfo;
-  readonly #runtime: RuntimeName;
-  readonly #denoCompat: boolean;
-  readonly #typeStrip: TypeStripperName | TypeStripper;
-  // A Deno target in a Deno project uses its config (#13).
-  readonly #project: DenoProject | null;
-  #projectWarning: string | null = null;
-  #noticeShownFor: KernelTarget | null = null;
-  /** JupyterLab's visual debugger, for targets driven over CDP (#18). */
-  readonly #debugger: Debugger | null;
-  /** Typed completion from TypeScript's language service (#273). */
-  readonly #types: LanguageService | null;
-  /** Cells run with store_history, for history_request (#10). */
-  readonly #history: HistoryEntry[] = [];
-  readonly #session = randomUUID();
-  readonly #shell: RouterSocket;
-  readonly #control: RouterSocket;
-  readonly #stdin: RouterSocket;
-  readonly #iopub: PubSocket;
-  /** Settles once all five ports are bound (#257). */
-  readonly #bound: Promise<unknown>;
-  #target: KernelTarget | null = null;
-  #targetStarting: Promise<KernelTarget> | null = null;
-  #executionCount = 0;
-  #parent: JsonObject = {};
-  #allowStdin = false;
-  #executing = false;
-  /**
-   * stop_on_error (#123): how many of the shell messages queued when a cell
-   * failed are still to come, and whether the one being handled is one.
-   */
-  #abortQueued = 0;
-  #aborting = false;
-  /** The input_request waiting for its input_reply, if any. */
-  #input: { msgId: string; settle: (answer: InputAnswer) => void } | null = null;
-  /** An interrupt is waiting on the target. */
-  #interrupting = false;
-  /** The shell message being handled, and since when. */
-  #handling: { msgType: string; msgId: string; since: number } | null = null;
-  // Open comms, for comm_info_request: comm_id -> target_name (#9).
-  readonly #comms = new Map<string, string>();
-  #shuttingDown = false;
+  readonly #core: KernelCore;
 
   constructor(
     conn: ConnectionInfo,
@@ -224,632 +121,65 @@ export class Kernel {
       languageService?: boolean;
     } = {},
   ) {
-    this.#conn = conn;
-    this.#runtime = runtime;
-    this.#denoCompat = options.denoCompat ?? false;
-    this.#typeStrip = options.typeStrip ?? "esbuild";
     const notebookDir = options.notebookDir ?? process.cwd();
-    this.#project = runtime === "deno" ? this.#loadProject(notebookDir) : null;
-    this.#types = options.languageService === false
-      ? null
-      : new LanguageService(languageServiceOptions(runtime, notebookDir, this.#project), { log: (text) => this.#log(text) });
-    this.#debugger = runtime === "node" || runtime === "deno"
-      ? new Debugger((event) => this.#publish("debug_event", event), () => this.#transformOptions())
-      : null;
-    const heartbeat = startHeartbeat(conn.hb_port, conn.ip);
-    this.#shell = new RouterSocket(conn.shell_port, conn.ip);
-    this.#control = new RouterSocket(conn.control_port, conn.ip);
-    this.#stdin = new RouterSocket(conn.stdin_port, conn.ip);
-    this.#iopub = new PubSocket(conn.iopub_port, conn.ip);
-    this.#bound = Promise.all(
-      [heartbeat, this.#shell.server, this.#control.server, this.#stdin.server, this.#iopub.server].map(listening),
-    );
+    let warning: string | null = null;
+    let project: DenoProject | null = null;
+    // A Deno target in a Deno project uses its config (#13).
+    if (runtime === "deno") {
+      try {
+        project = loadDenoProject(notebookDir);
+      } catch (err) {
+        // A broken deno.json mustn't stop the kernel: run as in a plain
+        // directory and say why in the first cell.
+        const reason = err instanceof Error ? err.message : String(err);
+        warning = `${reason}; running without the project config`;
+        log(warning);
+      }
+    }
+    const denoCompat = options.denoCompat ?? false;
+    this.#core = new KernelCore({
+      runtime,
+      version: VERSION,
+      channels: new ZmqChannels(conn, log),
+      launchTarget(events) {
+        if (runtime === "bun") return BunTarget.launch(events);
+        if (runtime === "workerd") return WorkerdTarget.launch(events);
+        if (runtime === "celld") return launchCelld(events);
+        return Target.launch(runtime, events, { denoCompat, denoConfig: project?.configPath });
+      },
+      typeStrip: options.typeStrip,
+      transform: project?.transform,
+      warning,
+      types: options.languageService === false
+        ? null
+        : new LanguageService(languageServiceOptions(runtime, notebookDir, project), { log }),
+      createDebugger: runtime === "node" || runtime === "deno"
+        ? (publish, transformOptions) => new Debugger(publish, transformOptions)
+        : undefined,
+      log,
+      exit: () => process.exit(0),
+    });
   }
 
   async run(): Promise<void> {
-    // Start the runtime eagerly so the first cell doesn't pay for it.
-    this.#ensureTarget().catch((err) => this.#log(`target failed to start: ${err}`));
-    process.on("SIGINT", () => void this.#interrupt());
+    const core = this.#core;
+    process.on("SIGINT", () => void core.interrupt());
     // Exiting runs the exit hook that kills the runtime (src/children.ts);
     // these signals' default action would skip it (#218).
     for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129]] as const) {
       process.on(signal, () => {
-        this.#shuttingDown = true;
+        core.stopping();
         process.exit(code);
       });
     }
     // A server killed before it could shut the kernel down (#254).
     watchParent(() => {
-      this.#log(`parent ${process.env.JPY_PARENT_PID} exited; shutting down`);
-      this.#shuttingDown = true;
+      log(`parent ${process.env.JPY_PARENT_PID} exited; shutting down`);
+      core.stopping();
       process.exit(1);
     });
     // A state dump on stderr, for a kernel that has stopped answering (#237).
-    if (process.platform !== "win32") process.on("SIGUSR2", () => void this.#logState());
-    // Transforms are synchronous, so the stripper loads before any cell.
-    if (typeof this.#typeStrip === "string") await loadTypeStripper(this.#typeStrip);
-    await Promise.all([this.#loop(this.#shell, (m, p) => this.#handleShell(m, p)),
-      this.#loop(this.#control, (m, p) => this.#handleControl(m, p)),
-      this.#loop(this.#stdin, (m) => this.#handleStdin(m))]);
-  }
-
-  #log(text: string): void {
-    process.stderr.write(`[cdp-kernel] ${text}\n`);
-  }
-
-  async #logState(): Promise<void> {
-    const handling = this.#handling;
-    const target = this.#target;
-    let targetState: unknown = target === null ? (this.#targetStarting === null ? null : "starting") : target.runtime;
-    if (target?.diagnose) targetState = await target.diagnose().catch((err) => `diagnose failed: ${err}`);
-    this.#log(`state: ${JSON.stringify({
-      shell: handling && { msgType: handling.msgType, msgId: handling.msgId, ms: Date.now() - handling.since },
-      queued: this.#shell.incoming.size,
-      executing: this.#executing,
-      interrupting: this.#interrupting,
-      awaitingInput: this.#input !== null,
-      target: targetState,
-    })}`);
-  }
-
-  #loadProject(notebookDir: string): DenoProject | null {
-    try {
-      return loadDenoProject(notebookDir);
-    } catch (err) {
-      // A broken deno.json mustn't stop the kernel: run as in a plain
-      // directory and say why in the first cell.
-      const reason = err instanceof Error ? err.message : String(err);
-      this.#projectWarning = `${reason}; running without the project config`;
-      this.#log(this.#projectWarning);
-      return null;
-    }
-  }
-
-  #transformOptions(): CellTransformOptions {
-    return { ...this.#project?.transform, typeStrip: this.#typeStrip };
-  }
-
-  // --- comms (#9) ------------------------------------------------------------
-
-  #trackComm(msgType: string, content: JsonObject): void {
-    const commId = typeof content.comm_id === "string" ? content.comm_id : null;
-    if (commId === null) return;
-    if (msgType === "comm_open" && typeof content.target_name === "string") this.#comms.set(commId, content.target_name);
-    else if (msgType === "comm_close") this.#comms.delete(commId);
-  }
-
-  #commInfo(content: JsonObject): JsonObject {
-    const filter = typeof content.target_name === "string" ? content.target_name : null;
-    const comms: JsonObject = {};
-    for (const [commId, targetName] of this.#comms) {
-      if (filter === null || filter === targetName) comms[commId] = { target_name: targetName };
-    }
-    return comms;
-  }
-
-  /** A frontend comm message. The busy/idle status around it is the caller's. */
-  async #handleComm(msg: Message): Promise<void> {
-    const type = msg.header.msg_type;
-    const commId = String(msg.content.comm_id ?? "");
-    const target = await this.#ensureTarget();
-    // Kernel messages the handlers send are replies to this message.
-    this.#parent = msg.header;
-    this.#allowStdin = false;
-    this.#executing = true;
-    let handled = false;
-    try {
-      const result = await target.dispatchComm(type, msg.content, msg.metadata, msg.buffers);
-      if ("error" in result) {
-        const { name, message, stack } = result.error;
-        this.#publish("stream", { name: "stderr", text: `Error in ${type} handler: ${stack || `${name}: ${message}`}\n` });
-      } else {
-        handled = result.handled;
-      }
-    } catch (err) {
-      if (!(err instanceof Interrupted)) throw err;
-      this.#publish("stream", { name: "stderr", text: `${type} handler interrupted\n` });
-    } finally {
-      this.#executing = false;
-    }
-    await target.flush().catch(() => {});
-    if (type === "comm_open") {
-      if (handled) {
-        this.#comms.set(commId, String(msg.content.target_name ?? ""));
-      } else {
-        // An unknown target, or a handler that failed: the protocol asks the
-        // kernel to close the comm so the frontend doesn't wait on it.
-        this.#publish("comm_close", { comm_id: commId, data: {} });
-      }
-    } else if (type === "comm_close") {
-      this.#comms.delete(commId);
-    }
-  }
-
-  // --- target lifecycle -----------------------------------------------------
-
-  #launchTarget(): Promise<KernelTarget> {
-    if (this.#runtime === "bun") return BunTarget.launch(this.#targetEvents());
-    if (this.#runtime === "workerd") return WorkerdTarget.launch(this.#targetEvents());
-    if (this.#runtime === "celld") return launchCelld(this.#targetEvents());
-    return Target.launch(this.#runtime, this.#targetEvents(), {
-      denoCompat: this.#denoCompat,
-      denoConfig: this.#project?.configPath,
-    });
-  }
-
-  #ensureTarget(): Promise<KernelTarget> {
-    if (this.#target) return Promise.resolve(this.#target);
-    // Not before the kernel's own ports are bound: a Deno runtime binds its
-    // inspector to port 0 within milliseconds of starting and can take a
-    // connection-file port the kernel is still binding (#257).
-    this.#targetStarting ??= this.#bound.then(() => this.#launchTarget()).then(async (target) => {
-      // Before any cell runs on it, so breakpoints already apply.
-      await this.#debugger?.attachTarget(target.debug ?? null);
-      this.#target = target;
-      this.#targetStarting = null;
-      return target;
-    }, (err) => {
-      this.#targetStarting = null;
-      throw err;
-    });
-    return this.#targetStarting;
-  }
-
-  #targetEvents(): TargetEvents {
-    return {
-      stream: (name, text) => this.#publish("stream", { name, text }),
-      message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
-      exit: (code, note) => {
-        this.#target = null;
-        // What its cells declared died with it.
-        this.#types?.reset();
-        // Its prompt, if any, died with it; a late reply is dropped.
-        this.#input = null;
-        void this.#debugger?.attachTarget(null);
-        if (!this.#shuttingDown) {
-          const text = note ?? `[cdp-kernel] ${this.#runtime} exited (${code}); restarting on next cell`;
-          this.#publish("stream", { name: "stderr", text: `\n${text}\n` });
-        }
-      },
-    };
-  }
-
-  async #onTargetMessage(msg: TargetMessage): Promise<void> {
-    if (msg.kind === "iopub") {
-      this.#trackComm(msg.msg_type, msg.content);
-      this.#publish(msg.msg_type, msg.content, {
-        metadata: msg.metadata,
-        buffers: msg.buffers.map((b) => new Uint8Array(Buffer.from(b, "base64"))),
-      });
-      return;
-    }
-    // The answer goes to the target that asked, not one started since.
-    const target = this.#target;
-    let answer = NO_INPUT;
-    try {
-      answer = await this.#requestInput(msg.prompt, msg.password);
-    } finally {
-      // Always answer exactly once so the target's blocking read returns.
-      if (target !== null && target === this.#target) target.replyInput(answer.value, answer.interrupted);
-    }
-  }
-
-  async #interrupt(): Promise<void> {
-    // A target blocked reading its prompt's answer can't run
-    // terminateExecution, and would never answer it. Make the prompt throw
-    // instead, which ends the cell (#121).
-    const input = this.#input;
-    if (input !== null) {
-      this.#input = null;
-      input.settle({ value: null, interrupted: true });
-      return;
-    }
-    if (!this.#target || !this.#executing) return;
-    this.#interrupting = true;
-    try {
-      await this.#target.interrupt();
-    } finally {
-      this.#interrupting = false;
-    }
-  }
-
-  // --- messaging --------------------------------------------------------------
-
-  #encode(msgType: string, content: JsonObject, parentHeader: JsonObject, extra: { metadata?: JsonObject; buffers?: Uint8Array[] } = {}) {
-    return encodeMessage(this.#session, this.#conn.key, msgType, content, { parentHeader, ...extra });
-  }
-
-  #publish(msgType: string, content: JsonObject, extra: { metadata?: JsonObject; buffers?: Uint8Array[]; parent?: JsonObject } = {}): void {
-    this.#iopub.send(this.#encode(msgType, content, extra.parent ?? this.#parent, extra));
-  }
-
-  #status(state: "busy" | "idle", parent: JsonObject): void {
-    this.#publish("status", { execution_state: state }, { parent });
-  }
-
-  #reply(socket: RouterSocket, peer: string, request: Message, msgType: string, content: JsonObject): void {
-    socket.send(peer, this.#encode(msgType, content, request.header));
-  }
-
-  async #loop(socket: RouterSocket, handle: (msg: Message, peer: string) => Promise<void>): Promise<void> {
-    while (!this.#shuttingDown) {
-      const { peer, frames } = await socket.recv();
-      if (socket === this.#shell) {
-        this.#aborting = this.#abortQueued > 0;
-        if (this.#aborting) this.#abortQueued--;
-      }
-      try {
-        const msg = decodeMessage(frames);
-        // Unsigned or forged messages are dropped, as in Deno.
-        if (!verify(this.#conn.key, msg.signedParts, msg.sig)) continue;
-        if (socket === this.#shell) this.#handling = { msgType: msg.header.msg_type, msgId: msg.header.msg_id, since: Date.now() };
-        await handle(msg, peer);
-      } catch (err) {
-        this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
-      } finally {
-        if (socket === this.#shell) this.#handling = null;
-      }
-    }
-  }
-
-  #kernelInfo(): JsonObject {
-    const versions = this.#target?.versions;
-    return {
-      status: "ok",
-      protocol_version: PROTOCOL_VERSION,
-      implementation: "cdp-kernel",
-      implementation_version: VERSION,
-      language_info: {
-        name: "typescript",
-        version: "5",
-        mimetype: "text/x.typescript",
-        file_extension: ".ts",
-        pygments_lexer: "typescript",
-        codemirror_mode: "typescript",
-        nbconvert_exporter: "script",
-      },
-      // The runtime's versions are known once it is up.
-      banner: versions ? `cdp-kernel on ${this.#runtime} ${versions.runtime} (${versions.engine || "?"})` : `cdp-kernel on ${this.#runtime}`,
-      help_links: [],
-      debugger: this.#debugger !== null,
-      // What current ipykernel advertises; JupyterLab itself goes by the
-      // kernelspec's metadata.debugger.
-      supported_features: this.#debugger !== null ? ["debugger"] : [],
-    };
-  }
-
-  // --- control channel ------------------------------------------------------
-
-  async #handleControl(msg: Message, peer: string): Promise<void> {
-    // Every request is wrapped in busy/idle, as on shell (#124). JupyterLab
-    // treats a debug request as done only once the kernel reports idle for
-    // it. (Jupyter Server leaves debug_request out of the kernel's status.)
-    this.#status("busy", msg.header);
-    try {
-      await this.#controlRequest(this.#control, msg, peer);
-    } finally {
-      this.#status("idle", msg.header);
-    }
-  }
-
-  /** Control requests; shutdown and interrupt may also arrive on shell (#124). */
-  async #controlRequest(socket: RouterSocket, msg: Message, peer: string): Promise<void> {
-    switch (msg.header.msg_type) {
-      case "kernel_info_request":
-        this.#reply(socket, peer, msg, "kernel_info_reply", this.#kernelInfo());
-        break;
-      case "interrupt_request":
-        // Answer even if the target doesn't (#121); the interrupt goes on.
-        await Promise.race([
-          this.#interrupt().catch((err) => this.#log(`interrupt failed: ${err}`)),
-          new Promise((r) => setTimeout(r, INTERRUPT_REPLY_WAIT_MS)),
-        ]);
-        this.#reply(socket, peer, msg, "interrupt_reply", { status: "ok" });
-        break;
-      case "debug_request": {
-        let reply: JsonObject;
-        if (this.#debugger === null) {
-          reply = { type: "response", request_seq: msg.content.seq, command: msg.content.command, success: false, message: `${this.#runtime} targets have no debugger`, body: {} };
-        } else {
-          // Everything but debugInfo talks to the target, so make sure there is one.
-          if (msg.content.command !== "debugInfo") await this.#ensureTarget().catch(() => null);
-          reply = await this.#debugger.handle(msg.content) as JsonObject;
-        }
-        this.#reply(socket, peer, msg, "debug_reply", reply);
-        break;
-      }
-      case "shutdown_request": {
-        const restart = msg.content.restart === true;
-        this.#reply(socket, peer, msg, "shutdown_reply", { status: "ok", restart });
-        this.#shuttingDown = true;
-        this.#target?.kill();
-        // Frontends spawn a fresh kernel even on restart; exit after the
-        // reply has had a moment to flush (denoland/deno#20556).
-        setTimeout(() => process.exit(0), 100);
-        break;
-      }
-    }
-  }
-
-  // --- shell channel ----------------------------------------------------------
-
-  async #handleShell(msg: Message, peer: string): Promise<void> {
-    const type = msg.header.msg_type;
-    if (type === "execute_request") return this.#execute(msg, peer);
-    this.#status("busy", msg.header);
-    try {
-      switch (type) {
-        case "kernel_info_request":
-          // Without waiting for the runtime: clients probe with kernel_info
-          // while it starts, and re-send until answered (#253).
-          this.#reply(this.#shell, peer, msg, "kernel_info_reply", this.#kernelInfo());
-          break;
-        case "complete_request":
-          this.#reply(this.#shell, peer, msg, "complete_reply", await this.#complete(msg));
-          break;
-        case "is_complete_request":
-          this.#reply(this.#shell, peer, msg, "is_complete_reply", checkIsComplete(String(msg.content.code ?? "")));
-          break;
-        case "inspect_request":
-          this.#reply(this.#shell, peer, msg, "inspect_reply", await this.#inspect(msg));
-          break;
-        case "history_request":
-          this.#reply(this.#shell, peer, msg, "history_reply", { status: "ok", history: queryHistory(this.#history, msg.content) });
-          break;
-        case "comm_info_request":
-          this.#reply(this.#shell, peer, msg, "comm_info_reply", { status: "ok", comms: this.#commInfo(msg.content) });
-          break;
-        case "comm_open":
-        case "comm_msg":
-        case "comm_close":
-          await this.#handleComm(msg);
-          break;
-        case "shutdown_request":
-        case "interrupt_request":
-          // Deprecated on shell, but still allowed, and ipykernel takes them.
-          await this.#controlRequest(this.#shell, msg, peer);
-          break;
-        default:
-          this.#log(`ignoring unknown shell message ${type}`);
-      }
-    } catch (err) {
-      // E.g. the runtime failed to launch. Answer anyway, so the frontend
-      // doesn't wait on the request forever (#125).
-      const replyType = SHELL_REPLIES[type];
-      if (replyType !== undefined) {
-        const name = err instanceof Error ? err.name : "Error";
-        const message = err instanceof Error ? err.message : String(err);
-        const error: ErrorContent = { ename: name, evalue: message, traceback: [`${name}: ${message}`] };
-        this.#reply(this.#shell, peer, msg, replyType, { status: "error", ...error });
-      }
-      throw err;
-    } finally {
-      this.#status("idle", msg.header);
-    }
-  }
-
-  /**
-   * The tooltip (Shift-Tab) for the name at the cursor (#10): its declared
-   * type, signature and JSDoc when the language service knows them (#274),
-   * then what the runtime finds.
-   */
-  async #inspect(msg: Message): Promise<JsonObject> {
-    const code = String(msg.content.code ?? "");
-    const cursorCp = typeof msg.content.cursor_pos === "number"
-      ? msg.content.cursor_pos
-      : utf16ToCodePointIndex(code, code.length);
-    const cursor = codePointToUtf16Index(code, cursorCp);
-    const path = inspectTarget(code, cursor);
-    const detail = msg.content.detail_level === 1 ? 1 : 0;
-    const [runtime, typed] = await Promise.all([
-      path === null ? null : (async () => (await this.#ensureTarget()).inspect(path, detail))(),
-      this.#types?.quickInfo(code, cursor) ?? null,
-    ]);
-    const text = typed === null ? runtime : runtime === null ? typed : `${typed}\n\n${withoutSignature(runtime)}`;
-    return text === null
-      ? { status: "ok", found: false, data: {}, metadata: {} }
-      : { status: "ok", found: true, data: { "text/plain": text }, metadata: {} };
-  }
-
-  async #complete(msg: Message): Promise<JsonObject> {
-    const code = String(msg.content.code ?? "");
-    const cursorCp = typeof msg.content.cursor_pos === "number"
-      ? msg.content.cursor_pos
-      : utf16ToCodePointIndex(code, code.length);
-    const cursor = codePointToUtf16Index(code, cursorCp);
-    // Both at once: the language service may not answer within its budget.
-    const [runtime, typed] = await Promise.all([
-      this.#runtimeCompletions(code, cursor),
-      this.#types?.complete(code, cursor) ?? null,
-    ]);
-    // Declared types first, then what only the runtime knows (a property
-    // added at runtime, a global defined by a library).
-    let matches = runtime.matches;
-    let start = runtime.start;
-    const kinds = new Map<string, string>();
-    if (typed !== null && typed.start === runtime.start) {
-      for (const entry of typed.entries) kinds.set(entry.name, entry.kind);
-      matches = [...kinds.keys(), ...runtime.matches.filter((name) => !kinds.has(name))];
-    } else if (typed !== null && typed.entries.length > 0 && runtime.matches.length === 0) {
-      // An expression the runtime can't complete, e.g. inside a call.
-      for (const entry of typed.entries) kinds.set(entry.name, entry.kind);
-      matches = [...kinds.keys()];
-      start = typed.start;
-    }
-    const cursorStart = utf16ToCodePointIndex(code, start);
-    return {
-      status: "ok",
-      matches,
-      cursor_start: cursorStart,
-      cursor_end: cursorCp,
-      metadata: kinds.size === 0 ? {} : {
-        // JupyterLab shows each match's type as an icon.
-        _jupyter_types_experimental: matches.map((text) => ({
-          start: cursorStart,
-          end: cursorCp,
-          text,
-          type: jupyterType(kinds.get(text)),
-        })),
-      },
-    };
-  }
-
-  /** Completion from the runtime's values: property names, globals, lexical names. */
-  async #runtimeCompletions(code: string, cursor: number): Promise<{ matches: string[]; start: number }> {
-    const expr = exprAtCursor(code, cursor);
-    const target = await this.#ensureTarget();
-    const dot = expr.lastIndexOf(".");
-    if (dot !== -1) {
-      const prefix = expr.slice(dot + 1);
-      const matches = (await target.propertyNames(expr.slice(0, dot)))
-        .filter((name) => name.startsWith(prefix) && !name.startsWith("Symbol("));
-      return { matches, start: cursor - prefix.length };
-    }
-    const names = new Set([...(await target.propertyNames("globalThis")), ...(await target.lexicalNames())]);
-    const matches = [...names].filter((name) => name.startsWith(expr) && !name.startsWith("__cdpk")).sort();
-    return { matches, start: cursor - expr.length };
-  }
-
-  async #requestInput(prompt: string, password: boolean): Promise<InputAnswer> {
-    // The target asked while an interrupt was already waiting on it.
-    if (this.#interrupting) return { value: null, interrupted: true };
-    const parent = this.#parent;
-    if (!this.#allowStdin || typeof parent.msg_id !== "string") return NO_INPUT;
-    if (this.#stdin.peers.size === 0) await new Promise((r) => setTimeout(r, 100));
-    if (this.#stdin.peers.size === 0) return NO_INPUT;
-    const header = makeHeader(this.#session, "input_request");
-    const answer = new Promise<InputAnswer>((settle) => (this.#input = { msgId: header.msg_id, settle }));
-    this.#stdin.sendAll(encodeMessage(this.#session, this.#conn.key, "input_request", { prompt, password }, {
-      header,
-      parentHeader: parent,
-    }));
-    return answer;
-  }
-
-  /** stdin carries only input_replys. */
-  async #handleStdin(reply: Message): Promise<void> {
-    if (reply.header.msg_type !== "input_reply") return;
-    const input = this.#input;
-    // A reply with nothing waiting is late (its prompt was interrupted), and
-    // one naming another request is for an earlier prompt: drop both rather
-    // than answer the next prompt with them (#121). Some clients
-    // (jupyter_client's input()) send no parent header, so only a present
-    // one is checked.
-    if (input === null) return;
-    const parentId = reply.parentHeader.msg_id;
-    if (typeof parentId === "string" && parentId !== "" && parentId !== input.msgId) return;
-    this.#input = null;
-    input.settle({ value: typeof reply.content.value === "string" ? reply.content.value : null, interrupted: false });
-  }
-
-  async #evaluateCell(target: KernelTarget, code: string): Promise<EvaluateResult> {
-    // Object-literal wrapping (Deno's evaluate_line_with_object_wrapping):
-    // try `({ ... })` first and fall back to the code as written.
-    // While debugging, cells carry the path JupyterLab gave them and keep a
-    // line map, so breakpoints bind and frames point at the cell (#18).
-    const debugging = this.#debugger?.started === true && target.debug !== undefined;
-    const transform = (source: string) =>
-      debugging && this.#debugger ? this.#debugger.cellScript(code, source) : target.transform(source, this.#transformOptions());
-    const wrapped = objectLiteralCandidate(code);
-    if (wrapped !== null) {
-      try {
-        const result = await target.evaluate(transform(wrapped));
-        if (!result.exceptionDetails) return result;
-      } catch (err) {
-        if (!(err instanceof CellSyntaxError)) throw err;
-      }
-    }
-    return target.evaluate(transform(code));
-  }
-
-  async #execute(msg: Message, peer: string): Promise<void> {
-    const parent = msg.header;
-    if (this.#aborting) {
-      // Queued behind a failed cell: not run, not counted (#123).
-      this.#status("busy", parent);
-      this.#reply(this.#shell, peer, msg, "execute_reply", { status: "aborted" });
-      this.#status("idle", parent);
-      return;
-    }
-    const code = String(msg.content.code ?? "");
-    const silent = msg.content.silent === true;
-    if (!silent && msg.content.store_history !== false) {
-      this.#executionCount++;
-      this.#history.push({ line: this.#executionCount, input: code });
-    }
-    const count = this.#executionCount;
-    this.#parent = parent;
-    this.#allowStdin = msg.content.allow_stdin === true;
-    this.#status("busy", parent);
-    // Silent requests broadcast nothing on iopub but status (#124).
-    if (!silent) this.#publish("execute_input", { code, execution_count: count });
-    if (this.#projectWarning !== null) {
-      // Shown once, in the first cell, where the user will see it.
-      this.#publish("stream", { name: "stderr", text: `[cdp-kernel] ${this.#projectWarning}\n` });
-      this.#projectWarning = null;
-    }
-
-    let error: ErrorContent | null = null;
-    this.#executing = true;
-    try {
-      const target = await this.#ensureTarget();
-      if (target.notice !== undefined && this.#noticeShownFor !== target) {
-        // Once per target, in the first cell it runs.
-        this.#noticeShownFor = target;
-        this.#publish("stream", { name: "stderr", text: `${target.notice}\n` });
-      }
-      const result = await this.#evaluateCell(target, code);
-      // It ran, so its declarations exist, even if it threw part way.
-      this.#types?.addCell(code);
-      if (result.exceptionDetails) {
-        const exception = result.exceptionDetails.exception;
-        const described = exception
-          ? await target.describeError(exception)
-          : { name: "Error", message: result.exceptionDetails.text, stack: "" };
-        error = {
-          ename: described.name || "Error",
-          evalue: described.message,
-          traceback: (described.stack || `${described.name}: ${described.message}`).split("\n"),
-        };
-      } else if (!silent && result.result.type !== "undefined") {
-        await target.broadcastResult(count, result.result);
-      }
-      await target.flush();
-    } catch (err) {
-      if (err instanceof CellSyntaxError) {
-        // Deno reports these as an opaque "Execution failed".
-        error = { ename: "SyntaxError", evalue: err.message, traceback: [`SyntaxError: ${err.message}`] };
-      } else if (err instanceof Interrupted) {
-        error = { ename: "Interrupted", evalue: "Execution interrupted", traceback: ["Execution interrupted"] };
-        await this.#target?.flush().catch(() => {});
-      } else {
-        const message = err instanceof Error ? err.message : String(err);
-        error = { ename: "KernelError", evalue: message, traceback: [message] };
-      }
-    } finally {
-      this.#executing = false;
-    }
-    // The result and error are shown: nothing refers to them any more (#286).
-    await this.#target?.releaseResults?.();
-
-    if (error) {
-      if (!silent && msg.content.stop_on_error !== false) {
-        // Abort what was queued behind this cell (JupyterLab's Run All sends
-        // every cell at once), but nothing sent after the client sees the
-        // error. A macrotask first lets bytes already received be parsed.
-        await new Promise((r) => setTimeout(r, 0));
-        this.#abortQueued = this.#shell.incoming.size;
-      }
-      this.#publish("error", error);
-      this.#reply(this.#shell, peer, msg, "execute_reply", { status: "error", execution_count: count, ...error });
-    } else {
-      this.#reply(this.#shell, peer, msg, "execute_reply", {
-        status: "ok",
-        execution_count: count,
-        payload: [],
-        user_expressions: {},
-      });
-    }
-    this.#status("idle", parent);
+    if (process.platform !== "win32") process.on("SIGUSR2", () => void core.logState());
+    await core.run();
   }
 }
