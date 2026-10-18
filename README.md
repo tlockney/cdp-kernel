@@ -13,6 +13,9 @@ inspector speaks CDP works too.
 This is early software. It passes a conformance suite derived from Deno's
 own Jupyter integration tests on every target, and it's packaged for npm and
 JSR as `@tlockney/cdp-kernel`, but it hasn't seen much real use yet.
+The [support policy](https://cdp-kernel.org/docs/support) says which
+runtime versions and frontends are supported, and what may change before
+1.0.
 
 ## Features
 
@@ -68,7 +71,8 @@ New to Jupyter? Start with
   [Widgets and comms](https://cdp-kernel.org/docs/widgets),
   [Debugger](https://cdp-kernel.org/docs/debugger)
 - Reference: [Editor types](https://cdp-kernel.org/docs/editor-types),
-  [Known gaps](https://cdp-kernel.org/docs/known-gaps)
+  [Known gaps](https://cdp-kernel.org/docs/known-gaps),
+  [Support policy](https://cdp-kernel.org/docs/support)
 - Internals: [Architecture](https://cdp-kernel.org/docs/architecture),
   [Runtime integrations](https://cdp-kernel.org/docs/integrations)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md),
