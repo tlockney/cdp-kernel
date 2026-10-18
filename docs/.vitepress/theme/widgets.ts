@@ -61,7 +61,9 @@ async function mount(el: HTMLElement) {
   const url = URL.createObjectURL(new Blob([saved.state._esm as string], { type: "text/javascript" }));
   try {
     const mod = await import(/* @vite-ignore */ url);
-    const widget = typeof mod.default === "function" ? { render: mod.default } : (mod.default ?? mod);
+    // As anywidget does: a default-exported function is a factory, called with
+    // no arguments, that returns { initialize, render }.
+    const widget = typeof mod.default === "function" ? await mod.default() : (mod.default ?? mod);
     const model = localModel(saved);
     await widget.initialize?.({ model });
     await widget.render?.({ model, el });

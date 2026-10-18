@@ -6,6 +6,13 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The acquisition scrubber in the MoMA example notebooks renders in
+  JupyterLab. Its widget module exported a function taking `{ model, el }`,
+  which anywidget calls as a factory with no arguments, so it failed with
+  "Cannot destructure property 'model' of 'undefined'". The docs site's
+  widget replay now treats a default-exported function the same way
+  ([#327](https://github.com/tlockney/cdp-kernel/issues/327)).
+
 - The landing page has a "Notebooks without Python" section linking to
   [Ganymede](https://ganymede-server.com), a Rust Jupyter server that
   serves JupyterLab with no Python installed
