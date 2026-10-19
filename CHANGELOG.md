@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- A debug console expression that throws before its first `await` (a typo
+  is enough) no longer occasionally fails with "Promise was collected" on
+  Deno. The expression now yields one task before running, as cells do
+  ([#329](https://github.com/tlockney/cdp-kernel/issues/329)).
+
 - The acquisition scrubber in the MoMA example notebooks renders in
   JupyterLab. Its widget module exported a function taking `{ model, el }`,
   which anywidget calls as a factory with no arguments, so it failed with
