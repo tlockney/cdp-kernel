@@ -9,7 +9,7 @@
 // Lines go through the cell's source map (src/sourcemap.ts), since esbuild
 // rewrites TypeScript.
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import process from "node:process";
@@ -80,6 +80,17 @@ function isCallFrame(value: unknown): value is CallFrame {
     isRecord(value.location) && typeof value.location.scriptId === "string" &&
     typeof value.location.lineNumber === "number" && Array.isArray(value.scopeChain) &&
     value.scopeChain.every((scope) => isRecord(scope) && typeof scope.type === "string" && isRemoteObject(scope.object));
+}
+
+/**
+ * Whether `dir` is a directory, not a symlink, owned by this user and
+ * closed to others. Windows has no uids; its tmpdir() is per-user.
+ */
+function isOwnPrivateDir(dir: string): boolean {
+  const stat = lstatSync(dir);
+  if (!stat.isDirectory()) return false;
+  if (process.getuid === undefined) return true;
+  return stat.uid === process.getuid() && (stat.mode & 0o077) === 0;
 }
 
 /** A DAP value string for a CDP RemoteObject. */
@@ -553,12 +564,22 @@ export class Debugger {
 
   #writeCell(path: string, code: string): void {
     try {
+      mkdirSync(this.prefix, { recursive: true, mode: 0o700 });
+      // The path is predictable (the frontend computes it too), so another
+      // user could have made the directory first and planted symlinks in it:
+      // write only into a directory that is ours and closed to others (#339).
+      if (!isOwnPrivateDir(this.prefix)) return;
       if (!this.#cleanupRegistered) {
         // The files only serve this kernel's frontend: remove them with it.
-        process.once("exit", () => rmSync(this.prefix, { recursive: true, force: true }));
+        process.once("exit", () => {
+          try {
+            rmSync(this.prefix, { recursive: true, force: true });
+          } catch {
+            // Best effort; exiting matters more.
+          }
+        });
         this.#cleanupRegistered = true;
       }
-      mkdirSync(this.prefix, { recursive: true });
       writeFileSync(path, code);
     } catch {
       // The frontend has the cell itself; the file is a convenience.

@@ -3,7 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type DapMessage, type DebugChannel, Debugger, HASH_SEED } from "../src/debugger.ts";
 import { murmur2 } from "../src/murmur2.ts";
 import { Target, type TargetEvents } from "../src/target.ts";
@@ -263,4 +265,31 @@ test("the debugger's cell files are removed when the kernel exits", () => {
   const prefix = child.stdout.trim();
   assert.ok(prefix.includes("cdp-kernel_"));
   assert.equal(existsSync(prefix), false);
+});
+
+test("the debugger writes no cell file into a directory it doesn't own privately", { skip: process.platform === "win32" }, (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "cdpk-dbg-"));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  const victim = join(scratch, "victim");
+  writeFileSync(victim, "untouched");
+  // Another user's directory at the predictable path, with a symlink where
+  // the cell's file goes.
+  const script = `
+    import { chmodSync, mkdirSync, symlinkSync } from "node:fs";
+    import { Debugger } from ${JSON.stringify(new URL("../src/debugger.ts", import.meta.url).href)};
+    import { loadTypeStripper } from ${JSON.stringify(new URL("../src/transform.ts", import.meta.url).href)};
+    await loadTypeStripper("esbuild");
+    const dbg = new Debugger(() => {});
+    mkdirSync(dbg.prefix);
+    chmodSync(dbg.prefix, 0o777);
+    symlinkSync(${JSON.stringify(victim)}, dbg.pathFor("1 + 1"));
+    dbg.cellScript("1 + 1", "1 + 1");
+    console.log(dbg.prefix);
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  const prefix = child.stdout.trim();
+  t.after(() => rmSync(prefix, { recursive: true, force: true }));
+  assert.equal(readFileSync(victim, "utf8"), "untouched");
+  assert.ok(existsSync(prefix), "a directory that isn't the kernel's is left at exit");
 });
