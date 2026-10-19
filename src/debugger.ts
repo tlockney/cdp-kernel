@@ -44,6 +44,7 @@ const EXCEPTION_FILTERS = [
 
 /** URLs of the runtime's built-in modules: Deno's `ext:`, Node's `node:`. */
 const RUNTIME_SCRIPTS = ["^ext:", "^node:"];
+const RUNTIME_SCRIPT = /^(ext|node):/;
 
 /** Bindings the kernel itself installs, hidden from the variable views. */
 const KERNEL_GLOBALS = new Set(["__cdpk", "__cdpk_send", "jupyter", "prompt", "confirm"]);
@@ -300,9 +301,7 @@ export class Debugger {
     const channel = this.#channel;
     if (!channel) return;
     await channel.send("Debugger.enable");
-    // The runtime's own code: an exception it throws and catches itself (a
-    // lazy initialisation in Deno's ext: modules, say) doesn't pause, and
-    // stepping doesn't enter it (#380).
+    // Stepping doesn't enter the runtime's own code (#380).
     await channel.send("Debugger.setBlackboxPatterns", { patterns: RUNTIME_SCRIPTS });
     await channel.send("Debugger.setPauseOnExceptions", { state: this.#pauseOnExceptions });
     this.#cdpBreakpoints.clear();
@@ -375,19 +374,36 @@ export class Debugger {
   // --- stopped state ----------------------------------------------------------
 
   #onPaused(params: CdpParams): void {
+    const hit = Array.isArray(params.hitBreakpoints) && params.hitBreakpoints.length > 0;
+    const exception = params.reason === "exception" || params.reason === "promiseRejection";
+    if (exception && !hit && this.#inRuntime(params.callFrames)) {
+      // Thrown in the runtime's own code, as Chrome's ignore list treats it.
+      // Deno's lazy node:process setup throws and catches one there, which
+      // blackboxing doesn't always skip, and it held the cell (#380). The
+      // cell still sees an error that reaches it.
+      void this.#channel?.send("Debugger.resume").catch(() => {});
+      return;
+    }
     this.#frames = Array.isArray(params.callFrames) ? params.callFrames.filter(isCallFrame) : [];
     this.#stopped = true;
     for (const notify of this.#pauseWaiters.splice(0)) notify();
     this.#refs.clear();
-    const hit = Array.isArray(params.hitBreakpoints) && params.hitBreakpoints.length > 0;
     const reason = hit
       ? "breakpoint"
-      : params.reason === "exception" || params.reason === "promiseRejection"
+      : exception
       ? "exception"
       : params.reason === "other"
       ? "step"
       : String(params.reason ?? "pause");
     this.#event("stopped", { reason, threadId: THREAD_ID, allThreadsStopped: true });
+  }
+
+  /** Whether the top frame is the runtime's own code. */
+  #inRuntime(callFrames: unknown): boolean {
+    const top = Array.isArray(callFrames) ? callFrames[0] : undefined;
+    if (!isRecord(top) || !isRecord(top.location)) return false;
+    const url = this.#scripts.get(String(top.location.scriptId)) ?? (typeof top.url === "string" ? top.url : "");
+    return RUNTIME_SCRIPT.test(url);
   }
 
   #resetStop(): void {

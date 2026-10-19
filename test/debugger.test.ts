@@ -217,8 +217,8 @@ for (const runtime of ["node", "deno"] as const) {
     assert.equal((await run("const z = 1;\nz")).result.value, 1, "no breakpoint fires after disconnect");
   });
 
-  test(`${runtime}: an exception the runtime throws and catches in its own code doesn't pause`, { skip }, async (t) => {
-    // Deno's lazy node_options setup throws and catches in ext: code; that
+  test(`${runtime}: an exception thrown in the runtime's own code doesn't pause`, { skip }, async (t) => {
+    // Deno's lazy node:process setup throws and catches in ext: code; that
     // pause came before the cell's and held it (#380). A script named like
     // the runtime's own stands in for it.
     const { target, dap, request, next, run } = await session(t, runtime);
@@ -227,14 +227,15 @@ for (const runtime of ["node", "deno"] as const) {
     await request("initialize");
     await request("attach");
     await request("setExceptionBreakpoints", { filters: ["caught"] });
-    assert.equal((await run("internal() + 1")).result.value, 2);
+    assert.equal((await run("internal() + 1")).result.value, 2, "caught where it was thrown");
+    assert.equal((await run("try { fails() } catch {}\n3")).result.value, 3, "caught by the cell");
     assert.ok(!dap.some((e) => e.event === "stopped"), "nothing paused");
-    // An exception from the runtime that the cell catches still pauses.
+    // The cell's own exception still pauses.
     const stopped = next("stopped");
-    const result = run("try { fails() } catch {}\n3");
+    const result = run("try { throw 1 } catch {}\n4");
     assert.equal(((await stopped).body as DapMessage).reason, "exception");
     await request("continue", { threadId: 1 });
-    assert.equal((await result).result.value, 3);
+    assert.equal((await result).result.value, 4);
   });
 
   test(`${runtime}: with caught exceptions on, the kernel's own evaluations don't pause the target`, { skip }, async (t) => {

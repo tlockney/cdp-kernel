@@ -6,11 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
-- With "Caught Exceptions" on, the debugger no longer stops on an
-  exception that Deno's or Node's own built-in code throws and catches
-  itself, such as Deno's lazy setup of its Node options. That stop came
-  before the cell's own and could leave the cell waiting. Stepping also
-  skips over `ext:` and `node:` code
+- The debugger no longer stops on an exception thrown in Deno's or
+  Node's own built-in code (`ext:` and `node:` scripts), as Chrome's
+  ignore list does. With "Caught Exceptions" on, Deno's lazy setup of
+  `node:process` threw and caught one before the cell's own exception and
+  could leave the cell waiting. Stepping also skips over that code
   ([#380](https://github.com/tlockney/cdp-kernel/issues/380)).
 
 - Bun, workerd and celld targets that never become ready are stopped after
