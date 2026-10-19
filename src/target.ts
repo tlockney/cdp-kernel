@@ -522,6 +522,14 @@ export class Target implements KernelTarget {
     control.on("Runtime.executionContextDestroyed", (params) => {
       if (params.executionContextId === contextId && target) target.#onExit();
     });
+    // A session that closes on its own (e.g. a frame that isn't JSON, #337)
+    // leaves a target nothing can drive: stop it, so the next cell starts
+    // a fresh one.
+    for (const session of [shell, control]) {
+      session.onClose(() => {
+        if (target) target.#onExit();
+      });
+    }
 
     // Wait for the bootstrap's top-level await to finish installing the
     // shim. There is no cap here: launch's start timeout bounds the wait and

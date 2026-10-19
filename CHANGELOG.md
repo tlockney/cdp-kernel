@@ -27,6 +27,10 @@ Issue and pull request numbers refer to
   (letters, digits, `.`, `_` and `-`, not `.` or `..`), so a name with a
   path separator can't write `kernel.json` outside the kernels directory
   ([#338](https://github.com/tlockney/cdp-kernel/issues/338)).
+- A message from a Node or Deno inspector, or from the workerd or celld
+  driver, that isn't JSON no longer crashes the kernel: the target's
+  pending calls fail and it restarts on the next cell
+  ([#337](https://github.com/tlockney/cdp-kernel/issues/337)).
 
 ## 0.7.0 (2026-10-19)
 

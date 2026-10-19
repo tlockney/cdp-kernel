@@ -19,6 +19,7 @@ import {
   RESTART_NOTE,
   WORKER_MODULES,
   workerdConfig,
+  type WorkerHost,
   WorkerdTarget,
 } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
@@ -354,4 +355,25 @@ test("the driver Worker refuses a session without the right token", { skip }, as
     await assert.rejects(open(wrong), /handshake failed: HTTP\/1\.1 403/);
   }
   (await open({ "x-cdpk-token": token })).close();
+});
+
+test("a driver message that isn't JSON stops the target instead of throwing out of the listener", async () => {
+  let deliver: (text: string) => void = () => {};
+  let stopped = false;
+  const host: WorkerHost = {
+    runtime: "workerd test",
+    channel: {
+      // Answers the info request the target opens with.
+      send: (text) => queueMicrotask(() => deliver(JSON.stringify({ kind: "reply", id: JSON.parse(text).id, v8: "1" }))),
+      onMessage: (listener) => void (deliver = listener),
+      onClose: () => {},
+      close: () => {},
+    },
+    stop: () => void (stopped = true),
+    onExit: () => {},
+  };
+  const events: TargetEvents = { stream: () => {}, message: () => {}, exit: () => {} };
+  await WorkerdTarget.open(host, tmpdir(), events, "workerd");
+  assert.doesNotThrow(() => deliver("not json"));
+  assert.equal(stopped, true, "the runtime was stopped");
 });

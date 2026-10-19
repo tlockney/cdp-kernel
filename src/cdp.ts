@@ -69,11 +69,21 @@ export class CdpSession {
   #nextId = 0;
   #pending = new Map<number, Pending>();
   #listeners = new Map<string, ((params: CdpParams) => void)[]>();
+  #closeListeners: (() => void)[] = [];
+  #closed = false;
 
   private constructor(ws: WebSocket) {
     this.#ws = ws;
     ws.addEventListener("message", (event) => {
-      const msg: unknown = JSON.parse(String(event.data));
+      let msg: unknown;
+      try {
+        msg = JSON.parse(String(event.data));
+      } catch {
+        // Not CDP: the session can't be trusted to answer, but one bad frame
+        // mustn't throw out of the listener and end the kernel (#337).
+        this.#closeBroken("CDP connection closed: the runtime sent a frame that isn't JSON");
+        return;
+      }
       if (isResponse(msg)) {
         const pending = this.#pending.get(msg.id);
         if (!pending) return;
@@ -87,12 +97,29 @@ export class CdpSession {
         for (const listener of this.#listeners.get(msg.method) ?? []) listener(msg.params);
       }
     });
-    ws.addEventListener("close", () => {
-      for (const pending of this.#pending.values()) {
-        pending.reject(new Error("CDP connection closed"));
-      }
-      this.#pending.clear();
-    });
+    ws.addEventListener("close", () => this.#closedWith("CDP connection closed"));
+  }
+
+  /** Fails what's in flight, and tells the close listeners, once. */
+  #closedWith(reason: string): void {
+    for (const pending of this.#pending.values()) {
+      pending.reject(new Error(reason));
+    }
+    this.#pending.clear();
+    if (this.#closed) return;
+    this.#closed = true;
+    for (const listener of this.#closeListeners) listener();
+  }
+
+  /** Without waiting for the close handshake. */
+  #closeBroken(reason: string): void {
+    this.#closedWith(reason);
+    this.#ws.close();
+  }
+
+  /** Called once, when the session closes for any reason. */
+  onClose(listener: () => void): void {
+    this.#closeListeners.push(listener);
   }
 
   static async connect(url: string): Promise<CdpSession> {

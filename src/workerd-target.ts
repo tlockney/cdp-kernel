@@ -29,7 +29,7 @@ import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObjec
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
-import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, type TargetEvents } from "./target.ts";
+import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, type TargetEvents } from "./target.ts";
 import { withStartTimeout } from "./target-api.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
@@ -464,7 +464,15 @@ export class WorkerdTarget implements KernelTarget {
   }
 
   #receive(text: string): void {
-    const msg: unknown = JSON.parse(text);
+    const msg = parseJson(text);
+    if (msg === undefined) {
+      // The driver only sends JSON; a frame that isn't means the session is
+      // broken, which ends the target rather than the kernel (#337).
+      this.#stopNote = `[cdp-kernel] ${this.runtime} sent a message that isn't JSON, so it was stopped; ` +
+        "it restarts on the next cell, without the earlier cells' state";
+      this.kill();
+      return;
+    }
     if (isRecord(msg) && msg.kind === "stream") {
       this.#events.stream(msg.name === "stderr" ? "stderr" : "stdout", String(msg.text));
     } else if (isTargetMessage(msg)) {
