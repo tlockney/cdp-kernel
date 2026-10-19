@@ -83,6 +83,8 @@ function install({ base, cdn: cdnBase }) {
     resolvePath,
     barrier: () => 0,
     broadcastResult: jupyter.broadcastResult,
+    // execute_request's user_expressions (#340).
+    formatJson: async (value) => JSON.stringify(await jupyter.namespace.format(value)),
     async commDispatch(msgType, content, metadata, buffers64) {
       const buffers = buffers64.map((b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0)));
       return await jupyter.commDispatch(msgType, content, metadata, buffers);

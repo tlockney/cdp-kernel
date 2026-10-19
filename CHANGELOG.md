@@ -6,6 +6,12 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- `execute_request`'s `user_expressions` are evaluated after a cell that
+  succeeds, and `execute_reply` returns each one's MIME bundle, or the
+  error it threw, as ipykernel does. They were ignored before.
+- `kernel_info_reply`'s `language_info.version` is the installed
+  TypeScript's version instead of `"5"`
+  ([#340](https://github.com/tlockney/cdp-kernel/issues/340)).
 - Starting a workerd kernel no longer trusts other users' entries in the
   temp directory when it cleans up after dead kernels: it skips any
   `cdpk-workerd-*` directory that isn't a private one of this user's, so

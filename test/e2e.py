@@ -139,8 +139,11 @@ def checks(runtime, workdir, offline):
         assert info["status"] == "ok"
         assert info["language_info"]["name"] == "typescript"
         assert runtime.split("-")[0] in info["banner"], info["banner"]
-        expected = json.loads((ROOT / "package.json").read_text())["version"]
-        assert info["implementation_version"] == expected, info["implementation_version"]
+        package = json.loads((ROOT / "package.json").read_text())
+        assert info["implementation_version"] == package["version"], info["implementation_version"]
+        # The TypeScript the kernel ships (#340).
+        major = package["dependencies"]["typescript"].lstrip("^~").split(".")[0]
+        assert info["language_info"]["version"].split(".")[0] == major, info["language_info"]
 
     def stdout_stream(s):
         reply, out = s.run('console.log("asdf")')
@@ -404,6 +407,61 @@ def checks(runtime, workdir, offline):
         _, out = s.run("typeof ranAfter")
         assert "undefined" in result_of(out)["text/plain"], out
         assert replies(("throw new Error('x')", False), ("3", True)) == ["error", "ok"]
+
+    def user_expressions(s):
+        # Evaluated after the cell, in its scope, and returned in the reply (#340).
+        msg_id = s.kc.execute(
+            "const userExprAnswer: number = 42",
+            user_expressions={"plain": "userExprAnswer + 1", "typed": "(userExprAnswer as number) * 2 // a comment",
+                              "rich": "jupyter.md`**hi**`", "awaited": "await Promise.resolve('done')",
+                              "thrown": "missingName"},
+        )
+        reply = s.kc.get_shell_msg(timeout=TIMEOUT)
+        assert reply["parent_header"]["msg_id"] == msg_id, reply
+        content = reply["content"]
+        assert content["status"] == "ok", content
+        got = content["user_expressions"]
+        assert got["plain"]["status"] == "ok" and got["plain"]["metadata"] == {}, got
+        assert strip_ansi(got["plain"]["data"]["text/plain"]) == "43", got
+        assert strip_ansi(got["typed"]["data"]["text/plain"]) == "84", got
+        assert got["rich"]["data"] == {"text/markdown": "**hi**"}, got
+        assert "done" in got["awaited"]["data"]["text/plain"], got
+        assert got["thrown"]["status"] == "error" and got["thrown"]["ename"] == "ReferenceError", got
+        # Not after a cell that failed, as in ipykernel.
+        s.kc.execute("throw new Error('x')", user_expressions={"plain": "1"}, stop_on_error=False)
+        reply = s.kc.get_shell_msg(timeout=TIMEOUT)
+        assert reply["content"]["status"] == "error" and "user_expressions" not in reply["content"], reply
+
+    def stop_on_error_dropped_message(s):
+        # A malformed message queued among the cells behind a failing one is
+        # dropped without taking the abort meant for a queued cell, and leaves
+        # none over for a cell sent once the error is seen (#340).
+        import zmq
+
+        info = s.km.get_connection_info()
+        rogue = zmq.Context.instance().socket(zmq.DEALER)
+        rogue.linger = 0
+        rogue.connect(f"tcp://{info['ip']}:{info['shell_port']}")
+        try:
+            # Long enough for everything below to be queued before it fails.
+            first = s.kc.execute("await new Promise((r) => setTimeout(r, 1000)); throw new Error('x')")
+            time.sleep(0.2)
+            rogue.send_multipart([b"<IDS|MSG>", b"", b"not json", b"{}", b"{}", b"{}"])
+            time.sleep(0.2)
+            ids = [first, s.kc.execute("globalThis.ranAfterDropped = 1"), s.kc.execute("2")]
+            got = {}
+            deadline = time.time() + TIMEOUT
+            while len(got) < len(ids):
+                assert time.time() < deadline, f"replies: {got}"
+                r = s.kc.get_shell_msg(timeout=TIMEOUT)
+                if r["parent_header"].get("msg_id") in ids:
+                    got[r["parent_header"]["msg_id"]] = r["content"]["status"]
+            assert [got[i] for i in ids] == ["error", "aborted", "aborted"], got
+        finally:
+            rogue.close()
+        reply, out = s.run("typeof ranAfterDropped")
+        assert reply["status"] == "ok", reply
+        assert "undefined" in result_of(out)["text/plain"], out
 
     def interrupt_while_prompting(s):
         # The target blocks in a synchronous read while it prompts; an
@@ -961,7 +1019,7 @@ def checks(runtime, workdir, offline):
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
         comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
         silent_publishes_only_status, control_status_and_shell_interrupt,
-        stop_on_error,
+        stop_on_error, stop_on_error_dropped_message, user_expressions,
     ]
     if runtime in ("workerd", "celld"):
         # A request can't block on stdin, and workerd has no cwd of its own.

@@ -56,6 +56,8 @@ export function createHandler(shim, evaluate = (code) => (0, eval)(code)) {
       case "broadcast":
         await shim.broadcastResult(request.count, take(request.handle));
         return {};
+      case "format":
+        return { value: await shim.formatJson(request.handle === undefined ? undefined : take(request.handle)) };
       case "describe":
         return { value: shim.describeError(take(request.handle)) };
       case "comm":
