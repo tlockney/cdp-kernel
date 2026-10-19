@@ -73,6 +73,51 @@ kernel.send("shell", {
 and Firefox, through Playwright; CI runs it in all three. Safari itself,
 on macOS or iOS, isn't tested.
 
+## Host features
+
+A page that embeds the kernel, such as an app's WebView, can offer cells
+features of its own (#384). Three options to `startBrowserKernel`, all
+optional:
+
+- **`preload`**: module URLs the Worker imports before the first cell,
+  each time it starts (so again after a restart), resolved against
+  `base`. A module whose default export is a function has it called with
+  `{ host, jupyter }`. A module that fails to load is reported on stderr
+  and the kernel runs without it.
+- **`host`**: answers the Worker's requests. In a preload module,
+  `host.request(method, params, { signal, transfer })` resolves with what
+  the handler returns, or rejects with an `Error` carrying the thrown
+  error's `name`, `message` and `code`. The handler gets an `AbortSignal`
+  that aborts when the Worker aborts the call or stops, as an interrupt
+  of a busy cell does. Values cross by structured clone.
+- **`capabilities`**: returned as `capabilities` in `kernel_info_reply`,
+  so a frontend can see what the page offers.
+
+`kernel.notifyHost(event, value)` sends an event to the Worker's
+`host.onEvent((event, value) => …)` listeners. Cells only see what a
+preload module chooses to install, for example a global:
+
+```js
+// device.mjs, listed in preload
+export default function ({ host }) {
+  globalThis.device = {
+    clipboard: { readText: () => host.request("clipboard.readText", {}) },
+  };
+}
+```
+
+```js
+const kernel = startBrowserKernel({
+  createWorker: () => new Worker(workerUrl, { type: "module" }),
+  preload: [new URL("./device.mjs", import.meta.url).href],
+  host: async ({ method }) => {
+    if (method === "clipboard.readText") return await navigator.clipboard.readText();
+    throw Object.assign(new Error(`no ${method}`), { code: "unavailable" });
+  },
+  capabilities: { device: ["clipboard.readText"] },
+});
+```
+
 ## What works
 
 - TypeScript and TSX, stripped by sucrase (esbuild's native binary can't
