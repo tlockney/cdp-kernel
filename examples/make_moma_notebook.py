@@ -556,8 +556,6 @@ cells.append(code(
 cells.append(md(
     "## What we found\n"
     "\n"
-    "### What we found\n"
-    "\n"
     "- **A museum is its bequests.** Two years tower over a century of buying:\n"
     "  **1968 (20,528 works)** and **1964 (12,997)** — and 1968 is not curatorial appetite:\n"
     "  13,622 of those works are the Mies van der Rohe Archive, one architect handing over\n"
