@@ -262,6 +262,8 @@ For type errors in your editor, see [Editor types](editor-types.md).
 
 ## Next steps
 
+- [Switching to cdp-kernel](switching.md): if you're coming from
+  `deno jupyter`, tslab, IJavascript or Python.
 - [The jupyter namespace](jupyter-api.md): rich output, updating output
   in place, and custom display for your own classes.
 - [Writing notebooks](notebooks.md): imports, pinning package versions
