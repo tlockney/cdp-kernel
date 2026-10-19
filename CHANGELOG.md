@@ -4,8 +4,13 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.7.0 (2026-10-19)
 
+- Experimental: the kernel runs in a web page, with cells in a Web Worker
+  and `npm:` imports from esm.sh. `scripts/build-browser.mjs` bundles it;
+  [The browser](https://cdp-kernel.org/docs/integration-browser) says what
+  works. The kernel's message handling moved to `src/kernel-core.ts`,
+  which has no Node imports; the kernel process is unchanged.
 - The npm package exports the browser kernel: `@tlockney/cdp-kernel/browser`
   (`startBrowserKernel`, typed) and `@tlockney/cdp-kernel/browser/worker`
   (the cells' Worker script), built by `scripts/build-browser.mjs` during
@@ -38,7 +43,6 @@ Issue and pull request numbers refer to
   "Cannot destructure property 'model' of 'undefined'". The docs site's
   widget replay now treats a default-exported function the same way
   ([#327](https://github.com/tlockney/cdp-kernel/issues/327)).
-
 - The landing page has a "Notebooks without Python" section linking to
   [Ganymede](https://ganymede-server.com), a Rust Jupyter server that
   serves JupyterLab with no Python installed
@@ -66,11 +70,6 @@ Issue and pull request numbers refer to
 
 ## 0.6.0 (2026-10-18)
 
-- Experimental: the kernel runs in a web page, with cells in a Web Worker
-  and `npm:` imports from esm.sh. `scripts/build-browser.mjs` bundles it;
-  [The browser](https://cdp-kernel.org/docs/integration-browser) says what
-  works. The kernel's message handling moved to `src/kernel-core.ts`,
-  which has no Node imports; the kernel process is unchanged.
 - Node and Deno targets no longer keep the data of every comm message from
   the frontend, so dragging a widget's slider for a while doesn't grow the
   runtime. V8 kept each message as compiled source; messages now reach the
