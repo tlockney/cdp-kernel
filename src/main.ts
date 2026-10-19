@@ -33,6 +33,14 @@ function kernelsDir(): string {
   return join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "jupyter", "kernels");
 }
 
+// Jupyter's kernel names; anything else could point outside the kernels
+// directory.
+const KERNEL_NAME = /^[A-Za-z0-9._-]+$/;
+
+function isKernelName(name: string): boolean {
+  return KERNEL_NAME.test(name) && name !== "." && name !== "..";
+}
+
 function install(
   runtime: RuntimeName,
   denoCompat: boolean,
@@ -41,6 +49,10 @@ function install(
   name: string,
   display: string,
 ): void {
+  if (!isKernelName(name)) {
+    console.error(`install: invalid kernelspec name ${JSON.stringify(name)}; use letters, digits, '.', '_' and '-'`);
+    process.exit(2);
+  }
   const dir = join(kernelsDir(), name);
   mkdirSync(dir, { recursive: true });
   const spec = {
@@ -114,10 +126,6 @@ function list(): void {
   }
 }
 
-// Jupyter's kernel names; anything else could point outside the kernels
-// directory.
-const KERNEL_NAME = /^[A-Za-z0-9._-]+$/;
-
 function uninstall(names: string[], all: boolean): void {
   if (all) names = installedSpecs().map((s) => s.name);
   else if (names.length === 0) {
@@ -127,7 +135,7 @@ function uninstall(names: string[], all: boolean): void {
   }
   let failed = false;
   for (const name of names) {
-    const valid = KERNEL_NAME.test(name) && name !== "." && name !== "..";
+    const valid = isKernelName(name);
     const spec = valid ? readOwnSpec(name) : undefined;
     if (!spec) {
       const exists = valid && existsSync(join(kernelsDir(), name));

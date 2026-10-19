@@ -18,6 +18,10 @@ Issue and pull request numbers refer to
   a planted `owner.json` can't make it kill another process (on macOS) or
   stop the kernel starting. A cleanup that fails is ignored
   ([#335](https://github.com/tlockney/cdp-kernel/issues/335)).
+- `cdp-kernel install --name` accepts only the names `uninstall` does
+  (letters, digits, `.`, `_` and `-`, not `.` or `..`), so a name with a
+  path separator can't write `kernel.json` outside the kernels directory
+  ([#338](https://github.com/tlockney/cdp-kernel/issues/338)).
 
 ## 0.7.0 (2026-10-19)
 
