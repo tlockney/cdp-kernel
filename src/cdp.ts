@@ -18,6 +18,8 @@ export interface ExceptionDetails {
   lineNumber: number;
   columnNumber: number;
   exception?: RemoteObject;
+  /** Where it was thrown, with each script's URL (#322). */
+  stackTrace?: { callFrames: { functionName: string; url: string; lineNumber: number; columnNumber: number }[] };
 }
 
 export interface EvaluateResult {

@@ -176,6 +176,25 @@ def checks(runtime, workdir, offline):
         assert any("boom" in line for line in reply["traceback"])
         assert any(t == "error" for t, _ in out)
 
+    def structured_traceback(s):
+        # A frame in a function an earlier cell defined points at that cell,
+        # at the line the user wrote, types and all (#322).
+        defining, _ = s.run("type N = number;\nfunction failing(n: N): never {\n  throw new RangeError('tb ' + n);\n}")
+        code = "const k: N = 2;\n\nfailing(k)"
+        _, msgs = s.send_shell("execute_request", {
+            "code": code, "silent": False, "store_history": True, "user_expressions": {},
+            "allow_stdin": False, "stop_on_error": True,
+        })
+        error = next(m for m in msgs if m["msg_type"] == "error")
+        payload = error["metadata"]["application/vnd.nteract.traceback+json"]
+        assert payload["ename"] == "RangeError" and payload["evalue"] == "tb 2", payload
+        cells = [f for f in payload["frames"] if not f["library"]]
+        first = defining["execution_count"]
+        assert [(f["filename"], f["lineno"]) for f in cells[:2]] == [(f"In[{first}]", 3), (f"In[{first + 1}]", 3)], payload
+        assert cells[0]["name"].endswith("failing"), cells[0]
+        assert any(line.get("highlight") and "throw" in line["source"] for line in cells[0]["lines"]), cells[0]
+        assert f"In[{first}]:3" in "\n".join(error["content"]["traceback"]), error["content"]
+
     def syntax_error(s):
         reply, _ = s.run("const = ;")
         assert reply["status"] == "error" and reply["ename"] == "SyntaxError", reply
@@ -934,7 +953,7 @@ def checks(runtime, workdir, offline):
 
     tests = [
         kernel_info, stdout_stream, execute_result, typescript, redeclare_const,
-        top_level_await, object_literal, thrown_error, syntax_error,
+        top_level_await, object_literal, thrown_error, structured_traceback, syntax_error,
         display_ordering, display_symbol, markdown_template, update_display,
         png_bytes, node_builtin_import, relative_ts_import, import_meta,
         prompt_stdin, prompt_without_stdin, uncaught_later,

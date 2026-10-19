@@ -139,7 +139,10 @@ So:
 - **The cell starts on line 2** of the script, as after the one-line
   prelude on Node and Deno. On every target a stack trace's line number
   is one more than the line in the cell as esbuild compiled it (which
-  mostly keeps the cell's lines). Nothing remaps it.
+  mostly keeps the cell's lines). The traceback of a cell's error maps it
+  back to the cell's own line. A stack read in code (`err.stack`, or an
+  error a timer throws later) names the cell's script
+  `$cdpk$cell-<hash>.ts` and is not remapped.
 
 The difference from Node and Deno is that `const` doesn't stay constant
 across cells, and these names are global properties rather than lexical

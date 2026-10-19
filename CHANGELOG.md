@@ -6,6 +6,16 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- A cell's error traceback points at cells as `In[n]` and at the line
+  you wrote, TypeScript types included, instead of `<anonymous>` and the
+  line of the stripped JavaScript; that holds for a function an earlier
+  cell defined. The error message's metadata also carries the traceback
+  as structured frames (file, line, function, source lines around the
+  failing one, the cell's execution count and `cellId`, and a `library`
+  flag), under nteract's `application/vnd.nteract.traceback+json`.
+  Cells now run under a `//# sourceURL` of `$cdpk$cell-<hash>.ts`, which
+  is what a stack read in code shows
+  ([#322](https://github.com/tlockney/cdp-kernel/issues/322)).
 - A debug console expression that throws before its first `await` (a typo
   is enough) no longer occasionally fails with "Promise was collected" on
   Deno. The expression now yields one task before running, as cells do

@@ -2,8 +2,9 @@
 // file's ZeroMQ ports, with a target runtime launched as a child process,
 // the language service in a worker thread, and the visual debugger.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { type RuntimeName, Target } from "./target.ts";
 import { BunTarget } from "./bun-target.ts";
@@ -14,7 +15,7 @@ import type { TypeStripper, TypeStripperName } from "./transform.ts";
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { LanguageService, type WorkerOptions } from "./language-service.ts";
 import { findWranglerConfig } from "./workers-project.ts";
-import { VERSION } from "./package.ts";
+import { cacheRoot, VERSION } from "./package.ts";
 import { watchParent } from "./parent.ts";
 import { KernelCore } from "./kernel-core.ts";
 import { ZmqChannels } from "./zmq-channels.ts";
@@ -29,6 +30,29 @@ export interface ConnectionInfo {
   stdin_port: number;
   iopub_port: number;
   hb_port: number;
+}
+
+/** Larger files get no source lines in a traceback. */
+const MAX_SOURCE_BYTES = 1 << 20;
+
+/** A traceback frame's file, read from disk when it is a local one (#322). */
+function readSource(file: string): string | undefined {
+  try {
+    const path = file.startsWith("file:") ? fileURLToPath(file) : file;
+    if (!path.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(path)) return undefined;
+    if (statSync(path).size > MAX_SOURCE_BYTES) return undefined;
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Where the target loads the kernel's runtime/*.mjs from: in place, or a cached copy (src/package.ts). */
+function kernelFiles(): string[] {
+  const runtime = new URL("../runtime/", import.meta.url);
+  const files = [runtime.href, join(cacheRoot(), "runtime")];
+  if (runtime.protocol === "file:") files.push(fileURLToPath(runtime));
+  return files;
 }
 
 export function parseConnectionInfo(json: string): ConnectionInfo {
@@ -156,6 +180,8 @@ export class Kernel {
       createDebugger: runtime === "node" || runtime === "deno"
         ? (publish, transformOptions) => new Debugger(publish, transformOptions)
         : undefined,
+      readSource,
+      kernelFiles: kernelFiles(),
       log,
       exit: () => process.exit(0),
     });
