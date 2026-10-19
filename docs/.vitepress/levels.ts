@@ -53,6 +53,7 @@ export function groups(site: string): Group[] {
       level: "guide",
       items: [
         { text: "Example notebooks", link: "/examples" },
+        { text: "A second notebook", link: "/example-second-notebook" },
         { text: "MoMA's collection", link: "/example-moma" },
         { text: "A Deno-style notebook", link: "/example-deno-style" },
       ],
