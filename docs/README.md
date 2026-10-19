@@ -18,6 +18,8 @@ TypeScript. No Deno background is needed.
 
 Guides for day-to-day use, once you've run a first notebook.
 
+- [Switching to cdp-kernel](switching.md): coming from `deno jupyter`,
+  tslab or IJavascript, or Python.
 - [Writing notebooks](notebooks.md): imports, `npm:` and `jsr:` packages,
   the lockfile, Deno projects, interrupt and inspection.
 - [The `jupyter` namespace](jupyter-api.md): rich output (Markdown, HTML,

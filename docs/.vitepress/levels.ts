@@ -40,6 +40,7 @@ export function groups(site: string): Group[] {
       text: "Guides",
       level: "guide",
       items: [
+        { text: "Switching to cdp-kernel", link: "/switching" },
         { text: "Writing notebooks", link: "/notebooks" },
         { text: "The jupyter namespace", link: "/jupyter-api" },
         { text: "Choosing a runtime", link: "/runtimes" },
