@@ -79,13 +79,136 @@ test("format: Vega-like objects choose the media type from the schema", async ()
   const vega = { $schema: "https://vega.github.io/schema/vega/v5.json" };
   assert.deepEqual(await jupyter.namespace.format({ toSpec: () => lite5 }), {
     "application/vnd.vegalite.v5+json": lite5,
+    "text/plain": "Vega-Lite bar chart",
   });
   assert.deepEqual(await jupyter.namespace.format({ toSpec: () => lite4 }), {
     "application/vnd.vegalite.v4+json": lite4,
+    "text/plain": "Vega-Lite chart",
   });
   assert.deepEqual(await jupyter.namespace.format({ toSpec: () => vega }), {
     "application/vnd.vega.v5+json": vega,
+    "text/plain": "Vega chart",
   });
+});
+
+async function chartText(spec: object): Promise<unknown> {
+  const { jupyter } = setup();
+  return (await jupyter.namespace.format({ toSpec: () => spec }))["text/plain"];
+}
+
+const LITE = "https://vega.github.io/schema/vega-lite/v5.json";
+
+test("format: Vega-Lite text/plain names the mark, encodings, ranges and rows", async () => {
+  const values = [
+    { region: "East", sales: 120 },
+    { region: "North", sales: 980 },
+    { region: "South", sales: 300.25 },
+    { region: "West", sales: 410 },
+  ];
+  assert.equal(
+    await chartText({
+      $schema: LITE,
+      title: "Sales by region",
+      data: { values },
+      mark: { type: "bar" },
+      encoding: {
+        x: { field: "region", type: "nominal" },
+        y: { field: "sales", type: "Q" },
+        color: { value: "steelblue" },
+        tooltip: { field: "sales" },
+      },
+    }),
+    'Vega-Lite bar chart "Sales by region": x=region (nominal, 4 values), y=sales (quantitative, 120 to 980), 4 rows',
+  );
+});
+
+test("format: Vega-Lite text/plain reads named datasets, nested fields and dates", async () => {
+  assert.equal(
+    await chartText({
+      $schema: LITE,
+      datasets: { d: [{ t: "2024-03-01", p: { v: -1.23456 } }, { t: "2023-01-15", p: { v: 2 } }] },
+      data: { name: "d" },
+      mark: "line",
+      encoding: { x: { field: "t", type: "temporal" }, y: { field: "p.v", type: "quantitative" } },
+    }),
+    "Vega-Lite line chart: x=t (temporal, 2023-01-15 to 2024-03-01), y=p.v (quantitative, -1.235 to 2), 2 rows",
+  );
+});
+
+test("format: Vega-Lite text/plain shows aggregates and a data URL without ranges", async () => {
+  assert.equal(
+    await chartText({
+      $schema: LITE,
+      data: { url: "data/cars.json" },
+      mark: "point",
+      encoding: {
+        x: { field: "Year", timeUnit: "year", type: "temporal" },
+        y: { aggregate: "count", type: "quantitative" },
+      },
+    }),
+    "Vega-Lite point chart: x=year(Year) (temporal), y=count() (quantitative), data from data/cars.json",
+  );
+});
+
+test("format: Vega-Lite text/plain gives a line per layer, view and panel", async () => {
+  const values = [{ a: 1, b: "x" }, { a: 3, b: "y" }];
+  assert.equal(
+    await chartText({
+      $schema: LITE,
+      title: { text: "Layers" },
+      data: { values },
+      encoding: { x: { field: "b", type: "ordinal" } },
+      layer: [
+        { mark: "bar", encoding: { y: { field: "a", type: "quantitative" } } },
+        { mark: "rule", encoding: { y: { aggregate: "mean", field: "a", type: "quantitative" } } },
+      ],
+    }),
+    [
+      'Vega-Lite layered chart "Layers": 2 layers, 2 rows',
+      "  layer 1: bar chart: x=b (ordinal, 2 values), y=a (quantitative, 1 to 3)",
+      "  layer 2: rule chart: x=b (ordinal, 2 values), y=mean(a) (quantitative)",
+    ].join("\n"),
+  );
+  assert.equal(
+    await chartText({
+      $schema: LITE,
+      data: { values },
+      facet: { column: { field: "b", type: "nominal" } },
+      spec: { mark: "point", encoding: { y: { field: "a", type: "quantitative" } } },
+    }),
+    "Vega-Lite chart faceted by b, 2 rows\n  each panel: point chart: y=a (quantitative, 1 to 3)",
+  );
+  const views = Array.from({ length: 8 }, () => ({ mark: "area" }));
+  const text = await chartText({ $schema: LITE, hconcat: views }) as string;
+  assert.equal(text.split("\n").length, 1 + 6 + 1);
+  assert.match(text, /^Vega-Lite concatenated chart: 8 views\n {2}view 1: area chart\n/);
+  assert.match(text, /\n {2}… 2 more$/);
+});
+
+test("format: Vega text/plain lists marks, data sets and scales", async () => {
+  assert.equal(
+    await chartText({
+      $schema: "https://vega.github.io/schema/vega/v5.json",
+      title: "Bars",
+      data: [
+        { name: "table", values: [{ a: 1 }, { a: 2 }] },
+        { name: "stats", source: "table" },
+        { name: "remote", url: "data/x.csv" },
+      ],
+      scales: [{ name: "x", type: "band" }, { name: "y" }],
+      marks: [{ type: "rect" }, { type: "group", marks: [{ type: "text" }, { type: "rect" }] }],
+    }),
+    'Vega chart "Bars": marks rect, group, text; data table (2 rows), stats (from table), remote (from data/x.csv); scales x (band), y (linear)',
+  );
+});
+
+test("format: a spec the summary can't read still renders without text/plain", async () => {
+  const spec = { $schema: LITE, mark: "bar", get encoding(): never {
+    throw new Error("boom");
+  } };
+  const { jupyter } = setup();
+  const out = await jupyter.namespace.format({ toSpec: () => spec });
+  assert.deepEqual(Object.keys(out), ["application/vnd.vegalite.v5+json"]);
 });
 
 test("format: Vega-like without $schema falls through", async () => {
@@ -119,6 +242,16 @@ test("format: DataFrame-like gives dataresource and an escaped html table", asyn
   assert.match(html, /<th>a&lt;b<\/th>/);
   assert.match(html, /<td>&lt;x&amp;y&gt;<\/td>/);
   assert.equal(html.split("<tr>").length - 1, 1 + 10); // header + 10 rows
+  assert.equal(out["text/plain"], "DataFrame (4 columns): a<b (integer), s (string), z (string), f (string)");
+});
+
+test("format: DataFrame text/plain gives the row count from height", async () => {
+  const { jupyter } = setup();
+  const columns = Object.fromEntries(Array.from({ length: 22 }, (_, i) => [`c${i}`, {}]));
+  const df = { schema: columns, height: 1, head: () => ({ toRecords: () => [] }), toRecords: () => [] };
+  const text = (await jupyter.namespace.format(df))["text/plain"] as string;
+  assert.match(text, /^DataFrame \(1 row, 22 columns\): c0 \(string\), c1 \(string\), /);
+  assert.match(text, /c19 \(string\), … 2 more$/);
 });
 
 test("format: PNG and JPEG bytes use the injected base64", async () => {
