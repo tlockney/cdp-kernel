@@ -1,6 +1,6 @@
 {
   "name": "@tlockney/cdp-kernel",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Deno's Jupyter kernel, extracted to run notebooks on Node, Deno, Bun, workerd and celld",
   "license": "MIT",
   "author": "Thomas Lockney <thomas@lockney.net>",
