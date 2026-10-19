@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 476" width="860" height="476" role="img" aria-label="Tab and Shift-Tab ask the target's runtime and TypeScript's language service at once and merge their answers">
+  <title>Tab and Shift-Tab ask the target's runtime and TypeScript's language service at once and merge their answers</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="476" rx="8"/>
+  <rect class="acc" x="250" y="20" width="360" height="52" rx="4"/>
+  <text class="m" x="430" y="42" text-anchor="middle">complete_request, inspect_request</text>
+  <text class="s" x="430" y="61" text-anchor="middle">Tab and Shift-Tab; both halves are asked at once</text>
+  <path class="ln" d="M430,72 V84 H215 V98" marker-end="url(#a)"/>
+  <path class="ln" d="M430,84 H645 V98" marker-end="url(#a)"/>
+
+  <!-- Runtime -->
+  <rect class="box" x="20" y="100" width="390" height="200" rx="6"/>
+  <text class="t" x="215" y="124" text-anchor="middle">The target's runtime values</text>
+  <rect class="inner" x="40" y="138" width="350" height="92" rx="4"/>
+  <text class="s" x="56" y="158">Node, Deno: Runtime.evaluate with</text>
+  <text class="s" x="56" y="176">throwOnSideEffect, then Runtime.getProperties</text>
+  <text class="s" x="56" y="200">Bun, workerd, celld: property lookup,</text>
+  <text class="s" x="56" y="216">without calling getters</text>
+  <text class="l" x="40" y="252">Property names, globals, the cells' let and const;</text>
+  <text class="l" x="40" y="268">for Shift-Tab, the value's preview and properties.</text>
+  <text class="l" x="40" y="284">Nothing runs that could change state.</text>
+
+  <!-- Language service -->
+  <rect class="box" x="450" y="100" width="390" height="200" rx="6"/>
+  <text class="t" x="645" y="124" text-anchor="middle">TypeScript's language service</text>
+  <rect class="inner" x="470" y="138" width="350" height="92" rx="4"/>
+  <text class="s" x="486" y="160">A worker thread of the kernel host. One virtual</text>
+  <text class="s" x="486" y="178">file: every cell that ran, then the cell being</text>
+  <text class="s" x="486" y="196">edited. Imports resolve to packages already</text>
+  <text class="s" x="486" y="214">in the cache; it never installs one.</text>
+  <text class="l" x="470" y="252">Starts on the first request; ends after 10 minutes</text>
+  <text class="l" x="470" y="268">without one (about 150 MB while it runs). Never</text>
+  <text class="l" x="470" y="284">started with --no-language-service.</text>
+
+  <path class="ln" d="M215,300 V346" marker-end="url(#a)"/>
+  <path class="ln" d="M645,300 V346" marker-end="url(#a)"/>
+  <text class="l" x="635" y="320" text-anchor="end">within 500 ms, else left out</text>
+  <text class="l" x="635" y="336" text-anchor="end">(while it loads, the runtime answers alone)</text>
+
+  <!-- Merge -->
+  <rect class="ok" x="20" y="348" width="820" height="112" rx="6"/>
+  <text class="t" x="40" y="374">One reply</text>
+  <text class="s" x="40" y="398">Completion: the typed names first, each with its kind, then names only the runtime has (a property set at runtime).</text>
+  <text class="s" x="40" y="418">If the runtime has no match, as inside an expression, the typed names alone.</text>
+  <text class="s" x="40" y="442">Inspection: the declared type, signature and JSDoc, then the runtime's view of the value.</text>
+</svg>

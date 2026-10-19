@@ -156,6 +156,10 @@ time, which in one file would be an error that keeps the first type, so a
 top-level declaration is dropped when a later cell, or the edited one,
 declares all its names again.
 
+How the two answers meet in one reply:
+
+![A complete_request or inspect_request goes to the target's runtime and to the language-service worker at once. The runtime answers with a side-effect-free lookup; the worker answers within 500 ms or is left out. Completion lists the typed names first, then names only the runtime has; inspection shows the declared type and JSDoc, then the runtime's view of the value.](images/concepts/completion.svg)
+
 The worker's module resolution follows the target. `npm:` and `jsr:` map to
 the package already installed in the kernel's (or Bun's) cache, never
 installing one. On Deno, `deno info --json` says where Deno put a

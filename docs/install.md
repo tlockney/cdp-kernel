@@ -172,6 +172,10 @@ deleted at any time.
 
 ## Files and environment
 
+What `install` writes, and what the running kernel caches:
+
+![cdp-kernel install writes kernel.json in Jupyter's kernels directory. When the kernel runs, starting a target from a JSR install, or a Deno target of an npm install, fills runtime/<version>-<hash>/ under ~/.cache/cdp-kernel; npm: and jsr: imports on Node and workerd, and type packages for completion, go to npm/; imports on Bun go to bun/; Deno targets use Deno's own cache.](images/concepts/install-layout.svg)
+
 Kernelspecs go in Jupyter's kernels directory:
 
 | Platform | Directory |

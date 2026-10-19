@@ -49,9 +49,15 @@ cdp-kernel 0.4.0 or later. To pin versions, create a `cdp-kernel.lock.json`
 in the notebook's directory (or above it) containing `{}`. From then on,
 each `npm:`/`jsr:` range is recorded with the exact version it resolved to,
 and installed at that version, so the notebook gets the same packages on
-another machine. Commit it next to the notebook. Deno targets use Deno's own
-resolution and lock instead. Installs into the shared cache are serialized,
+another machine. Commit it next to the notebook. Deno targets resolve
+imports with Deno and keep no lockfile (the kernel runs Deno with
+`--no-lock`), so pin a version there with an exact specifier such as
+`npm:pkg@1.4.0`. Installs into the shared cache are serialized,
 so two kernels installing at once can't corrupt it.
+
+How an import uses the lockfile:
+
+![A cell imports npm:pkg@^1.2. Holding the cache's install lock, the kernel looks for the entry "pkg@^1.2" in cdp-kernel.lock.json. With no lockfile it installs the newest match and records nothing; with no entry it installs the newest match and records the version it resolved to; with an entry of 1.4.0 it installs 1.4.0 exactly. Deno targets don't use the file.](images/concepts/lockfile.svg)
 
 ## Deno projects
 
@@ -150,6 +156,10 @@ the failing one marked, the cell's execution count and `cellId` when the
 frame is in a cell, and a `library` flag for frames in packages, the
 runtime and the kernel. Frontends that don't read it show the plain
 traceback.
+
+Where each form comes from:
+
+![Each cell's script is named for its code. When a cell throws, the target's __cdpk.describeError returns the stack, whose frames name those scripts. The host maps each cell frame through the cell's source map to In[n] and the line you wrote, then sends the plain traceback with the structured application/vnd.nteract.traceback+json form in its metadata.](images/concepts/traceback.svg)
 
 ## Inspection, completion and history
 

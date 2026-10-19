@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 544" width="860" height="544" role="img" aria-label="A cell's error stack names scripts by cell; the host maps each cell frame to In[n] and the line you wrote, and sends a plain traceback with a structured nteract traceback in its metadata">
+  <title>A cell's error stack names scripts by cell; the host maps each cell frame to In[n] and the line you wrote, and sends a plain traceback with a structured nteract traceback in its metadata</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="544" rx="8"/>
+  <text class="t" x="20" y="34">What happens</text>
+  <text class="t" x="450" y="34">What it looks like</text>
+
+  <!-- 1 -->
+  <rect class="acc" x="20" y="48" width="400" height="58" rx="4"/>
+  <text class="s" x="36" y="72">The host names each cell's script for its code and</text>
+  <text class="s" x="36" y="92">remembers the cell (code, execution count, cellId)</text>
+  <rect class="inner" x="450" y="48" width="390" height="58" rx="4"/>
+  <text class="lm" x="464" y="72">//# sourceURL=$cdpk$cell-1x9a2.ts</text>
+  <text class="lm" x="464" y="92">→ In[3], its code, its cellId</text>
+  <line class="ln" x1="220" y1="106" x2="220" y2="126" marker-end="url(#a)"/>
+
+  <!-- 2 -->
+  <rect class="warn" x="20" y="128" width="400" height="76" rx="4"/>
+  <text class="s" x="36" y="152">A cell throws in the target. The target's</text>
+  <text class="m" x="36" y="172">__cdpk.describeError</text>
+  <text class="s" x="36" y="192">returns the error's name, message and stack</text>
+  <rect class="inner" x="450" y="128" width="390" height="76" rx="4"/>
+  <text class="lm" x="464" y="152">RangeError: tb 2</text>
+  <text class="lm" x="478" y="172">at failing ($cdpk$cell-1x9a2.ts:5:9)</text>
+  <text class="lm" x="478" y="192">at $cdpk$cell-8kq0z.ts:5:1</text>
+  <line class="ln" x1="220" y1="204" x2="220" y2="224" marker-end="url(#a)"/>
+
+  <!-- 3 -->
+  <rect class="inner" x="20" y="226" width="400" height="96" rx="4"/>
+  <text class="s" x="36" y="250">The host, for each frame in a remembered cell:</text>
+  <text class="s" x="36" y="270">transforms the cell again, maps the script's line to</text>
+  <text class="s" x="36" y="290">the line you wrote through the cell's source map, and</text>
+  <text class="s" x="36" y="310">names the cell by its execution count</text>
+  <rect class="inner" x="450" y="226" width="390" height="96" rx="4"/>
+  <text class="lm" x="464" y="250">$cdpk$cell-1x9a2.ts:5:9  →  In[3]:3</text>
+  <text class="lm" x="464" y="270">$cdpk$cell-8kq0z.ts:5:1  →  In[4]:3</text>
+  <text class="l" x="464" y="294">Other frames stay as they are; those in packages,</text>
+  <text class="l" x="464" y="310">the runtime and the kernel are marked library.</text>
+
+  <path class="ln" d="M220,322 V362" marker-end="url(#a)"/>
+  <path class="ln" d="M220,342 H645 V362" marker-end="url(#a)"/>
+
+  <!-- 4 -->
+  <rect class="ok" x="20" y="364" width="400" height="118" rx="4"/>
+  <text class="t" x="36" y="388">The error message's traceback</text>
+  <text class="lm" x="36" y="414">RangeError: tb 2</text>
+  <text class="lm" x="50" y="432">at failing (In[3]:3)</text>
+  <text class="lm" x="50" y="450">at In[4]:3</text>
+  <text class="l" x="36" y="468">What every frontend shows</text>
+  <rect class="ok" x="450" y="364" width="390" height="118" rx="4"/>
+  <text class="t" x="466" y="388">Its metadata, beside it</text>
+  <text class="lm" x="466" y="414">application/vnd.nteract.traceback+json</text>
+  <text class="l" x="466" y="434">Each frame's file, line and function, a few source</text>
+  <text class="l" x="466" y="450">lines with the failing one marked, the execution</text>
+  <text class="l" x="466" y="466">count and cellId, and the library flag</text>
+
+  <text class="l" x="20" y="510">On Deno, stack frames read &lt;anonymous&gt;, and the call frames CDP reports give each script's name. If the structured form</text>
+  <text class="l" x="20" y="526">can't be built, the error goes out with the stack as the target gave it.</text>
+</svg>

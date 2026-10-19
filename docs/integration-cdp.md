@@ -165,6 +165,10 @@ writes the reply to the child's stdin as one JSON line,
 user cancelled. The host always answers exactly once, so the read
 returns.
 
+The round trip:
+
+![prompt() sends an input_request record on stdout and blocks in readSync on the target's stdin. The host forwards input_request to the frontend on the stdin socket, gets an input_reply, and writes it to the target's stdin as one JSON line, so prompt() returns the value. With no stdin channel the host answers null at once; an interrupt makes prompt() throw.](images/integrations/prompt.svg)
+
 ## Completion and inspection
 
 Neither completion nor Shift+Tab inspection should run user code: typing

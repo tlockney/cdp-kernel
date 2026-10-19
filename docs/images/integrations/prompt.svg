@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 478" width="860" height="478" role="img" aria-label="prompt() sends an input_request record to the host and blocks reading its stdin; the host asks the frontend on the stdin socket and writes the reply to the target's stdin as one JSON line">
+  <title>prompt() sends an input_request record to the host and blocks reading its stdin; the host asks the frontend on the stdin socket and writes the reply to the target's stdin as one JSON line</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="478" rx="8"/>
+  <rect class="acc" x="130" y="20" width="160" height="40" rx="4"/>
+  <text class="t" x="210" y="45" text-anchor="middle">Target</text>
+  <rect class="box" x="420" y="20" width="160" height="40" rx="4"/>
+  <text class="t" x="500" y="45" text-anchor="middle">Kernel host</text>
+  <rect class="box" x="680" y="20" width="160" height="40" rx="4"/>
+  <text class="t" x="760" y="45" text-anchor="middle">Frontend</text>
+  <line class="ln" x1="210" y1="60" x2="210" y2="380" stroke-dasharray="3 4"/>
+  <line class="ln" x1="500" y1="60" x2="500" y2="380" stroke-dasharray="3 4"/>
+  <line class="ln" x1="760" y1="60" x2="760" y2="380" stroke-dasharray="3 4"/>
+
+  <text class="m" x="200" y="92" text-anchor="end">prompt("Name?")</text>
+  <line class="ln" x1="214" y1="110" x2="494" y2="110" marker-end="url(#a)"/>
+  <text class="m" x="354" y="102" text-anchor="middle">input_request</text>
+  <text class="l" x="354" y="126" text-anchor="middle">a record on stdout</text>
+
+  <rect class="warn" x="203" y="114" width="14" height="196"/>
+  <text class="s" x="190" y="180" text-anchor="end">Blocked in</text>
+  <text class="s" x="190" y="198" text-anchor="end">readSync on its</text>
+  <text class="s" x="190" y="216" text-anchor="end">stdin, a byte at</text>
+  <text class="s" x="190" y="234" text-anchor="end">a time, until a</text>
+  <text class="s" x="190" y="252" text-anchor="end">newline</text>
+
+  <line class="ln" x1="506" y1="150" x2="754" y2="150" marker-end="url(#a)"/>
+  <text class="m" x="630" y="142" text-anchor="middle">input_request</text>
+  <text class="l" x="630" y="166" text-anchor="middle">on the stdin socket</text>
+  <rect class="inner" x="700" y="180" width="120" height="34" rx="4"/>
+  <text class="s" x="760" y="201" text-anchor="middle">an input box</text>
+  <line class="ln" x1="754" y1="240" x2="506" y2="240" marker-end="url(#a)"/>
+  <text class="m" x="630" y="232" text-anchor="middle">input_reply</text>
+
+  <line class="ln" x1="494" y1="290" x2="221" y2="290" marker-end="url(#a)"/>
+  <text class="lm" x="358" y="282" text-anchor="middle">{"value":"Ada","interrupted":false}</text>
+  <text class="l" x="358" y="306" text-anchor="middle">one JSON line on the target's stdin</text>
+
+  <rect class="ok" x="110" y="324" width="200" height="40" rx="4"/>
+  <text class="m" x="210" y="349" text-anchor="middle">prompt() returns "Ada"</text>
+
+  <line class="ln" x1="20" y1="394" x2="840" y2="394" stroke-dasharray="3 4"/>
+  <text class="l" x="20" y="416">prompt() returns its string synchronously, as in a browser and in Deno, so the target's thread waits. The host always answers exactly once:</text>
+  <text class="l" x="20" y="438">• No stdin channel (allow_stdin false, or no client on stdin after 100 ms): a null value at once, so prompt() returns null and confirm() false.</text>
+  <text class="l" x="20" y="460">• Interrupted while waiting: "interrupted":true, and prompt() throws, which ends the cell.</text>
+</svg>
