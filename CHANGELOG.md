@@ -10,7 +10,13 @@ Issue and pull request numbers refer to
   is enough) no longer occasionally fails with "Promise was collected" on
   Deno. The expression now yields one task before running, as cells do
   ([#329](https://github.com/tlockney/cdp-kernel/issues/329)).
-
+- Vega and Vega-Lite charts come with a `text/plain` summary: the mark,
+  each encoded field with its type and value range, the title and the row
+  count, with a line per layer, view or facet panel. Frontends that can't
+  draw the chart (`jupyter console`, nbconvert to text, agents reading the
+  notebook) now show something useful. DataFrames get the same: row and
+  column counts and each column's type
+  ([#321](https://github.com/tlockney/cdp-kernel/issues/321)).
 - The acquisition scrubber in the MoMA example notebooks renders in
   JupyterLab. Its widget module exported a function taking `{ model, el }`,
   which anywidget calls as a factory with no arguments, so it failed with

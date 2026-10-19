@@ -338,9 +338,17 @@ vl.markBar().data(sales).encode(vl.x().fieldO("month"), vl.y().fieldQ("sales"));
 
 A hand-written spec works too: any object whose `toSpec()` returns it.
 
+Next to the chart the kernel sends a short text summary, for frontends
+that can't draw charts (`jupyter console`, a notebook converted to text,
+an agent reading the saved notebook). For the chart above it reads:
+
+```
+Vega-Lite bar chart: x=month (ordinal, 3 values), y=sales (quantitative, 28 to 55), 3 rows
+```
+
 **Tables with Polars.** A [nodejs-polars](https://pola-rs.github.io/nodejs-polars/)
 DataFrame shows its first 10 rows as an HTML table (the
-`dataresource` part carries 50):
+`dataresource` part carries 50), with its size and column types as text:
 
 ```ts cell
 import pl from "npm:nodejs-polars@0.18";
