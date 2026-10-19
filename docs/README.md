@@ -27,7 +27,7 @@ Guides for day-to-day use, once you've run a first notebook.
   and running notebooks written for Deno.
 - [Choosing a runtime](runtimes.md): what differs between the runtimes,
   and Workers and celld projects.
-- [Widgets and comms](widgets.md): interactive anywidget-style widgets and
+- [Widgets and comms](widgets.md): interactive [anywidget](https://github.com/manzt/anywidget)-style widgets and
   the comm API.
 - [Debugger](debugger.md): breakpoints and stepping in JupyterLab on Node
   and Deno.

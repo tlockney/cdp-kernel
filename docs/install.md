@@ -65,7 +65,7 @@ that.
 ## In a container
 
 [`container/Dockerfile`](https://github.com/tlockney/cdp-kernel/blob/main/container/Dockerfile)
-builds an image with JupyterLab, every runtime and kernelspec, anywidget
+builds an image with JupyterLab, every runtime and kernelspec, [anywidget](https://github.com/manzt/anywidget)
 for [widgets](widgets.md), and the example notebooks. It starts from
 [Jupyter's minimal-notebook image](https://jupyter-docker-stacks.readthedocs.io/),
 so its options (port, token, user) apply. Each release is published as

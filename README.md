@@ -35,7 +35,7 @@ runtime versions and frontends are supported, and what may change before
 - Deno projects (`deno.json` import maps, JSX settings) and Workers
   projects (`wrangler` bindings in `env`).
 - JupyterLab's visual debugger on Node and Deno targets.
-- anywidget-style widgets and Jupyter comms.
+- [anywidget](https://github.com/manzt/anywidget)-style widgets and Jupyter comms.
 - `prompt()` and `confirm()`, interrupt that keeps state, Shift-Tab
   inspection, completion and history.
 

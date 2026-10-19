@@ -117,7 +117,7 @@ starting point, not a drop-in replacement.
 | `display(..., display_id=...)` and `update_display` | `jupyter.display(value, { display_id, update: true })` | [Updating output in place](jupyter-api.md#updating-output-in-place) |
 | `_repr_html_` on a class | a `[jupyter.$display]()` method | [Custom display](jupyter-api.md#custom-display-for-your-own-classes) |
 | `input()` | `prompt()` and `confirm()` | [Asking for input](jupyter-api.md#asking-for-input-prompt-and-confirm) |
-| ipywidgets | `jupyter.widget`, anywidget-style. The ready-made controls (`IntSlider`, `Dropdown`) are Python classes and aren't available; you build controls from HTML | [Widgets and comms](widgets.md) |
+| ipywidgets | `jupyter.widget`, [anywidget](https://github.com/manzt/anywidget)-style. The ready-made controls (`IntSlider`, `Dropdown`) are Python classes and aren't available; you build controls from HTML | [Widgets and comms](widgets.md) |
 | `pip install` | `import pl from "npm:nodejs-polars@0.18"` installs on first use | [Language and imports](notebooks.md#language-and-imports) |
 
 Widgets still need `pip install anywidget` in the Python environment that

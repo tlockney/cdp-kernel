@@ -208,7 +208,7 @@ processes:
   - a `Deno.jupyter` proxy on Deno targets;
   - an opt-in `Deno` compatibility namespace on Node.
 - **Added since the spike** (each has its own issue):
-  - Jupyter comms and anywidget-style widgets, on every target (#9);
+  - Jupyter comms and [anywidget](https://github.com/manzt/anywidget)-style widgets, on every target (#9);
   - `inspect_request` tooltips and `history_request` (#10);
   - typings for the `jupyter` global (#11);
   - a notebook's `deno.json` import map, JSX settings and `node_modules` on
