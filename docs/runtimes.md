@@ -86,6 +86,36 @@ Miniflare, the simulator `wrangler dev` uses:
 - State lives in `.wrangler/state/cdp-kernel`, beside `wrangler dev`'s
   own, so the two never open the same Durable Object.
 
+For example, a project with wrangler in its `devDependencies` and this
+`wrangler.jsonc`, which has one var and one KV namespace:
+
+```jsonc
+{
+  "name": "my-worker",
+  "compatibility_date": "2026-09-01",
+  "vars": { "GREETING": "hello" },
+  "kv_namespaces": [{ "binding": "CACHE", "id": "cache" }]
+}
+```
+
+A cell can read the var and use the namespace:
+
+```ts
+await env.CACHE.put("greeting", env.GREETING);
+await env.CACHE.get("greeting")
+```
+
+The first cell's output starts with the notice, on stderr, and then the
+value:
+
+```
+[cdp-kernel] Workers project /path/to/my-worker/wrangler.jsonc: env has CACHE, GREETING
+'hello'
+```
+
+This config has no `main`, so there is no `worker`. With a `main`, the
+notice ends with `; worker is its default export`.
+
 wrangler and Miniflare come from the project's `node_modules`, so they
 match its versions; Miniflare 4 and 5 both work. The project's `main` is
 bundled with esbuild, not wrangler's build, so custom `build` commands,
