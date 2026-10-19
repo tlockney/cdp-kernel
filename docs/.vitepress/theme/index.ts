@@ -5,6 +5,7 @@ import Level from "./Level.vue";
 import { listenForUnfold } from "./unfold.ts";
 import { drawCharts } from "./vega.ts";
 import { runWidgets } from "./widgets.ts";
+import { attachZoom } from "./zoom.ts";
 import "./custom.css";
 
 export default {
@@ -15,6 +16,7 @@ export default {
     const draw = () => {
       drawCharts();
       runWidgets();
+      attachZoom();
     };
     onMounted(() => {
       draw();
