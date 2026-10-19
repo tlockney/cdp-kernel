@@ -262,6 +262,8 @@ For type errors in your editor, see [Editor types](editor-types.md).
 
 ## Next steps
 
+- [A second notebook](example-second-notebook.md): fetch JSON from an
+  API, reshape it, chart it and summarize it, in six cells.
 - [The jupyter namespace](jupyter-api.md): rich output, updating output
   in place, and custom display for your own classes.
 - [Writing notebooks](notebooks.md): imports, pinning package versions

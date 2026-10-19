@@ -4,6 +4,10 @@ Complete notebooks, shown with the output they produced when they ran.
 Each can be downloaded and opened in JupyterLab or VS Code with a
 cdp-kernel kernel installed ([Getting started](getting-started.md)).
 
+- [A second notebook](example-second-notebook.md): the step after
+  Getting started. Fetches Express's release history from the npm
+  registry, reshapes it, draws one Vega-Lite chart and renders a Markdown
+  summary, updating one output in place along the way. Runs on `cdp-node`.
 - [MoMA's collection](example-moma.md): the Museum of Modern Art's open
   collection data, end to end. Loads the CSV files with Polars, draws charts
   with Observable Plot, renders Markdown reports, and uses a widget and a
