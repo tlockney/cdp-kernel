@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 574" width="860" height="574" role="img" aria-label="The host binds its sockets, then launches the target in the background while it answers kernel_info at once; a failed launch is retried by the first request that needs the target">
+  <title>The host binds its sockets, then launches the target in the background while it answers kernel_info at once; a failed launch is retried by the first request that needs the target</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="574" rx="8"/>
+  <text class="t" x="215" y="34" text-anchor="middle">Host</text>
+  <text class="t" x="645" y="34" text-anchor="middle">Target</text>
+
+  <rect class="acc" x="20" y="48" width="390" height="44" rx="4"/>
+  <text class="s" x="215" y="75" text-anchor="middle">Jupyter starts the host with the connection file</text>
+  <line class="ln" x1="215" y1="92" x2="215" y2="110" marker-end="url(#a)"/>
+
+  <rect class="inner" x="20" y="112" width="390" height="54" rx="4"/>
+  <text class="s" x="215" y="134" text-anchor="middle">Bind the five sockets</text>
+  <text class="m" x="215" y="154" text-anchor="middle">shell control stdin iopub hb</text>
+  <line class="ln" x1="410" y1="139" x2="448" y2="139" marker-end="url(#a)"/>
+  <line class="ln" x1="215" y1="166" x2="215" y2="196" marker-end="url(#a)"/>
+  <text class="l" x="223" y="186">then, while the target starts</text>
+
+  <rect class="acc" x="450" y="112" width="390" height="54" rx="4"/>
+  <text class="s" x="645" y="134" text-anchor="middle">Launch the target in the background, so</text>
+  <text class="s" x="645" y="154" text-anchor="middle">the first cell doesn't wait for it</text>
+  <line class="ln" x1="645" y1="166" x2="645" y2="190" marker-end="url(#a)"/>
+
+  <rect class="inner" x="20" y="198" width="390" height="54" rx="4"/>
+  <text class="m" x="215" y="220" text-anchor="middle">kernel_info_request</text>
+  <text class="s" x="215" y="240" text-anchor="middle">answered at once, without waiting for the target</text>
+  <rect class="inner" x="20" y="272" width="390" height="54" rx="4"/>
+  <text class="s" x="215" y="294" text-anchor="middle">execute, complete and inspect requests</text>
+  <text class="s" x="215" y="314" text-anchor="middle">wait for the launch</text>
+
+  <polygon class="inner" points="645,192 735,219 645,246 555,219"/>
+  <text class="s" x="645" y="223" text-anchor="middle">Came up?</text>
+  <path class="ln" d="M555,219 H540 V270" marker-end="url(#a)"/>
+  <text class="l" x="532" y="262" text-anchor="end">yes</text>
+  <path class="ln" d="M735,219 H750 V270" marker-end="url(#a)"/>
+  <text class="l" x="758" y="262">no</text>
+
+  <rect class="ok" x="450" y="272" width="180" height="72" rx="4"/>
+  <text class="s" x="540" y="294" text-anchor="middle">Ready. From now on</text>
+  <text class="s" x="540" y="312" text-anchor="middle">kernel_info's banner</text>
+  <text class="s" x="540" y="330" text-anchor="middle">names its versions</text>
+
+  <rect class="warn" x="660" y="272" width="180" height="72" rx="4"/>
+  <text class="s" x="750" y="294" text-anchor="middle">The error goes to</text>
+  <text class="s" x="750" y="312" text-anchor="middle">the server log only</text>
+  <line class="ln" x1="750" y1="344" x2="750" y2="364" marker-end="url(#a)"/>
+  <rect class="inner" x="660" y="366" width="180" height="54" rx="4"/>
+  <text class="s" x="750" y="388" text-anchor="middle">The first request that</text>
+  <text class="s" x="750" y="406" text-anchor="middle">needs it launches again</text>
+  <line class="ln" x1="750" y1="420" x2="750" y2="440" marker-end="url(#a)"/>
+  <text class="l" x="758" y="434">fails</text>
+  <rect class="warn" x="660" y="442" width="180" height="54" rx="4"/>
+  <text class="s" x="750" y="464" text-anchor="middle">Fails again: the cell</text>
+  <text class="s" x="750" y="482" text-anchor="middle">ends with KernelError</text>
+  <path class="ln" d="M660,393 H600 V440" marker-end="url(#a)"/>
+  <text class="l" x="652" y="384" text-anchor="end">comes up</text>
+  <line class="ln" x1="520" y1="344" x2="520" y2="440" marker-end="url(#a)"/>
+  <rect class="ok" x="450" y="442" width="180" height="54" rx="4"/>
+  <text class="s" x="540" y="473" text-anchor="middle">Cells run</text>
+
+  <line class="ln" x1="20" y1="518" x2="840" y2="518" stroke-dasharray="3 4"/>
+  <text class="l" x="20" y="540">Later: if the target exits (a crash, or a busy interrupt on Bun, workerd or celld), the host says why in the notebook and starts a new</text>
+  <text class="l" x="20" y="556">target on the next cell, without the earlier state. On shutdown_request the host kills the target and exits.</text>
+</svg>

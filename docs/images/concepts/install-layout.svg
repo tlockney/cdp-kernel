@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 548" width="860" height="548" role="img" aria-label="cdp-kernel install writes kernel.json in Jupyter's kernels directory; the running kernel fills the runtime-file, npm and Bun caches under ~/.cache/cdp-kernel, and Deno targets use Deno's own cache">
+  <title>cdp-kernel install writes kernel.json in Jupyter's kernels directory; the running kernel fills the runtime-file, npm and Bun caches under ~/.cache/cdp-kernel, and Deno targets use Deno's own cache</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="548" rx="8"/>
+  <text class="t" x="20" y="34">What writes it</text>
+  <text class="t" x="410" y="34">Where on disk</text>
+
+  <!-- Kernelspec -->
+  <rect class="acc" x="20" y="74" width="330" height="54" rx="4"/>
+  <text class="m" x="185" y="96" text-anchor="middle">cdp-kernel install</text>
+  <text class="s" x="185" y="116" text-anchor="middle">from npm or JSR; it writes nothing else</text>
+  <rect class="box" x="410" y="48" width="430" height="100" rx="6"/>
+  <text class="t" x="426" y="70">Jupyter's kernels directory</text>
+  <text class="l" x="426" y="88">$JUPYTER_DATA_DIR/kernels, else the platform's default</text>
+  <rect class="inner" x="426" y="98" width="398" height="36" rx="4"/>
+  <text class="m" x="440" y="121">&lt;name&gt;/kernel.json</text>
+  <text class="l" x="590" y="121">the command line Jupyter runs</text>
+  <line class="ln" x1="350" y1="116" x2="424" y2="116" marker-end="url(#a)"/>
+
+  <!-- Caches -->
+  <text class="t" x="20" y="190">When the kernel runs</text>
+  <rect class="box" x="410" y="168" width="430" height="262" rx="6"/>
+  <text class="m" x="426" y="192">${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/</text>
+
+  <rect class="inner" x="20" y="206" width="330" height="54" rx="4"/>
+  <text class="s" x="36" y="228">Starting a target: a JSR install, any runtime,</text>
+  <text class="s" x="36" y="246">or a Deno target of an npm install</text>
+  <rect class="inner" x="426" y="206" width="398" height="54" rx="4"/>
+  <text class="m" x="440" y="228">runtime/&lt;version&gt;-&lt;hash&gt;/</text>
+  <text class="l" x="440" y="246">the kernel's runtime/*.mjs, copied here once per version</text>
+  <line class="ln" x1="350" y1="233" x2="424" y2="233" marker-end="url(#a)"/>
+
+  <rect class="inner" x="20" y="276" width="330" height="54" rx="4"/>
+  <text class="s" x="36" y="298">npm: and jsr: imports on Node and workerd;</text>
+  <text class="s" x="36" y="316">type packages for completion</text>
+  <rect class="inner" x="426" y="276" width="398" height="54" rx="4"/>
+  <text class="m" x="440" y="298">npm/</text>
+  <text class="l" x="478" y="298">CDPK_CACHE_DIR moves it</text>
+  <text class="l" x="440" y="316">package.json, .npmrc, node_modules/cdpk-&lt;hash&gt;/</text>
+  <line class="ln" x1="350" y1="303" x2="424" y2="303" marker-end="url(#a)"/>
+
+  <rect class="inner" x="20" y="346" width="330" height="54" rx="4"/>
+  <text class="s" x="36" y="377">npm: and jsr: imports on Bun</text>
+  <rect class="inner" x="426" y="346" width="398" height="54" rx="4"/>
+  <text class="m" x="440" y="368">bun/</text>
+  <text class="l" x="440" y="386">the same layout, installed by Bun</text>
+  <line class="ln" x1="350" y1="373" x2="424" y2="373" marker-end="url(#a)"/>
+  <text class="l" x="426" y="420">npm/ and bun/ hold .install-lock/ while an install runs.</text>
+
+  <rect class="inner" x="20" y="446" width="330" height="54" rx="4"/>
+  <text class="s" x="36" y="468">Imports on a Deno target, and a JSR</text>
+  <text class="s" x="36" y="486">install's own modules</text>
+  <rect class="box" x="410" y="446" width="430" height="54" rx="6"/>
+  <text class="t" x="426" y="468">Deno's own cache</text>
+  <text class="l" x="426" y="486">managed by Deno, not by cdp-kernel</text>
+  <line class="ln" x1="350" y1="473" x2="408" y2="473" marker-end="url(#a)"/>
+
+  <text class="l" x="20" y="530">Each cache is safe to delete; it is refilled on next use. cdp-kernel uninstall removes only the kernelspec.</text>
+</svg>

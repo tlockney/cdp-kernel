@@ -132,11 +132,15 @@ the inspector:
 
 ## Lifecycle
 
+From start to the first cell:
+
+![The host binds its five sockets, then launches the target in the background and answers kernel_info_request at once. If the target comes up, kernel_info's banner names its versions from then on. If not, the error goes to the server log, the first request that needs the target launches it again, and a second failure ends the cell with KernelError.](images/integrations/startup.svg)
+
 1. Jupyter starts the host with the connection file. The host binds the
    five sockets and launches the target right away, so the first cell
-   doesn't wait for it. A `kernel_info_request` on the shell socket waits
-   for the launch, so the reply can name the target's runtime and engine
-   versions.
+   doesn't wait for it. A `kernel_info_request` is answered at once,
+   without waiting for the launch; its banner names the target's runtime
+   and engine versions once the target is up.
 2. If the target doesn't come up, the failure goes to the server log, and
    the first cell tries again. If that also fails, the cell ends with a
    `KernelError` saying why.
