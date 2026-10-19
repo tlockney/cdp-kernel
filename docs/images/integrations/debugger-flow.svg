@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 668" width="860" height="668" role="img" aria-label="How a debugging session flows between JupyterLab, the kernel host and the target's V8 inspector">
+  <title>How a debugging session flows between JupyterLab, the kernel host and the target's V8 inspector</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="668" rx="8"/>
+
+  <!-- Bands -->
+  <rect class="box" x="12" y="256" width="836" height="234" rx="6"/>
+  <text class="l" x="22" y="274">While paused</text>
+  <rect class="warn" x="12" y="502" width="836" height="114" rx="6"/>
+  <text class="l" x="22" y="520">Interrupt</text>
+
+  <!-- Participants -->
+  <rect class="acc" x="20" y="16" width="180" height="52" rx="4"/>
+  <text class="t" x="110" y="38" text-anchor="middle">JupyterLab</text>
+  <text class="s" x="110" y="57" text-anchor="middle">debugger panel, notebook</text>
+  <rect class="acc" x="320" y="16" width="200" height="52" rx="4"/>
+  <text class="t" x="420" y="38" text-anchor="middle">Kernel host</text>
+  <text class="m" x="420" y="57" text-anchor="middle">src/debugger.ts</text>
+  <rect class="acc" x="630" y="16" width="210" height="52" rx="4"/>
+  <text class="t" x="735" y="38" text-anchor="middle">Target (Node, Deno)</text>
+  <text class="s" x="735" y="57" text-anchor="middle">V8 inspector, over CDP</text>
+
+  <!-- Lifelines -->
+  <line class="ln" x1="110" y1="68" x2="110" y2="616" stroke-dasharray="3 4"/>
+  <line class="ln" x1="420" y1="68" x2="420" y2="616" stroke-dasharray="3 4"/>
+  <line class="ln" x1="735" y1="68" x2="735" y2="616" stroke-dasharray="3 4"/>
+
+  <!-- 1. Breakpoint -->
+  <text class="m" x="265" y="98" text-anchor="middle">setBreakpoints</text>
+  <line class="ln" x1="110" y1="106" x2="420" y2="106" marker-end="url(#a)"/>
+  <text class="l" x="265" y="122" text-anchor="middle">cell path, line 3</text>
+  <text class="m" x="577" y="98" text-anchor="middle">Debugger.setBreakpointByUrl</text>
+  <line class="ln" x1="420" y1="106" x2="735" y2="106" marker-end="url(#a)"/>
+  <text class="l" x="577" y="122" text-anchor="middle">url: cell path; line through the source map</text>
+
+  <!-- 2. Run the cell -->
+  <text class="m" x="265" y="158" text-anchor="middle">execute_request</text>
+  <line class="ln" x1="110" y1="166" x2="420" y2="166" marker-end="url(#a)"/>
+  <text class="m" x="577" y="158" text-anchor="middle">Runtime.evaluate</text>
+  <line class="ln" x1="420" y1="166" x2="735" y2="166" marker-end="url(#a)"/>
+  <text class="lm" x="577" y="182" text-anchor="middle">…//# sourceURL=&lt;cell path&gt;</text>
+
+  <!-- 3. Paused -->
+  <text class="m" x="577" y="218" text-anchor="middle">Debugger.paused</text>
+  <line class="ln" x1="735" y1="226" x2="420" y2="226" marker-end="url(#a)"/>
+  <text class="l" x="577" y="242" text-anchor="middle">call frames, kept until resumed</text>
+  <text class="m" x="265" y="218" text-anchor="middle">stopped</text>
+  <line class="ln" x1="420" y1="226" x2="110" y2="226" marker-end="url(#a)"/>
+  <text class="l" x="265" y="242" text-anchor="middle">debug_event, on IOPub</text>
+
+  <!-- 4. Stack -->
+  <text class="m" x="265" y="300" text-anchor="middle">stackTrace</text>
+  <line class="ln" x1="110" y1="308" x2="420" y2="308" marker-end="url(#a)"/>
+  <text class="l" x="265" y="324" text-anchor="middle">frame lines mapped back to the cell</text>
+  <text class="l" x="577" y="312" text-anchor="middle">(from the paused frames, no call)</text>
+
+  <!-- 5. Variables -->
+  <text class="m" x="265" y="354" text-anchor="middle">variables</text>
+  <line class="ln" x1="110" y1="362" x2="420" y2="362" marker-end="url(#a)"/>
+  <text class="l" x="265" y="378" text-anchor="middle">for each scope of the frame</text>
+  <text class="m" x="577" y="354" text-anchor="middle">Runtime.getProperties</text>
+  <line class="ln" x1="420" y1="362" x2="735" y2="362" marker-end="url(#a)"/>
+
+  <!-- 6. Console -->
+  <text class="m" x="265" y="404" text-anchor="middle">evaluate</text>
+  <line class="ln" x1="110" y1="412" x2="420" y2="412" marker-end="url(#a)"/>
+  <text class="l" x="265" y="428" text-anchor="middle">debug console</text>
+  <text class="m" x="577" y="404" text-anchor="middle">Debugger.evaluateOnCallFrame</text>
+  <line class="ln" x1="420" y1="412" x2="735" y2="412" marker-end="url(#a)"/>
+
+  <!-- 7. Step -->
+  <text class="m" x="265" y="458" text-anchor="middle">continue, next, stepIn…</text>
+  <line class="ln" x1="110" y1="466" x2="420" y2="466" marker-end="url(#a)"/>
+  <text class="m" x="577" y="458" text-anchor="middle">Debugger.resume, stepOver…</text>
+  <line class="ln" x1="420" y1="466" x2="735" y2="466" marker-end="url(#a)"/>
+
+  <!-- 8. Interrupt -->
+  <text class="m" x="265" y="540" text-anchor="middle">interrupt_request</text>
+  <line class="ln" x1="110" y1="548" x2="420" y2="548" marker-end="url(#a)"/>
+  <text class="m" x="577" y="540" text-anchor="middle">1. Debugger.resume</text>
+  <line class="ln" x1="420" y1="548" x2="735" y2="548" marker-end="url(#a)"/>
+  <text class="l" x="577" y="564" text-anchor="middle">only if paused</text>
+  <text class="m" x="577" y="590" text-anchor="middle">2. Runtime.terminateExecution</text>
+  <line class="ln" x1="420" y1="598" x2="735" y2="598" marker-end="url(#a)"/>
+  <text class="l" x="265" y="570" text-anchor="middle">a paused isolate runs nothing to</text>
+  <text class="l" x="265" y="585" text-anchor="middle">terminate, so it is resumed first</text>
+
+  <!-- Footer -->
+  <text class="l" x="430" y="638" text-anchor="middle">Debug requests and replies travel on the Jupyter control channel, events on IOPub.</text>
+  <text class="l" x="430" y="654" text-anchor="middle">Every CDP call here goes on the shell session except terminateExecution, which goes on the control session.</text>
+</svg>
