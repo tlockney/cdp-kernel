@@ -26,6 +26,8 @@ in [Runtime integrations](integrations.md). In a page,
   (`transformCellForEval`), so they run as global code and their
   declarations persist.
 
+![The page runs the frontend, PageChannels, KernelCore and BrowserTarget. The frontend calls send and gets messages through onMessage; KernelCore runs cells through BrowserTarget, which exchanges postMessage requests and replies with a module Worker running runtime/browser-worker.mjs. The Worker loads npm: and jsr: imports from a CDN, esm.sh by default.](images/integrations/browser-target.svg)
+
 The Worker loads the same `display.mjs`, `comm.mjs`, `widget.mjs`,
 `introspect.mjs` and `evaluator.mjs` as the other targets.
 `runtime/format.mjs` stands in for `util.inspect` and `util.format`.

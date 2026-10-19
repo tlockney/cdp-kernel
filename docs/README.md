@@ -52,7 +52,9 @@ cdp-kernel.
   and how cells become runnable code.
 - [Runtime integrations](integrations.md): how the kernel drives each
   runtime, with diagrams: [Node and Deno](integration-cdp.md),
-  [Bun](integration-bun.md), [workerd and celld](integration-workers.md).
+  [Bun](integration-bun.md), [workerd and celld](integration-workers.md),
+  and [the browser](integration-browser.md) (experimental), which runs
+  the whole kernel in a web page.
 - The [feasibility study](feasibility-study.md) is the design
   document the project started from. It was written while the project was
   a spike and revised after 0.4.0; its last section compares what it

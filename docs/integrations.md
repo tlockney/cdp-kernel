@@ -11,6 +11,9 @@ detail:
 - [Bun](integration-bun.md): a private pipe and an in-process evaluator.
 - [workerd and celld](integration-workers.md): a driver Worker and one
   WebSocket session.
+- [The browser](integration-browser.md) (experimental): the whole kernel
+  in a web page, with cells in a module Worker and no Jupyter install at
+  all.
 
 For what each runtime supports from a notebook's point of view, see
 [Choosing a runtime](runtimes.md) and [Known gaps](known-gaps.md). For how a
@@ -64,7 +67,7 @@ calls nothing else, so this list is the complete contract:
 
 | Member | What the kernel uses it for |
 |---|---|
-| `runtime` | Which runtime the target is: `node`, `deno`, `bun`, `workerd` or `celld`. |
+| `runtime` | Which runtime the target is: `node`, `deno`, `bun`, `workerd`, `celld`, or `browser` in a page. |
 | `versions` | The runtime's and the engine's version, shown in the `kernel_info_reply` banner. |
 | `transform(code, options)` | Turns a cell into the script `evaluate` takes. Node and Deno use `transformCell`; the others use `transformCellForEval`. |
 | `evaluate(script)` | Runs a cell. Resolves to a CDP-shaped `EvaluateResult`: a result, or exception details. Rejects with `Interrupted` after an interrupt. |

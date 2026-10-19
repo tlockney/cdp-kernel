@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 450" width="860" height="450" role="img" aria-label="The browser target: the page runs KernelCore with PageChannels and posts requests to a module Worker, which loads npm: and jsr: imports from a CDN">
+  <title>The browser target: the page runs KernelCore with PageChannels and posts requests to a module Worker, which loads npm: and jsr: imports from a CDN</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
+    .inner { fill: #ffffff; stroke: #b8c0c8; stroke-width: 1; }
+    .acc { fill: #e8f0fe; stroke: #3b6fd8; stroke-width: 1.4; }
+    .warn { fill: #fdf0e6; stroke: #c96a1b; stroke-width: 1.4; }
+    .ok { fill: #e7f5ec; stroke: #2f8a4c; stroke-width: 1.4; }
+    .t { font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #1f2328; }
+    .s { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .m { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .l { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #57606a; }
+    .lm { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #57606a; }
+    .ln { stroke: #6e7781; stroke-width: 1.4; fill: none; }
+    .ah { fill: #6e7781; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .box { fill: #25262b; stroke: #5c6370; }
+      .inner { fill: #1b1b1f; stroke: #4a505a; }
+      .acc { fill: #1e2a44; stroke: #6b9bff; }
+      .warn { fill: #3a2a1c; stroke: #e0904a; }
+      .ok { fill: #1d3326; stroke: #5cc27e; }
+      .t, .m { fill: #e6e8eb; }
+      .s, .l, .lm { fill: #a0a7b0; }
+      .ln { stroke: #a0a7b0; }
+      .ah { fill: #a0a7b0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="860" height="450" rx="8"/>
+  <!-- Page -->
+  <rect class="box" x="20" y="30" width="270" height="400" rx="6"/>
+  <text class="t" x="155" y="54" text-anchor="middle">Web page</text>
+  <rect class="inner" x="35" y="68" width="240" height="56" rx="4"/>
+  <text class="m" x="155" y="91" text-anchor="middle">frontend</text>
+  <text class="l" x="155" y="111" text-anchor="middle">your UI, or a JupyterLite wrapper</text>
+  <line class="ln" x1="155" y1="124" x2="155" y2="152" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="lm" x="166" y="142">send / onMessage</text>
+  <rect class="inner" x="35" y="152" width="240" height="60" rx="4"/>
+  <text class="m" x="155" y="175" text-anchor="middle">PageChannels</text>
+  <text class="l" x="155" y="195" text-anchor="middle">Jupyter JSON messages; no signing</text>
+  <line class="ln" x1="155" y1="212" x2="155" y2="240" marker-start="url(#a)" marker-end="url(#a)"/>
+  <rect class="inner" x="35" y="240" width="240" height="72" rx="4"/>
+  <text class="m" x="155" y="263" text-anchor="middle">KernelCore</text>
+  <text class="l" x="155" y="283" text-anchor="middle">handles every request, as in the</text>
+  <text class="l" x="155" y="299" text-anchor="middle">kernel process; sucrase strips types</text>
+  <line class="ln" x1="155" y1="312" x2="155" y2="340" marker-end="url(#a)"/>
+  <rect class="acc" x="35" y="340" width="240" height="76" rx="4"/>
+  <text class="m" x="155" y="362" text-anchor="middle">BrowserTarget</text>
+  <text class="l" x="155" y="382" text-anchor="middle">starts the Worker with createWorker();</text>
+  <text class="l" x="155" y="398" text-anchor="middle">terminates it on a busy interrupt</text>
+
+  <!-- Worker -->
+  <rect class="box" x="590" y="30" width="250" height="400" rx="6"/>
+  <text class="t" x="715" y="56" text-anchor="middle">Module Worker</text>
+  <text class="m" x="715" y="76" text-anchor="middle">runtime/browser-worker.mjs</text>
+  <text class="s" x="606" y="132">Imports: URLs load as they are;</text>
+  <text class="s" x="606" y="149">npm:, jsr: and bare names from</text>
+  <text class="s" x="606" y="166">the CDN</text>
+  <text class="s" x="606" y="206">Cells: indirect eval of global</text>
+  <text class="s" x="606" y="223">code, so declarations persist</text>
+  <text class="s" x="606" y="263">display, comm, widget, introspect</text>
+  <text class="s" x="606" y="280">and evaluator modules, as on the</text>
+  <text class="s" x="606" y="297">other targets</text>
+  <text class="s" x="606" y="337">format.mjs stands in for</text>
+  <text class="s" x="606" y="354">util.inspect and util.format</text>
+
+  <!-- Messages -->
+  <line class="ln" x1="275" y1="378" x2="590" y2="378" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="lm" x="432" y="368" text-anchor="middle">postMessage {id, op: eval, code}</text>
+  <text class="lm" x="432" y="396" text-anchor="middle">{kind: reply | stream | iopub}</text>
+
+  <!-- CDN -->
+  <text class="l" x="440" y="100" text-anchor="middle">import() in the Worker</text>
+  <rect class="inner" x="320" y="110" width="240" height="120" rx="4"/>
+  <text class="m" x="440" y="134" text-anchor="middle">CDN (esm.sh by default)</text>
+  <text class="lm" x="336" y="158">npm:date-fns@4</text>
+  <text class="lm" x="336" y="174">→ https://esm.sh/date-fns@4</text>
+  <text class="lm" x="336" y="198">jsr:@std/path</text>
+  <text class="lm" x="336" y="214">→ https://esm.sh/jsr/@std/path</text>
+  <line class="ln" x1="590" y1="149" x2="560" y2="149" marker-end="url(#a)"/>
+</svg>
