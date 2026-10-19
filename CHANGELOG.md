@@ -22,6 +22,12 @@ Issue and pull request numbers refer to
   (letters, digits, `.`, `_` and `-`, not `.` or `..`), so a name with a
   path separator can't write `kernel.json` outside the kernels directory
   ([#338](https://github.com/tlockney/cdp-kernel/issues/338)).
+- The JupyterLab debugger writes its cell files only into a temp
+  directory that is the kernel user's own and closed to others. If
+  another user made `cdp-kernel_<pid>` first, the kernel skips the files
+  (the frontend has the cells anyway) instead of following symlinks
+  planted there, and leaves that directory alone at exit
+  ([#339](https://github.com/tlockney/cdp-kernel/issues/339)).
 
 ## 0.7.0 (2026-10-19)
 
