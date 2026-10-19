@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 380" width="860" height="380" role="img" aria-label="Node and Deno targets: two CDP sessions over the inspector WebSocket, plus stdout, stderr and stdin pipes">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 18 844 360" width="844" height="360" role="img" aria-label="Node and Deno targets: two CDP sessions over the inspector WebSocket, plus stdout, stderr and stdin pipes">
   <title>Node and Deno targets: two CDP sessions over the inspector WebSocket, plus stdout, stderr and stdin pipes</title>
   <style>
     .bg { fill: #ffffff; }
@@ -32,7 +32,7 @@
       <path class="ah" d="M0,0 L10,5 L0,10 z"/>
     </marker>
   </defs>
-  <rect class="bg" x="0" y="0" width="860" height="380" rx="8"/>
+  <rect class="bg" x="8" y="18" width="844" height="360" rx="8"/>
   <!-- Host -->
   <rect class="box" x="20" y="30" width="200" height="335" rx="6"/>
   <text class="t" x="120" y="54" text-anchor="middle">Kernel host · Target</text>

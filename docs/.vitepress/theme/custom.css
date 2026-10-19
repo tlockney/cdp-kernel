@@ -63,12 +63,15 @@
   text-transform: uppercase;
   color: var(--level-fg);
   background: var(--level-bg);
+  box-shadow: inset 0 0 0 1px var(--level-line, transparent);
 }
-.level-intro { --level-fg: var(--vp-c-green-1); --level-bg: var(--vp-c-green-soft); }
+/* One accent, the brand teal (site/style.css's --accent), as everywhere else:
+   the levels differ by fill, from solid to outlined, not by hue. */
+.level-intro { --level-fg: var(--vp-c-bg); --level-bg: var(--vp-c-brand-1); }
 .level-guide { --level-fg: var(--vp-c-brand-1); --level-bg: var(--vp-c-brand-soft); }
 .level-reference { --level-fg: var(--vp-c-text-2); --level-bg: var(--vp-c-default-soft); }
-.level-advanced { --level-fg: var(--vp-c-purple-1); --level-bg: var(--vp-c-purple-soft); }
-.level-contributor { --level-fg: var(--vp-c-yellow-1); --level-bg: var(--vp-c-yellow-soft); }
+.level-advanced { --level-fg: var(--vp-c-brand-1); --level-bg: transparent; --level-line: var(--vp-c-brand-1); }
+.level-contributor { --level-fg: var(--vp-c-text-2); --level-bg: transparent; --level-line: var(--vp-c-border); }
 
 /* Notebook cells with their saved outputs (notebook.ts). */
 .nb-bar {
