@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The npm package exports the browser kernel: `@tlockney/cdp-kernel/browser`
+  (`startBrowserKernel`, typed) and `@tlockney/cdp-kernel/browser/worker`
+  (the cells' Worker script), built by `scripts/build-browser.mjs` during
+  `npm run build`. Not on JSR yet
+  ([#333](https://github.com/tlockney/cdp-kernel/issues/333)).
 - A cell's error traceback points at cells as `In[n]` and at the line
   you wrote, TypeScript types included, instead of `<anonymous>` and the
   line of the stripped JavaScript; that holds for a function an earlier
