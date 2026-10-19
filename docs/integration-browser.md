@@ -1,9 +1,8 @@
 # The browser (experimental)
 
 The kernel can run inside a web page, with cells in a Web Worker and no
-server or Jupyter install. It is a proof of concept: there is no package
-export, kernelspec or frontend for it yet, and it isn't covered by the
-[support policy](support.md).
+server or Jupyter install. It is a proof of concept: it has an npm export but no kernelspec, and it
+isn't covered by the [support policy](support.md).
 
 ## How it fits
 
@@ -32,6 +31,22 @@ The Worker loads the same `display.mjs`, `comm.mjs`, `widget.mjs`,
 `runtime/format.mjs` stands in for `util.inspect` and `util.format`.
 
 ## Use
+
+From npm, with a bundler that handles worker imports (Vite: `?worker&url`):
+
+```js
+import { startBrowserKernel } from "@tlockney/cdp-kernel/browser";
+import workerUrl from "@tlockney/cdp-kernel/browser/worker?worker&url";
+
+const kernel = startBrowserKernel({
+  createWorker: () => new Worker(workerUrl, { type: "module" }),
+});
+```
+
+`@tlockney/cdp-kernel/browser` is `dist/browser/kernel.js` and
+`.../browser/worker` is `dist/browser/worker.js`, both from
+`scripts/build-browser.mjs`, which `npm run build` runs. Not on JSR yet.
+From a checkout:
 
 ```sh
 node scripts/build-browser.mjs dist/browser   # kernel.js and worker.js

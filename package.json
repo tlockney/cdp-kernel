@@ -34,6 +34,11 @@
       "types": "./dist/globals.d.ts",
       "default": "./dist/globals.js"
     },
+    "./browser": {
+      "types": "./dist/browser/mod.d.ts",
+      "default": "./dist/browser/kernel.js"
+    },
+    "./browser/worker": "./dist/browser/worker.js",
     "./globals/deno-compat": {
       "types": "./dist/globals-deno-compat.d.ts",
       "default": "./dist/globals-deno-compat.js"
@@ -49,7 +54,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/build-browser.mjs dist/browser",
     "check": "tsc -p tsconfig.json",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
