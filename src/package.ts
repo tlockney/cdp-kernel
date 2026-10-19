@@ -16,7 +16,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 /** Kept equal to package.json and deno.jsonc by test/package.test.ts. */
-export const VERSION = "0.7.0";
+export const VERSION = "0.7.1";
 
 /**
  * The UTC day this version was released, set with VERSION. The publish

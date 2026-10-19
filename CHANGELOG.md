@@ -4,7 +4,7 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.7.1 (2026-10-19)
 
 - The browser target can offer cells a page's own features: `preload`
   modules run in the Worker before the first cell and after each restart,
@@ -13,14 +13,12 @@ Issue and pull request numbers refer to
   option is returned in `kernel_info_reply`, and `notifyHost` sends the
   Worker events
   ([#384](https://github.com/tlockney/cdp-kernel/issues/384)).
-
 - The debugger no longer stops on an exception thrown in Deno's or
   Node's own built-in code (`ext:` and `node:` scripts), as Chrome's
   ignore list does. With "Caught Exceptions" on, Deno's lazy setup of
   `node:process` threw and caught one before the cell's own exception and
   could leave the cell waiting. Stepping also skips over that code
   ([#380](https://github.com/tlockney/cdp-kernel/issues/380)).
-
 - Bun, workerd and celld targets that never become ready are stopped after
   60 s, as Node and Deno targets already were, and the first cell reports
   the failure instead of waiting forever. An interrupt while a target is
