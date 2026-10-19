@@ -25,6 +25,16 @@ test("VERSION matches package.json and deno.jsonc", () => {
   assert.equal(m?.[1], VERSION);
 });
 
+test("the landing page shows VERSION and package.json's Node floor", () => {
+  // site/index.html is plain HTML, so nothing fills these in (#350).
+  const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { engines: { node: string } };
+  const site = readFileSync(new URL("site/index.html", root), "utf8");
+  assert.ok(site.includes(`>v${VERSION}<`), `site/index.html should show v${VERSION}`);
+  const floor = /^>=(\d+\.\d+)$/.exec(pkg.engines.node)?.[1];
+  assert.ok(floor, pkg.engines.node);
+  assert.deepEqual([...site.matchAll(/Node (\d+(?:\.\d+)?)\+/g)].map((m) => m[1]), [floor]);
+});
+
 test("CHANGELOG.md has an entry for VERSION, dated RELEASE_DATE", () => {
   // The publish workflow uses this entry as the GitHub release notes.
   const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");

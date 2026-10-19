@@ -30,31 +30,52 @@
 
 <main>
 <section class="hero">
-  <div class="wrap">
-    <p class="eyebrow">Jupyter kernel · TypeScript · JavaScript runtimes</p>
-    <h1>TypeScript notebooks on the runtime you choose.</h1>
-    <p class="lede">cdp-kernel is Deno's Jupyter kernel, extracted so the code in your cells can run on
-      Node, Deno, Bun, workerd or celld. The kernel speaks the Jupyter protocol; your
-      cells run in the runtime you pick.</p>
-    <div class="install">
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="true" data-tab="npm">npm</button>
-        <button role="tab" aria-selected="false" data-tab="jsr">JSR</button>
-        <button role="tab" aria-selected="false" data-tab="docker">Docker</button>
+  <div class="wrap hero-grid">
+    <div class="hero-text">
+      <p class="eyebrow">Jupyter kernel · TypeScript · JavaScript runtimes</p>
+      <h1>TypeScript notebooks on the runtime you choose.</h1>
+      <p class="lede">cdp-kernel is Deno's Jupyter kernel, extracted so the code in your cells can run on
+        Node, Deno, Bun, workerd or celld. The kernel speaks the Jupyter protocol; your
+        cells run in the runtime you pick.</p>
+      <ul class="trust" aria-label="At a glance">
+        <li><a href="docs/changelog">v0.7.0</a></li>
+        <li>MIT license</li>
+        <li>JupyterLab 4 · Notebook 7 · VS Code</li>
+      </ul>
+      <div class="cta">
+        <a class="btn primary" href="https://mybinder.org/v2/gh/tlockney/cdp-kernel/main?urlpath=lab/tree/getting-started.ipynb">Try it on Binder</a>
+        <a class="btn" href="https://github.com/tlockney/cdp-kernel">View on GitHub</a>
       </div>
-      <pre data-panel="npm"><code><span class="c"># Node 24+ host</span>
-npm install -g @tlockney/cdp-kernel
-cdp-kernel install --runtime node   <span class="c"># or deno, bun, workerd, celld</span></code></pre>
-      <pre data-panel="jsr" hidden><code><span class="c"># Deno host</span>
-deno run -A jsr:@tlockney/cdp-kernel/cli install --runtime deno</code></pre>
-      <pre data-panel="docker" hidden><code><span class="c"># JupyterLab, every runtime, the examples</span>
-docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel</code></pre>
+      <p class="cta-more">Binder opens a notebook in your browser with nothing to install.
+        Or <a href="docs/install">install it</a>, or
+        <a href="https://codespaces.new/tlockney/cdp-kernel?quickstart=1">open it in Codespaces</a>.</p>
     </div>
-    <div class="cta">
-      <a class="btn primary" href="docs/install">Install guide</a>
-      <a class="btn" href="https://mybinder.org/v2/gh/tlockney/cdp-kernel/main?urlpath=lab/tree/getting-started.ipynb">Try it on Binder</a>
-      <a class="btn" href="https://codespaces.new/tlockney/cdp-kernel?quickstart=1">Open in Codespaces</a>
-      <a class="btn" href="https://github.com/tlockney/cdp-kernel">View on GitHub</a>
+    <figure class="hero-shot">
+      <img src="images/widgets/counter.png" width="1300" height="834"
+        alt="A JupyterLab cell that creates a counter widget with jupyter.widget. Below the code, the output is a button reading &quot;count is 3&quot; after three clicks.">
+      <figcaption>A cell in JupyterLab on the Node target. Its output is a
+        <a href="docs/widgets">widget</a>: each click updates the count in the kernel.</figcaption>
+    </figure>
+    <div class="install">
+      <div class="install-bar">
+        <div class="tabs" role="tablist" aria-label="Install with">
+          <button role="tab" id="tab-npm" aria-controls="panel-npm" aria-selected="true" data-tab="npm">npm</button>
+          <button role="tab" id="tab-jsr" aria-controls="panel-jsr" aria-selected="false" tabindex="-1" data-tab="jsr">JSR</button>
+          <button role="tab" id="tab-docker" aria-controls="panel-docker" aria-selected="false" tabindex="-1" data-tab="docker">Docker</button>
+        </div>
+        <button class="copy" type="button" aria-live="polite">Copy</button>
+      </div>
+      <div class="panels">
+        <pre role="tabpanel" id="panel-npm" aria-labelledby="tab-npm" data-panel="npm"><code><span class="c"># Node 22.18+ host</span>
+npm install -g @tlockney/cdp-kernel
+cdp-kernel install --runtime node
+<span class="c"># or deno, bun, workerd, celld</span></code></pre>
+        <pre role="tabpanel" id="panel-jsr" aria-labelledby="tab-jsr" data-panel="jsr" hidden><code><span class="c"># Deno host</span>
+deno run -A jsr:@tlockney/cdp-kernel/cli \
+  install --runtime deno</code></pre>
+        <pre role="tabpanel" id="panel-docker" aria-labelledby="tab-docker" data-panel="docker" hidden><code><span class="c"># JupyterLab, every runtime, the examples</span>
+docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel</code></pre>
+      </div>
     </div>
   </div>
 </section>
@@ -209,7 +230,7 @@ ganymede lab</code></pre>
     <div class="note">
       <h3>Status</h3>
       <p>Early software. It passes a conformance suite derived from Deno's own Jupyter integration
-        tests on every target, on Linux and macOS, against Node 24 and 26 and Deno 2.9 and later.
+        tests on every target, on Linux and macOS, against Node 22, 24 and 26 and Deno 2.9 and later.
         Windows isn't supported yet.</p>
     </div>
   </div>
@@ -226,12 +247,44 @@ ganymede lab</code></pre>
 </footer>
 
 <script>
-  for (const btn of document.querySelectorAll("[data-tab]")) {
-    btn.addEventListener("click", () => {
-      for (const b of document.querySelectorAll("[data-tab]")) b.setAttribute("aria-selected", String(b === btn));
-      for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== btn.dataset.tab;
+  // The install tabs.
+  const tabs = [...document.querySelectorAll("[data-tab]")];
+  function select(tab) {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById("panel-" + t.dataset.tab).hidden = !on;
+    }
+  }
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => select(tab));
+    tab.addEventListener("keydown", (e) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (!step) return;
+      const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
+      select(next);
+      next.focus();
     });
   }
+
+  // Copies the visible panel's commands without the comments, which zsh
+  // doesn't skip by default. Where the clipboard is blocked, selects them.
+  const copy = document.querySelector(".copy");
+  copy.addEventListener("click", async () => {
+    const code = document.querySelector("[data-panel]:not([hidden]) code");
+    const clone = code.cloneNode(true);
+    for (const c of clone.querySelectorAll(".c")) c.remove();
+    const text = clone.textContent.split("\n").map((l) => l.trimEnd()).filter(Boolean).join("\n");
+    try {
+      await navigator.clipboard.writeText(text + "\n");
+      copy.textContent = "Copied";
+    } catch {
+      getSelection().selectAllChildren(code);
+      copy.textContent = "Selected";
+    }
+    setTimeout(() => (copy.textContent = "Copy"), 1500);
+  });
 </script>
 </body>
 </html>

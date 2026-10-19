@@ -103,20 +103,71 @@ pre code { font-size: inherit; }
 .s { color: var(--code-string); }
 .t { color: var(--code-type); }
 
-.install { max-width: 640px; }
-.tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+/* Text on the left; the screenshot on the right, beside the text and the
+   install commands. One column on narrow screens. */
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+  grid-template-areas: "text shot" "install shot";
+  column-gap: 48px;
+  row-gap: 32px;
+  align-items: start;
+}
+.hero-text { grid-area: text; }
+.hero-text .lede { margin-bottom: 20px; }
+.hero-shot { grid-area: shot; margin: 8px 0 0; }
+.hero-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+}
+.hero-shot figcaption { margin-top: 12px; font-size: 0.85rem; color: var(--fg-soft); }
+
+.trust { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.trust li {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--fg-soft);
+}
+.trust a { color: inherit; font-family: var(--mono); font-weight: 600; text-decoration: none; }
+.trust a:hover { color: var(--accent); }
+
+/* Connected tabs: the selected tab joins the panel under it. */
+.install { grid-area: install; max-width: 640px; }
+.tabs { display: flex; gap: 2px; }
 .tabs button {
   font: 600 0.85rem var(--mono);
   background: none;
-  border: 1px solid var(--line);
+  border: 0;
   color: var(--fg-soft);
-  border-radius: 6px;
-  padding: 4px 12px;
+  border-radius: 8px 8px 0 0;
+  padding: 7px 16px;
   cursor: pointer;
 }
-.tabs button[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tabs button:hover { color: var(--fg); }
+.tabs button[aria-selected="true"] { background: var(--code-bg); color: var(--fg); }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.install-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.panels pre { border-top-left-radius: 0; }
+.copy {
+  margin-bottom: 4px;
+  font: 600 0.75rem var(--sans);
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg-soft);
+  cursor: pointer;
+}
+.copy:hover { color: var(--fg); border-color: var(--fg-soft); }
 
 .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.cta-more { margin: 14px 0 0; font-size: 0.9rem; color: var(--fg-soft); }
 .btn {
   display: inline-block;
   padding: 10px 18px;
@@ -180,6 +231,9 @@ pre code { font-size: inherit; }
 footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--fg-soft); font-size: 0.9rem; }
 
 @media (max-width: 800px) {
+  .hero { padding-top: 48px; }
+  .hero-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "text" "install" "shot"; }
+  .hero-shot { margin-top: 0; }
   .two { grid-template-columns: 1fr; gap: 24px; }
   .grid { grid-template-columns: 1fr; }
   section { padding: 44px 0; }

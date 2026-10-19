@@ -84,10 +84,11 @@ One version number lives in three places: `package.json`, `deno.jsonc` and
 `src/package.ts`. `test/package.test.ts` fails if they disagree, or if
 [`CHANGELOG.md`](changelog.md) has no `## <version> (<RELEASE_DATE>)`
 entry for it: move the "Unreleased" items under a heading for the new version as
-part of the bump. To release:
+part of the bump. The landing page (`site/index.html`) shows the version
+too, and the same test fails if it differs. To release:
 
-1. Bump all three, and set `RELEASE_DATE` in `src/package.ts` to today
-   (UTC). Commit, and merge to `main` by a PR.
+1. Bump all three and the landing page, and set `RELEASE_DATE` in
+   `src/package.ts` to today (UTC). Commit, and merge to `main` by a PR.
 2. Start the `publish` workflow on `main` from the Actions tab with the
    new version (or `gh workflow run publish.yml --ref main -f version=0.5.1`).
    Whoever starts it must be a member of the `@tlockney` scope on JSR,
