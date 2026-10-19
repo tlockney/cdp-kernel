@@ -83,6 +83,12 @@ When either side changes a key, the change is sent to the other side and
 to every other view of the same model. Each side listens for changes with
 `on("change:key", ...)`.
 
+The two halves talk over a Jupyter comm (see [Comms](#comms)). Creating the
+widget opens it, displaying the widget makes the frontend call `render`,
+and each change after that is one `comm_msg` carrying the changed keys:
+
+![The kernel's jupyter.widget() sends comm_open with the whole state, including the view module, and displaying the widget sends a widget-view display_data, so the frontend creates its copy of the model and calls render. A model.save_changes() in the view sends comm_msg update on the shell channel, which waits for a running cell and then runs the kernel's on("change:key") listeners. The kernel's set() sends comm_msg update on iopub straight away, even mid-cell, and every view redraws. Custom messages go both ways, and close() sends comm_close.](images/concepts/widget-comm-flow.svg)
+
 ## A first widget: a counter
 
 ```ts
@@ -303,10 +309,27 @@ chart;
 
 <!-- widget-example: chart -->
 
-<img src="./images/widgets/chart.png" width="356" alt="A horizontal bar chart of fruit votes: apple 5, pear 3, fig 2, plum 1, kiwi 1.">
+<img src="./images/widgets/chart.png" width="356" alt="The chart widget's output, a live view: a horizontal bar chart of fruit votes, apple 5, pear 3, fig 2, plum 1, kiwi 1.">
 
-Run `chart.set("data", ...)` again in a later cell and the chart redraws in
-place.
+The chart is a live view of the model, not a picture. Count some more votes
+in a later cell and set `data` again:
+
+```ts
+for (const vote of ["kiwi", "kiwi", "kiwi", "kiwi", "kiwi", "fig"]) {
+  counts.set(vote, (counts.get(vote) ?? 0) + 1);
+}
+chart.set(
+  "data",
+  [...counts].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value })),
+);
+```
+
+<!-- widget-example: chart-update -->
+
+This cell has no output of its own. The chart under the earlier cell
+redraws in place:
+
+<img src="./images/widgets/chart-update.png" width="357" alt="The same chart output after the later cell, redrawn in place: kiwi 6, apple 5, pear 3, fig 3, plum 1.">
 
 ## Binary data
 
