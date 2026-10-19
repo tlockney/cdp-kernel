@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 484" width="860" height="484" role="img" aria-label="A cell goes through esbuild, which strips types, then acorn, which rewrites imports to __cdpk.import calls, then runs on the target">
-  <title>A cell goes through esbuild, which strips types, then acorn, which rewrites imports to __cdpk.import calls, then runs on the target</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 728" width="860" height="728" role="img" aria-label="A TSX cell goes through esbuild, which strips types, compiles JSX and keeps a source map, then acorn, which rewrites import into a call to __cdpk.import and drops export, keeping every line where it was. Node and Deno run the script with Runtime.evaluate in replMode, which V8's inspector has. Bun, workerd and celld can't use replMode, so hoistForEval makes top-level names globals and runs the cell in an async function. Either way the last expression's value goes to broadcastResult and back to the notebook as execute_result. The source map lets error tracebacks and the debugger point at the lines you wrote.">
+  <title>How a cell becomes a script, runs on each kind of target, and comes back as output</title>
   <style>
     .bg { fill: #ffffff; }
     .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
@@ -36,43 +36,97 @@
       <path class="ah" d="M0,0 L10,5 L0,10 z"/>
     </marker>
   </defs>
-  <rect class="bg" x="0" y="0" width="860" height="484" rx="8"/>
-  <rect class="box" x="20" y="20" width="190" height="88" rx="6"/>
-  <text class="t" x="36" y="50">The cell</text>
-  <text class="s" x="36" y="72">TypeScript, as typed</text>
-  <text class="s" x="36" y="88">in the notebook</text>
-  <rect class="inner" x="230" y="20" width="610" height="88" rx="6"/>
-  <text class="m" x="248" y="46">import { z } from <tspan class="str">&quot;npm:zod@3&quot;</tspan>;</text>
-  <text class="m" x="248" y="66">const n: number = <tspan class="num">1</tspan>;</text>
-  <text class="m" x="248" y="86">n + <tspan class="num">1</tspan></text>
-  <line class="ln" x1="115" y1="108" x2="115" y2="128" marker-end="url(#a)"/>
-  <rect class="box" x="20" y="130" width="190" height="88" rx="6"/>
-  <text class="t" x="36" y="160">esbuild</text>
-  <text class="s" x="36" y="182">strips types, compiles</text>
-  <text class="s" x="36" y="198">JSX, keeps a source map</text>
-  <rect class="inner" x="230" y="130" width="610" height="88" rx="6"/>
-  <text class="m" x="248" y="156">import { z } from <tspan class="str">&quot;npm:zod@3&quot;</tspan>;</text>
-  <text class="m" x="248" y="176">const n = <tspan class="num">1</tspan>;</text>
-  <text class="m" x="248" y="196">n + <tspan class="num">1</tspan>;</text>
-  <line class="ln" x1="115" y1="218" x2="115" y2="238" marker-end="url(#a)"/>
-  <rect class="box" x="20" y="240" width="190" height="88" rx="6"/>
-  <text class="t" x="36" y="270">acorn</text>
-  <text class="s" x="36" y="292">rewrites import and</text>
-  <text class="s" x="36" y="308">export for a script</text>
-  <rect class="acc" x="230" y="240" width="610" height="88" rx="6"/>
-  <text class="m" x="248" y="266">var __cdpk_m0 = await __cdpk.import(<tspan class="str">&quot;npm:zod@3&quot;</tspan>); var z = __cdpk_m0[<tspan class="str">&quot;z&quot;</tspan>];</text>
-  <text class="m" x="248" y="286">const n = <tspan class="num">1</tspan>;</text>
-  <text class="m" x="248" y="306">n + <tspan class="num">1</tspan>;</text>
-  <line class="ln" x1="280" y1="328" x2="280" y2="358" marker-end="url(#a)"/>
-  <line class="ln" x1="640" y1="328" x2="640" y2="358" marker-end="url(#a)"/>
-  <rect class="ok" x="20" y="360" width="400" height="104" rx="6"/>
-  <text class="t" x="36" y="386">Node and Deno</text>
-  <text class="s" x="36" y="408">Runtime.evaluate with replMode over CDP, as in Deno.</text>
-  <text class="s" x="36" y="426"><tspan font-family="ui-monospace, monospace">__cdpk.import</tspan> resolves npm:, jsr: and ./ files:</text>
-  <text class="s" x="36" y="444">Node through resolve hooks, Deno through its own loader.</text>
-  <rect class="warn" x="440" y="360" width="400" height="104" rx="6"/>
-  <text class="t" x="456" y="386">Bun, workerd and celld</text>
-  <text class="s" x="456" y="408">hoistForEval: top-level names become globals, and</text>
-  <text class="s" x="456" y="426">the cell runs inside an async function.</text>
-  <text class="s" x="456" y="444">workerd and celld get each import bundled by the host.</text>
+  <rect class="bg" x="0" y="0" width="860" height="728" rx="8"/>
+  <rect class="box" x="40" y="20" width="160" height="92" rx="6"/>
+  <text class="t" x="52" y="48">The cell</text>
+  <text class="s" x="52" y="70">TypeScript or TSX,</text>
+  <text class="s" x="52" y="86">as typed in the</text>
+  <text class="s" x="52" y="102">notebook</text>
+  <rect class="inner" x="216" y="20" width="624" height="92" rx="6"/>
+  <text class="m" x="232" y="43">import { z } from <tspan class="str">"npm:zod@<tspan class="num">3</tspan>"</tspan>;</text>
+  <text class="m" x="232" y="61">export const n: number = <tspan class="num">1</tspan>;</text>
+  <text class="m" x="232" y="79">const el = &lt;b&gt;{n}&lt;/b&gt;;</text>
+  <text class="m" x="232" y="97">n + <tspan class="num">1</tspan></text>
+  <line class="ln" x1="120" y1="112" x2="120" y2="130" marker-end="url(#a)"/>
+  <rect class="box" x="40" y="132" width="160" height="92" rx="6"/>
+  <text class="t" x="52" y="160">esbuild</text>
+  <text class="s" x="52" y="182">strips types, compiles</text>
+  <text class="s" x="52" y="198">JSX, keeps a</text>
+  <text class="s" x="52" y="214">source map</text>
+  <rect class="inner" x="216" y="132" width="624" height="92" rx="6"/>
+  <text class="m" x="232" y="155">import { z } from <tspan class="str">"npm:zod@<tspan class="num">3</tspan>"</tspan>;</text>
+  <rect class="acc" x="224" y="161" width="608" height="16" rx="3"/>
+  <text class="m" x="232" y="173">export const n = <tspan class="num">1</tspan>;</text>
+  <rect class="acc" x="224" y="179" width="608" height="16" rx="3"/>
+  <text class="m" x="232" y="191">const el = /* @__PURE__ */ React.createElement(<tspan class="str">"b"</tspan>, null, n);</text>
+  <text class="m" x="232" y="209">n + <tspan class="num">1</tspan>;</text>
+  <line class="ln" x1="120" y1="224" x2="120" y2="242" marker-end="url(#a)"/>
+  <rect class="box" x="40" y="244" width="160" height="92" rx="6"/>
+  <text class="t" x="52" y="272">acorn</text>
+  <text class="s" x="52" y="294">rewrites import and</text>
+  <text class="s" x="52" y="310">export for a script;</text>
+  <text class="s" x="52" y="326">lines stay put</text>
+  <rect class="inner" x="216" y="244" width="624" height="92" rx="6"/>
+  <rect class="acc" x="224" y="255" width="608" height="16" rx="3"/>
+  <text class="m" x="232" y="267">var __cdpk_m0 = await __cdpk.import(<tspan class="str">"npm:zod@<tspan class="num">3</tspan>"</tspan>); var z = __cdpk_m0[<tspan class="str">"z"</tspan>];</text>
+  <rect class="acc" x="224" y="273" width="608" height="16" rx="3"/>
+  <text class="m" x="232" y="285">const n = <tspan class="num">1</tspan>;</text>
+  <text class="m" x="232" y="303">const el = /* @__PURE__ */ React.createElement(<tspan class="str">"b"</tspan>, null, n);</text>
+  <text class="m" x="232" y="321">n + <tspan class="num">1</tspan>;</text>
+
+  <!-- Fork -->
+  <line class="ln" x1="235" y1="336" x2="235" y2="374" marker-end="url(#a)"/>
+  <line class="ln" x1="645" y1="336" x2="645" y2="374" marker-end="url(#a)"/>
+  <rect class="box" x="40" y="376" width="390" height="132" rx="6"/>
+  <text class="t" x="56" y="402">Node and Deno</text>
+  <text class="s" x="56" y="424"><tspan font-weight="600">Why: </tspan>V8's inspector has replMode, as in Deno's REPL.</text>
+  <text class="s" x="56" y="446">Runtime.evaluate with replMode over CDP. The last</text>
+  <text class="s" x="56" y="462">expression's value, <tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">n + 1</tspan>, is the result.</text>
+  <text class="s" x="56" y="478"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">__cdpk.import</tspan> resolves npm:, jsr: and ./ files:</text>
+  <text class="s" x="56" y="494">Node through resolve hooks, Deno through its loader.</text>
+  <rect class="box" x="450" y="376" width="390" height="132" rx="6"/>
+  <text class="t" x="466" y="402">Bun, workerd and celld</text>
+  <text class="s" x="466" y="424"><tspan font-weight="600">Why: </tspan>Bun's WebKit inspector has no replMode;</text>
+  <text class="s" x="466" y="440">workerd and celld allow no I/O outside a request.</text>
+  <text class="s" x="466" y="462"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">hoistForEval</tspan>: top-level names become globals,</text>
+  <text class="s" x="466" y="478">and the cell runs in an async function that returns <tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">[n + 1]</tspan>.</text>
+  <text class="s" x="466" y="494">workerd and celld get each import bundled by the host.</text>
+
+  <!-- Result back to the notebook -->
+  <rect class="ok" x="216" y="540" width="200" height="48" rx="4"/>
+  <text class="m" x="316" y="560" text-anchor="middle">broadcastResult</text>
+  <text class="l" x="316" y="577" text-anchor="middle">formats the value in the target</text>
+  <rect class="ok" x="452" y="540" width="168" height="48" rx="4"/>
+  <text class="m" x="536" y="560" text-anchor="middle">execute_result</text>
+  <text class="l" x="536" y="577" text-anchor="middle">on iopub, to the frontend</text>
+  <rect class="ok" x="656" y="540" width="184" height="48" rx="4"/>
+  <text class="m" x="748" y="560" text-anchor="middle">Out[1]: 2</text>
+  <text class="l" x="748" y="577" text-anchor="middle">shown under the cell</text>
+  <line class="ln" x1="416" y1="564" x2="450" y2="564" marker-end="url(#a)"/>
+  <line class="ln" x1="620" y1="564" x2="654" y2="564" marker-end="url(#a)"/>
+  <path class="ln" d="M235,508 V526 H286 V538" marker-end="url(#a)"/>
+  <path class="ln" d="M645,508 V526 H346 V538" marker-end="url(#a)"/>
+  <text class="s" x="40" y="560">The cell's value</text>
+  <text class="s" x="40" y="577">goes back as output</text>
+
+  <!-- Source map, from esbuild to its two consumers -->
+  <rect class="inner" x="216" y="612" width="300" height="48" rx="4"/>
+  <text class="s" x="366" y="632" text-anchor="middle" style="font-weight: 600">Error tracebacks</text>
+  <text class="l" x="366" y="649" text-anchor="middle">point at the line you wrote</text>
+  <rect class="inner" x="540" y="612" width="300" height="48" rx="4"/>
+  <text class="s" x="690" y="632" text-anchor="middle" style="font-weight: 600">Debugger (Node and Deno)</text>
+  <text class="l" x="690" y="649" text-anchor="middle">breakpoints and paused lines map to cell lines</text>
+  <path class="ln" d="M40,178 H28 V674 H690" stroke-dasharray="4 3"/>
+  <line class="ln" x1="366" y1="674" x2="366" y2="662" stroke-dasharray="4 3" marker-end="url(#a)"/>
+  <line class="ln" x1="690" y1="674" x2="690" y2="662" stroke-dasharray="4 3" marker-end="url(#a)"/>
+  <text class="s" x="40" y="632">esbuild's source map</text>
+  <text class="s" x="40" y="649">maps lines back</text>
+
+  <!-- Legend -->
+  <rect class="acc" x="40" y="694" width="28" height="14" rx="3"/>
+  <text class="l" x="76" y="705">lines this step changed</text>
+  <rect class="ok" x="240" y="694" width="28" height="14" rx="3"/>
+  <text class="l" x="276" y="705">the result's way back to the notebook</text>
+  <line class="ln" x1="500" y1="701" x2="528" y2="701" stroke-dasharray="4 3"/>
+  <text class="l" x="536" y="705">the source map</text>
 </svg>

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 360" width="860" height="360" role="img" aria-label="How an interrupt reaches a running cell on each kind of target">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 626" width="860" height="626" role="img" aria-label="The frontend's Interrupt button sends interrupt_request on the control socket, and the kernel host calls interrupt() on the target. On Node and Deno, a paused debugger is resumed, the host sends Runtime.terminateExecution on the control session and abandons the pending evaluate, and state is kept. On Bun, workerd and celld the host sends a ping: a waiting cell answers within 500 ms, so its request is abandoned and state kept; a busy cell can't answer, so the runtime is killed and restarts on the next cell without the earlier state.">
   <title>How an interrupt reaches a running cell on each kind of target</title>
   <style>
     .bg { fill: #ffffff; }
@@ -32,49 +32,77 @@
       <path class="ah" d="M0,0 L10,5 L0,10 z"/>
     </marker>
   </defs>
-  <rect class="bg" x="0" y="0" width="860" height="360" rx="8"/>
-  <!-- CDP column -->
-  <text class="t" x="215" y="34" text-anchor="middle">Node, Deno (CDP)</text>
-  <rect class="inner" x="60" y="50" width="310" height="44" rx="4"/>
-  <text class="s" x="215" y="77" text-anchor="middle">Paused in the debugger? Debugger.resume</text>
-  <line class="ln" x1="215" y1="94" x2="215" y2="114" marker-end="url(#a)"/>
-  <rect class="acc" x="60" y="116" width="310" height="58" rx="4"/>
-  <text class="m" x="215" y="140" text-anchor="middle">Runtime.terminateExecution</text>
-  <text class="s" x="215" y="160" text-anchor="middle">on the control session</text>
-  <line class="ln" x1="215" y1="174" x2="215" y2="194" marker-end="url(#a)"/>
-  <rect class="inner" x="60" y="196" width="310" height="58" rx="4"/>
-  <text class="s" x="215" y="220" text-anchor="middle">Abandon the pending Runtime.evaluate</text>
-  <text class="s" x="215" y="240" text-anchor="middle">on the shell session</text>
-  <line class="ln" x1="215" y1="254" x2="215" y2="274" marker-end="url(#a)"/>
-  <rect class="ok" x="60" y="276" width="310" height="58" rx="4"/>
-  <text class="s" x="215" y="300" text-anchor="middle">Cell ends with "Interrupted";</text>
-  <text class="s" x="215" y="320" text-anchor="middle">busy or waiting, state is kept</text>
+  <rect class="bg" x="0" y="0" width="860" height="626" rx="8"/>
+  <!-- Entry: the frontend asks for an interrupt -->
+  <rect class="box" x="290" y="20" width="280" height="44" rx="6"/>
+  <text class="s" x="430" y="46" text-anchor="middle">Kernel › Interrupt (■) in the frontend</text>
+  <path class="ln" d="M430,64 V94" marker-end="url(#a)"/>
+  <text class="lm" x="440" y="83">interrupt_request, control socket</text>
+  <rect class="box" x="290" y="96" width="280" height="44" rx="6"/>
+  <text class="m" x="430" y="122" text-anchor="middle">target.interrupt()</text>
+  <text class="l" x="580" y="122">in the kernel host</text>
+  <path class="ln" d="M430,140 V154 H220 V168" marker-end="url(#a)"/>
+  <path class="ln" d="M430,154 H640 V168" marker-end="url(#a)"/>
 
-  <!-- Divider -->
-  <line class="ln" x1="430" y1="30" x2="430" y2="340" stroke-dasharray="3 4"/>
+  <rect class="box" x="20" y="170" width="400" height="406" rx="6"/>
+  <rect class="box" x="440" y="170" width="400" height="406" rx="6"/>
+  <text class="t" x="220" y="194" text-anchor="middle">Node, Deno (CDP)</text>
+  <text class="t" x="640" y="194" text-anchor="middle">Bun, workerd, celld</text>
 
-  <!-- Non-CDP column -->
-  <text class="t" x="645" y="34" text-anchor="middle">Bun, workerd, celld</text>
-  <rect class="acc" x="490" y="50" width="310" height="44" rx="4"/>
-  <text class="s" x="645" y="77" text-anchor="middle">Send a ping request</text>
-  <line class="ln" x1="645" y1="94" x2="645" y2="114" marker-end="url(#a)"/>
-  <polygon class="inner" points="645,116 775,150 645,184 515,150"/>
-  <text class="s" x="645" y="147" text-anchor="middle">Answered within</text>
-  <text class="s" x="645" y="163" text-anchor="middle">500 ms?</text>
-  <path class="ln" d="M515,150 H480 V214" marker-end="url(#a)"/>
-  <text class="l" x="472" y="140" text-anchor="end">yes</text>
-  <path class="ln" d="M775,150 H812 V214" marker-end="url(#a)"/>
-  <text class="l" x="820" y="140" text-anchor="start">no</text>
-  <rect class="ok" x="445" y="216" width="180" height="118" rx="4"/>
-  <text class="s" x="535" y="240" text-anchor="middle">The cell was waiting,</text>
-  <text class="s" x="535" y="258" text-anchor="middle">not busy. Abandon its</text>
-  <text class="s" x="535" y="276" text-anchor="middle">request; state is kept,</text>
-  <text class="s" x="535" y="294" text-anchor="middle">and its pending work</text>
-  <text class="s" x="535" y="312" text-anchor="middle">keeps running</text>
-  <rect class="warn" x="660" y="216" width="185" height="118" rx="4"/>
-  <text class="s" x="752" y="240" text-anchor="middle">The cell is busy and</text>
-  <text class="s" x="752" y="258" text-anchor="middle">can't be reached. Kill</text>
-  <text class="s" x="752" y="276" text-anchor="middle">the runtime; it restarts</text>
-  <text class="s" x="752" y="294" text-anchor="middle">on the next cell without</text>
-  <text class="s" x="752" y="312" text-anchor="middle">the earlier state</text>
+  <!-- Node and Deno -->
+  <polygon class="inner" points="150,220 250,260 150,300 50,260"/>
+  <text class="s" x="150" y="256" text-anchor="middle">Paused in the</text>
+  <text class="s" x="150" y="272" text-anchor="middle">debugger?</text>
+  <path class="ln" d="M250,260 H272" marker-end="url(#a)"/>
+  <text class="l" x="261" y="252" text-anchor="middle">yes</text>
+  <rect class="acc" x="274" y="238" width="130" height="44" rx="4"/>
+  <text class="s" x="339" y="264" text-anchor="middle">Debugger.resume</text>
+  <path class="ln" d="M150,300 V322" marker-end="url(#a)"/>
+  <text class="l" x="158" y="314">no</text>
+  <path class="ln" d="M339,282 V322" marker-end="url(#a)"/>
+  <rect class="acc" x="50" y="324" width="340" height="52" rx="4"/>
+  <text class="m" x="220" y="345" text-anchor="middle">Runtime.terminateExecution</text>
+  <text class="l" x="220" y="363" text-anchor="middle">on the control session</text>
+  <path class="ln" d="M220,376 V394" marker-end="url(#a)"/>
+  <rect class="inner" x="50" y="396" width="340" height="52" rx="4"/>
+  <text class="s" x="220" y="417" text-anchor="middle">Abandon the pending Runtime.evaluate</text>
+  <text class="l" x="220" y="435" text-anchor="middle">on the shell session</text>
+  <path class="ln" d="M220,448 V466" marker-end="url(#a)"/>
+  <rect class="ok" x="50" y="468" width="340" height="70" rx="4"/>
+  <text class="s" x="220" y="498" text-anchor="middle">Cell ends with “Interrupted”;</text>
+  <text class="s" x="220" y="516" text-anchor="middle">busy or waiting, state is kept</text>
+
+  <!-- Bun, workerd, celld -->
+  <rect class="acc" x="520" y="216" width="240" height="44" rx="4"/>
+  <text class="s" x="640" y="242" text-anchor="middle">Send a ping request</text>
+  <path class="ln" d="M640,260 V272" marker-end="url(#a)"/>
+  <polygon class="inner" points="640,272 760,310 640,348 520,310"/>
+  <text class="s" x="640" y="306" text-anchor="middle">Answered within</text>
+  <text class="s" x="640" y="322" text-anchor="middle">500 ms?</text>
+  <path class="ln" d="M520,310 H470 V466" marker-end="url(#a)"/>
+  <text class="l" x="494" y="302" text-anchor="middle">yes</text>
+  <path class="ln" d="M760,310 H810 V466" marker-end="url(#a)"/>
+  <text class="l" x="786" y="302" text-anchor="middle">no</text>
+  <text class="l" x="640" y="372" text-anchor="middle">A cell that is waiting (a timer,</text>
+  <text class="l" x="640" y="387" text-anchor="middle">fetch, a promise) leaves the event</text>
+  <text class="l" x="640" y="402" text-anchor="middle">loop free and answers at once.</text>
+  <text class="l" x="640" y="417" text-anchor="middle">A busy cell can’t answer at all.</text>
+  <rect class="ok" x="450" y="468" width="180" height="94" rx="4"/>
+  <text class="s" x="540" y="492" text-anchor="middle">Waiting, not busy:</text>
+  <text class="s" x="540" y="510" text-anchor="middle">abandon its request.</text>
+  <text class="s" x="540" y="528" text-anchor="middle">State is kept; work it</text>
+  <text class="s" x="540" y="546" text-anchor="middle">started keeps running</text>
+  <rect class="warn" x="650" y="468" width="180" height="94" rx="4"/>
+  <text class="s" x="740" y="492" text-anchor="middle">Busy: kill the runtime.</text>
+  <text class="s" x="740" y="510" text-anchor="middle">It restarts on the next</text>
+  <text class="s" x="740" y="528" text-anchor="middle">cell without the earlier</text>
+  <text class="s" x="740" y="546" text-anchor="middle">cells’ state</text>
+
+  <!-- Legend -->
+  <rect class="acc" x="20" y="592" width="28" height="14" rx="3"/>
+  <text class="l" x="56" y="603">a request the host sends</text>
+  <rect class="ok" x="218" y="592" width="28" height="14" rx="3"/>
+  <text class="l" x="254" y="603">cell stops, state kept</text>
+  <rect class="warn" x="405" y="592" width="28" height="14" rx="3"/>
+  <text class="l" x="441" y="603">runtime stopped, state lost (see Choosing a runtime)</text>
 </svg>

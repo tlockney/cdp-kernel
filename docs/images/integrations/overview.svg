@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 400" width="860" height="400" role="img" aria-label="The kernel host speaks Jupyter and drives one target runtime over one of three channels">
-  <title>The kernel host speaks Jupyter and drives one target runtime over one of three channels</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 546" width="860" height="546" role="img" aria-label="The Jupyter frontend talks ZeroMQ to the kernel host, the process Jupyter starts, which runs on Node or Deno. The host's KernelTarget sends cells, requests and interrupts to a separate target runtime, and results, output and messages come back: over CDP for Node and Deno, a pipe on fd 3 for Bun, and a WebSocket session to a driver Worker for workerd and celld. Only Node and Deno have the debugger and keep state when a busy cell is interrupted; workerd and celld have no prompt().">
+  <title>The kernel host speaks Jupyter and exchanges messages with one target runtime over one of three channels</title>
   <style>
     .bg { fill: #ffffff; }
     .box { fill: #f6f7f9; stroke: #9aa3ad; stroke-width: 1.2; }
@@ -32,55 +32,101 @@
       <path class="ah" d="M0,0 L10,5 L0,10 z"/>
     </marker>
   </defs>
-  <rect class="bg" x="0" y="0" width="860" height="400" rx="8"/>
+  <rect class="bg" x="0" y="0" width="860" height="546" rx="8"/>
   <!-- Frontend -->
-  <rect class="box" x="20" y="150" width="130" height="100" rx="6"/>
-  <text class="t" x="85" y="192" text-anchor="middle">Jupyter</text>
-  <text class="t" x="85" y="210" text-anchor="middle">frontend</text>
-  <text class="l" x="85" y="230" text-anchor="middle">JupyterLab, VS Code</text>
-  <line class="ln" x1="150" y1="200" x2="230" y2="200" marker-start="url(#a)" marker-end="url(#a)"/>
-  <text class="l" x="190" y="190" text-anchor="middle">ZeroMQ</text>
-  <text class="l" x="190" y="218" text-anchor="middle">5 sockets</text>
+  <rect class="box" x="20" y="60" width="120" height="100" rx="6"/>
+  <text class="t" x="80" y="100" text-anchor="middle">Jupyter</text>
+  <text class="t" x="80" y="118" text-anchor="middle">frontend</text>
+  <text class="l" x="80" y="138" text-anchor="middle">JupyterLab, VS Code</text>
+  <line class="ln" x1="142" y1="110" x2="198" y2="110" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="l" x="170" y="100" text-anchor="middle">ZeroMQ</text>
+  <text class="l" x="170" y="128" text-anchor="middle">5 sockets</text>
 
   <!-- Host -->
-  <rect class="box" x="230" y="30" width="200" height="340" rx="6"/>
-  <text class="t" x="330" y="56" text-anchor="middle">Kernel host</text>
-  <text class="l" x="330" y="73" text-anchor="middle">Node 24+ or Deno</text>
-  <rect class="inner" x="245" y="88" width="170" height="56" rx="4"/>
-  <text class="m" x="330" y="111" text-anchor="middle">zmtp.ts · wire.ts</text>
-  <text class="l" x="330" y="130" text-anchor="middle">Jupyter wire protocol</text>
-  <rect class="inner" x="245" y="156" width="170" height="56" rx="4"/>
-  <text class="m" x="330" y="179" text-anchor="middle">kernel.ts</text>
-  <text class="l" x="330" y="198" text-anchor="middle">execute, complete, inspect, comms</text>
-  <rect class="inner" x="245" y="224" width="170" height="56" rx="4"/>
-  <text class="m" x="330" y="247" text-anchor="middle">transform.ts</text>
-  <text class="l" x="330" y="266" text-anchor="middle">cell → script (esbuild, acorn)</text>
-  <rect class="acc" x="245" y="294" width="170" height="60" rx="4"/>
-  <text class="m" x="330" y="319" text-anchor="middle">KernelTarget</text>
-  <text class="l" x="330" y="338" text-anchor="middle">one implementation per channel</text>
-
-  <!-- Fan-out -->
-  <path class="ln" d="M415,324 H470 V75 H620" marker-end="url(#a)"/>
-  <path class="ln" d="M470,200 H620" marker-end="url(#a)"/>
-  <path class="ln" d="M470,324 V325 H620" marker-end="url(#a)"/>
-  <text class="l" x="545" y="67" text-anchor="middle">CDP over the inspector</text>
-  <text class="l" x="545" y="91" text-anchor="middle">WebSocket + pipes</text>
-  <text class="l" x="545" y="192" text-anchor="middle">JSON lines on fd 3</text>
-  <text class="l" x="545" y="216" text-anchor="middle">+ stdout/stderr pipes</text>
-  <text class="l" x="545" y="317" text-anchor="middle">one WebSocket session</text>
-  <text class="l" x="545" y="341" text-anchor="middle">to a driver Worker</text>
+  <rect class="box" x="200" y="20" width="190" height="424" rx="6"/>
+  <text class="t" x="295" y="44" text-anchor="middle">Kernel host</text>
+  <text class="s" x="295" y="62" text-anchor="middle">the process Jupyter starts</text>
+  <text class="l" x="295" y="78" text-anchor="middle">runs on Node 22.18+ or Deno</text>
+  <rect class="inner" x="214" y="90" width="162" height="40" rx="4"/>
+  <text class="m" x="295" y="107" text-anchor="middle">zmtp.ts · wire.ts</text>
+  <text class="l" x="295" y="122" text-anchor="middle">Jupyter wire protocol</text>
+  <rect class="inner" x="214" y="138" width="162" height="40" rx="4"/>
+  <text class="m" x="295" y="155" text-anchor="middle">kernel-core.ts</text>
+  <text class="l" x="295" y="170" text-anchor="middle">handles each request</text>
+  <rect class="inner" x="214" y="186" width="162" height="40" rx="4"/>
+  <text class="m" x="295" y="203" text-anchor="middle">transform.ts</text>
+  <text class="l" x="295" y="218" text-anchor="middle">cell → script</text>
+  <rect class="acc" x="214" y="234" width="162" height="40" rx="4"/>
+  <text class="m" x="295" y="251" text-anchor="middle">KernelTarget</text>
+  <text class="l" x="295" y="266" text-anchor="middle">one per channel</text>
+  <text class="l" x="295" y="300" text-anchor="middle">The host doesn't have to be</text>
+  <text class="l" x="295" y="315" text-anchor="middle">the runtime it drives: a Node</text>
+  <text class="l" x="295" y="330" text-anchor="middle">host can drive a Deno target,</text>
+  <text class="l" x="295" y="345" text-anchor="middle">and a Deno host a Node target.</text>
 
   <!-- Targets -->
-  <rect class="box" x="620" y="30" width="220" height="90" rx="6"/>
-  <text class="t" x="730" y="60" text-anchor="middle">Node · Deno</text>
-  <text class="m" x="730" y="82" text-anchor="middle">src/target.ts</text>
-  <text class="m" x="730" y="100" text-anchor="middle">runtime/bootstrap.mjs</text>
-  <rect class="box" x="620" y="155" width="220" height="90" rx="6"/>
-  <text class="t" x="730" y="185" text-anchor="middle">Bun</text>
-  <text class="m" x="730" y="207" text-anchor="middle">src/bun-target.ts</text>
-  <text class="m" x="730" y="225" text-anchor="middle">runtime/bun-channel.mjs</text>
-  <rect class="box" x="620" y="280" width="220" height="90" rx="6"/>
-  <text class="t" x="730" y="310" text-anchor="middle">workerd · celld</text>
-  <text class="m" x="730" y="332" text-anchor="middle">src/workerd-target.ts</text>
-  <text class="m" x="730" y="350" text-anchor="middle">runtime/workerd-worker.mjs</text>
+  <rect class="box" x="580" y="20" width="260" height="424" rx="6" stroke-dasharray="6 4"/>
+  <text class="t" x="710" y="44" text-anchor="middle">Target runtime</text>
+  <text class="s" x="710" y="62" text-anchor="middle">a separate process; cells run here</text>
+  <rect class="inner" x="592" y="76" width="236" height="110" rx="4"/>
+  <text class="t" x="604" y="98">Node · Deno</text>
+  <text class="lm" x="604" y="116">src/target.ts</text>
+  <text class="lm" x="604" y="131">runtime/bootstrap.mjs</text>
+  <rect class="ok" x="604" y="142" width="64" height="18" rx="9"/>
+  <text class="l" x="636" y="155" text-anchor="middle">debugger</text>
+  <rect class="ok" x="674" y="142" width="64" height="18" rx="9"/>
+  <text class="l" x="706" y="155" text-anchor="middle">prompt()</text>
+  <rect class="ok" x="604" y="164" width="172" height="18" rx="9"/>
+  <text class="l" x="690" y="177" text-anchor="middle">busy interrupt keeps state</text>
+  <rect class="inner" x="592" y="198" width="236" height="110" rx="4"/>
+  <text class="t" x="604" y="220">Bun</text>
+  <text class="lm" x="604" y="238">src/bun-target.ts</text>
+  <text class="lm" x="604" y="253">runtime/bun-channel.mjs</text>
+  <rect class="warn" x="604" y="264" width="82" height="18" rx="9"/>
+  <text class="l" x="645" y="277" text-anchor="middle">no debugger</text>
+  <rect class="ok" x="692" y="264" width="64" height="18" rx="9"/>
+  <text class="l" x="724" y="277" text-anchor="middle">prompt()</text>
+  <rect class="warn" x="604" y="286" width="172" height="18" rx="9"/>
+  <text class="l" x="690" y="299" text-anchor="middle">busy interrupt restarts it</text>
+  <rect class="inner" x="592" y="320" width="236" height="110" rx="4"/>
+  <text class="t" x="604" y="342">workerd · celld</text>
+  <text class="lm" x="604" y="360">src/workerd-target.ts</text>
+  <text class="lm" x="604" y="375">runtime/workerd-worker.mjs</text>
+  <rect class="warn" x="604" y="386" width="82" height="18" rx="9"/>
+  <text class="l" x="645" y="399" text-anchor="middle">no debugger</text>
+  <rect class="warn" x="692" y="386" width="82" height="18" rx="9"/>
+  <text class="l" x="733" y="399" text-anchor="middle">no prompt()</text>
+  <rect class="warn" x="604" y="408" width="172" height="18" rx="9"/>
+  <text class="l" x="690" y="421" text-anchor="middle">busy interrupt restarts it</text>
+
+  <!-- Channels: requests out, results and output back -->
+  <line class="ln" x1="376" y1="254" x2="420" y2="254"/>
+  <line class="ln" x1="420" y1="123" x2="420" y2="383"/>
+  <line class="ln" x1="420" y1="123" x2="590" y2="123" marker-end="url(#a)"/>
+  <line class="ln" x1="592" y1="139" x2="422" y2="139" marker-end="url(#a)"/>
+  <text class="l" x="506" y="115" text-anchor="middle">CDP over the inspector</text>
+  <text class="l" x="506" y="158" text-anchor="middle">WebSocket, plus pipes</text>
+  <line class="ln" x1="420" y1="245" x2="590" y2="245" marker-end="url(#a)"/>
+  <line class="ln" x1="592" y1="261" x2="422" y2="261" marker-end="url(#a)"/>
+  <text class="l" x="506" y="237" text-anchor="middle">JSON lines on fd 3,</text>
+  <text class="l" x="506" y="280" text-anchor="middle">plus stdout/stderr pipes</text>
+  <line class="ln" x1="420" y1="367" x2="590" y2="367" marker-end="url(#a)"/>
+  <line class="ln" x1="592" y1="383" x2="422" y2="383" marker-end="url(#a)"/>
+  <text class="l" x="506" y="359" text-anchor="middle">one WebSocket session</text>
+  <text class="l" x="506" y="402" text-anchor="middle">to the driver Worker</text>
+
+  <!-- Direction key -->
+  <line class="ln" x1="398" y1="40" x2="424" y2="40" marker-end="url(#a)"/>
+  <text class="l" x="430" y="44">cells, requests, interrupts</text>
+  <line class="ln" x1="424" y1="60" x2="398" y2="60" marker-end="url(#a)"/>
+  <text class="l" x="430" y="64">results, output, messages</text>
+
+  <!-- Legend and glosses -->
+  <rect class="ok" x="20" y="462" width="28" height="14" rx="7"/>
+  <text class="l" x="54" y="473">supported, state kept</text>
+  <rect class="warn" x="196" y="462" width="28" height="14" rx="7"/>
+  <text class="l" x="230" y="473">missing, or loses state: see Choosing a runtime</text>
+  <text class="l" x="20" y="496"><tspan font-weight="600">fd 3</tspan>: a fourth pipe, on file descriptor 3, that only the host and Bun hold.</text>
+  <text class="l" x="20" y="512"><tspan font-weight="600">driver Worker</tspan>: a Worker the kernel ships; every cell runs inside its one long request.</text>
+  <text class="l" x="20" y="528"><tspan font-weight="600">messages</tspan>: display() output, prompt() requests, and comm messages between widgets and the kernel.</text>
 </svg>

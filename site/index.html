@@ -158,7 +158,7 @@ docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel</code></pre>
     <h2>Runtimes</h2>
     <p class="sub">The kernel host runs on Node or Deno. Cells run in a separate target process.</p>
     <img class="diagram" src="images/concepts/notebook-kernel-runtime.svg" width="860" height="330"
-      alt="The frontend shows the notebook and sends each cell's code to cdp-kernel, which runs it in the runtime you picked (Node, Deno, Bun, workerd or celld) and sends the output back.">
+      alt="The frontend sends each cell's code to the kernel host over the Jupyter protocol. The host drives the runtime you picked (Node, Deno, Bun, workerd or celld) in a separate process, and results and output come back to show under the cell.">
     <table class="rt">
       <thead><tr><th>Target</th><th>How cells run</th><th>Debugger</th></tr></thead>
       <tbody>
