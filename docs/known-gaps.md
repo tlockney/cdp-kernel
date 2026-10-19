@@ -1,6 +1,6 @@
 # Known gaps
 
-- Widgets are anywidget-style (`jupyter.widget`). The classic ipywidgets
+- Widgets are [anywidget](https://github.com/manzt/anywidget)-style (`jupyter.widget`). The classic ipywidgets
   controls (sliders, dropdowns) are Python classes, so they're not available.
 - Typed completion and inspection
   ([Inspection and completion](notebooks.md#inspection-completion-and-history))
