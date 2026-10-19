@@ -81,6 +81,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "medium-zoom": "^1.1.0",
     "vitepress": "^1.6.4",
     "workerd": "1.20261015.1",
     "wrangler": "4.151.0"

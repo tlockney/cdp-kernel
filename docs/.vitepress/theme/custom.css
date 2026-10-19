@@ -192,3 +192,7 @@
 .vp-doc .study-meta dd { margin: 0.15rem 0 0; font-size: 0.9rem; line-height: 1.5; }
 .vp-doc .study-meta .study-verdict { grid-column: 1 / -1; }
 .vp-doc .study-meta .study-verdict dd { font-weight: 600; color: var(--vp-c-brand-1); }
+
+/* Image zoom (zoom.ts): above the nav bar and sidebar. */
+.medium-zoom-overlay,
+.medium-zoom-image--opened { z-index: 100; }
