@@ -4,6 +4,14 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- Bun, workerd and celld targets that never become ready are stopped after
+  60 s, as Node and Deno targets already were, and the first cell reports
+  the failure instead of waiting forever. An interrupt while a target is
+  starting now ends the cell waiting for it
+  ([#336](https://github.com/tlockney/cdp-kernel/issues/336)).
+
 ## 0.7.0 (2026-10-19)
 
 - Experimental: the kernel runs in a web page, with cells in a Web Worker

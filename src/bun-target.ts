@@ -16,6 +16,7 @@ import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
+import { withStartTimeout } from "./target-api.ts";
 
 /**
  * How long an interrupted target has to answer a ping. A cell waiting on a
@@ -72,7 +73,10 @@ export class BunTarget implements KernelTarget {
     this.#stderr = new PipeDemux((text) => events.stream("stderr", text), (n) => this.#gates.wait(n));
   }
 
-  static async launch(events: TargetEvents, options: { cwd?: string; executable?: string } = {}): Promise<BunTarget> {
+  static async launch(
+    events: TargetEvents,
+    options: { cwd?: string; executable?: string; startTimeoutMs?: number } = {},
+  ): Promise<BunTarget> {
     const bootstrap = join(await runtimeDir(new URL("../runtime/", import.meta.url).href), "bootstrap.mjs");
     const { cmd, args } = bunLaunchCommand(bootstrap, options.executable);
     const env: Record<string, string | undefined> = { ...process.env, FORCE_COLOR: "1" };
@@ -105,7 +109,14 @@ export class BunTarget implements KernelTarget {
     target.#readChannel(events);
     child.once("exit", (code) => target.#exited(code, events));
 
-    const { versions } = await ready;
+    let versions: unknown;
+    try {
+      // A bun that stays up but never says it's ready is stopped (#336).
+      ({ versions } = await withStartTimeout(ready, cmd, options.startTimeoutMs));
+    } catch (err) {
+      child.kill();
+      throw err;
+    }
     if (isRecord(versions)) Object.assign(target.versions, versions);
     return target;
   }

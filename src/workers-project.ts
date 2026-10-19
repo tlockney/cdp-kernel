@@ -19,6 +19,7 @@ import { build } from "esbuild";
 import type { CdpParams } from "./cdp.ts";
 import { childPids, reap } from "./children.ts";
 import { runtimeDir } from "./package.ts";
+import { withStartTimeout } from "./target-api.ts";
 import { cellMeta, WORKER_MODULES, type WorkerHost } from "./workerd-target.ts";
 import type { WsChannel } from "./ws-client.ts";
 
@@ -212,7 +213,7 @@ class MiniflareHost implements WorkerHost {
 }
 
 /** Starts the driver on the project's Miniflare with its bindings. */
-export async function startMiniflare(configPath: string, cwd: string): Promise<WorkerHost> {
+export async function startMiniflare(configPath: string, cwd: string, startTimeoutMs?: number): Promise<WorkerHost> {
   const { wrangler, miniflare, version } = loadTooling(configPath);
   const projectDir = dirname(configPath);
   const { workerOptions, main, define } = wrangler.unstable_getMiniflareWorkerOptions(configPath);
@@ -245,10 +246,10 @@ export async function startMiniflare(configPath: string, cwd: string): Promise<W
   const before = new Set(childPids(process.pid, "workerd"));
   const mf = new miniflare.Miniflare(v5 && miniflare.convertV4MiniflareOptions ? miniflare.convertV4MiniflareOptions(options) : options);
   try {
-    await mf.ready;
     // Miniflare listens on a loopback TCP port; the token is what keeps
     // other local processes from the driver.
-    const res = await mf.dispatchFetch("http://cdpk/", { headers: { Upgrade: "websocket", "x-cdpk-token": token } });
+    const connect = mf.ready.then(() => mf.dispatchFetch("http://cdpk/", { headers: { Upgrade: "websocket", "x-cdpk-token": token } }));
+    const res = await withStartTimeout(connect, "Miniflare", startTimeoutMs);
     if (res.status !== 101 || res.webSocket === null) throw new Error(`the driver answered ${res.status}: ${await res.text()}`);
     const workerd = childPids(process.pid, "workerd").filter((pid) => !before.has(pid));
     return new MiniflareHost(mf, channelOf(res.webSocket), version, configPath, workerd);

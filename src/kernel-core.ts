@@ -180,6 +180,8 @@ export class KernelCore {
   #input: { msgId: string; settle: (answer: InputAnswer) => void } | null = null;
   /** An interrupt is waiting on the target. */
   #interrupting = false;
+  /** Ends the cell waiting for the target to start, while one is (#336). */
+  #interruptStart: (() => void) | null = null;
   /** The shell message being handled, and since when. */
   #handling: { msgType: string; msgId: string; since: number } | null = null;
   // Open comms, for comm_info_request: comm_id -> target_name (#9).
@@ -316,6 +318,22 @@ export class KernelCore {
     return this.#targetStarting;
   }
 
+  /**
+   * The target for a cell. An interrupt while it starts ends the cell; the
+   * start goes on, bounded by the target's own deadline, for the next one (#336).
+   */
+  async #targetForCell(): Promise<KernelTarget> {
+    if (this.#target) return this.#target;
+    const interrupted = new Promise<never>((_, reject) => {
+      this.#interruptStart = () => reject(new Interrupted("Execution interrupted"));
+    });
+    try {
+      return await Promise.race([this.#ensureTarget(), interrupted]);
+    } finally {
+      this.#interruptStart = null;
+    }
+  }
+
   #targetEvents(): TargetEvents {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
@@ -363,6 +381,10 @@ export class KernelCore {
     if (input !== null) {
       this.#input = null;
       input.settle({ value: null, interrupted: true });
+      return;
+    }
+    if (this.#interruptStart !== null) {
+      this.#interruptStart();
       return;
     }
     if (!this.#target || !this.#executing) return;
@@ -767,7 +789,7 @@ export class KernelCore {
     let structured: JsonObject | null = null;
     this.#executing = true;
     try {
-      const target = await this.#ensureTarget();
+      const target = await this.#targetForCell();
       if (target.notice !== undefined && this.#noticeShownFor !== target) {
         // Once per target, in the first cell it runs.
         this.#noticeShownFor = target;
