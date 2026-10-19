@@ -16,6 +16,10 @@ Issue and pull request numbers refer to
   Cells now run under a `//# sourceURL` of `$cdpk$cell-<hash>.ts`, which
   is what a stack read in code shows
   ([#322](https://github.com/tlockney/cdp-kernel/issues/322)).
+- A debug console expression that throws before its first `await` (a typo
+  is enough) no longer occasionally fails with "Promise was collected" on
+  Deno. The expression now yields one task before running, as cells do
+  ([#329](https://github.com/tlockney/cdp-kernel/issues/329)).
 - Vega and Vega-Lite charts come with a `text/plain` summary: the mark,
   each encoded field with its type and value range, the title and the row
   count, with a line per layer, view or facet panel. Frontends that can't
