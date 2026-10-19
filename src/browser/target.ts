@@ -6,7 +6,7 @@
 // (transformCellForEval).
 
 import { asEvaluateResult, type CdpParams, type EvaluateResult, isRecord, type RemoteObject } from "../cdp.ts";
-import { Interrupted, isTargetMessage, type KernelTarget, type TargetEvents } from "../target-api.ts";
+import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, type TargetEvents } from "../target-api.ts";
 import { transformCellForEval } from "../transform.ts";
 
 /** See BunTarget: how long an interrupted cell has to show it isn't busy. */
@@ -174,6 +174,11 @@ export class BrowserTarget implements KernelTarget {
       return { error: { name: String(name), message: String(message), stack: String(stack) } };
     }
     return { handled: reply.handled === true };
+  }
+
+  async format(value: RemoteObject): Promise<CdpParams> {
+    const reply = await this.#request("format", { handle: value.objectId });
+    return parseBundle(reply.value);
   }
 
   async describeError(exception: RemoteObject): Promise<{ name: string; message: string; stack: string }> {

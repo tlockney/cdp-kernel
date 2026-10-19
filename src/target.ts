@@ -18,6 +18,7 @@ import {
   Interrupted,
   isTargetMessage,
   type KernelTarget,
+  parseBundle,
   parseJson,
   type RuntimeName,
   type TargetEvents,
@@ -25,7 +26,7 @@ import {
   withStartTimeout,
 } from "./target-api.ts";
 
-export { Interrupted, isTargetMessage, parseJson };
+export { Interrupted, isTargetMessage, parseBundle, parseJson };
 export type { CdpRuntime, KernelTarget, RuntimeName, TargetEvents, TargetMessage } from "./target-api.ts";
 
 /**
@@ -776,6 +777,19 @@ export class Target implements KernelTarget {
       { value: executionCount },
       arg,
     ]).catch(interrupted("Execution"));
+  }
+
+  async format(value: RemoteObject): Promise<CdpParams> {
+    const arg = value.objectId
+      ? { objectId: value.objectId }
+      : value.unserializableValue !== undefined
+      ? { unserializableValue: value.unserializableValue }
+      : { value: value.value };
+    const res = await this.#callAsyncFunctionOn(`function (v) { return globalThis.${SHIM}.formatJson(v); }`, [arg])
+      .catch(interrupted("Execution"));
+    const thrown = res.exceptionDetails as { exception?: RemoteObject; text?: string } | undefined;
+    if (thrown) throw new Error(thrown.exception?.description ?? thrown.text ?? "the value could not be formatted");
+    return parseBundle((res.result as RemoteObject | undefined)?.value);
   }
 
   /**

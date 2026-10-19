@@ -1,4 +1,5 @@
 // `cdp-kernel list` and `uninstall` manage kernelspecs without Jupyter (#249).
+// `install` takes the same names (#338).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -92,4 +93,15 @@ test("uninstall with no name lists what's installed; --all removes only cdp-kern
   r = cli(dir, "uninstall", "--all");
   assert.equal(r.status, 0);
   assert.match(r.stdout, /no cdp-kernel kernelspecs/);
+});
+
+test("install refuses a name that isn't a kernel name", (t) => {
+  const dir = dataDir(t);
+  for (const name of ["../evil", "a/b", "..", ".", ""]) {
+    const r = cli(dir, "install", "--name", name);
+    assert.equal(r.status, 2, name);
+    assert.match(r.stderr, /invalid kernelspec name/);
+  }
+  assert.ok(!existsSync(join(dir, "evil")));
+  assert.ok(!existsSync(join(dir, "kernels")));
 });

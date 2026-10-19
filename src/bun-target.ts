@@ -15,7 +15,7 @@ import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObjec
 import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
-import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
+import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
 import { withStartTimeout } from "./target-api.ts";
 
 /**
@@ -259,6 +259,11 @@ export class BunTarget implements KernelTarget {
       return { error: { name: String(name), message: String(message), stack: String(stack) } };
     }
     return { handled: reply.handled === true };
+  }
+
+  async format(value: RemoteObject): Promise<CdpParams> {
+    const reply = await this.#request("format", { handle: value.objectId });
+    return parseBundle(reply.value);
   }
 
   async describeError(exception: RemoteObject): Promise<{ name: string; message: string; stack: string }> {

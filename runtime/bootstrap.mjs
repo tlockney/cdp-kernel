@@ -215,6 +215,8 @@ globalThis.__cdpk = {
   inspectPath: (path, detail) => inspectPath(path, { inspect: inspectPlain, detail }),
   resolvePath,
   broadcastResult: jupyter.broadcastResult,
+  // execute_request's user_expressions (#340).
+  formatJson: async (value) => JSON.stringify(await jupyter.namespace.format(value)),
   // The debugger's rich variable viewer (#18), synchronously: it runs while
   // the target is paused. A value whose $display is async shows as text.
   richBundle(value) {

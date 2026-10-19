@@ -11,6 +11,22 @@ Issue and pull request numbers refer to
   the failure instead of waiting forever. An interrupt while a target is
   starting now ends the cell waiting for it
   ([#336](https://github.com/tlockney/cdp-kernel/issues/336)).
+- `execute_request`'s `user_expressions` are evaluated after a cell that
+  succeeds, and `execute_reply` returns each one's MIME bundle, or the
+  error it threw, as ipykernel does. They were ignored before.
+- `kernel_info_reply`'s `language_info.version` is the installed
+  TypeScript's version instead of `"5"`
+  ([#340](https://github.com/tlockney/cdp-kernel/issues/340)).
+- Starting a workerd kernel no longer trusts other users' entries in the
+  temp directory when it cleans up after dead kernels: it skips any
+  `cdpk-workerd-*` directory that isn't a private one of this user's, so
+  a planted `owner.json` can't make it kill another process (on macOS) or
+  stop the kernel starting. A cleanup that fails is ignored
+  ([#335](https://github.com/tlockney/cdp-kernel/issues/335)).
+- `cdp-kernel install --name` accepts only the names `uninstall` does
+  (letters, digits, `.`, `_` and `-`, not `.` or `..`), so a name with a
+  path separator can't write `kernel.json` outside the kernels directory
+  ([#338](https://github.com/tlockney/cdp-kernel/issues/338)).
 
 ## 0.7.0 (2026-10-19)
 
