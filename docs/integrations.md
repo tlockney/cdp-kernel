@@ -38,7 +38,7 @@ runtime evaluating cells can be something other than Deno.
 
 ## Two processes: the host and the target
 
-![The Jupyter frontend talks ZeroMQ to the kernel host. The host's KernelTarget reaches Node and Deno over CDP, Bun over a pipe on fd 3, and workerd or celld over a WebSocket session to a driver Worker.](images/integrations/overview.svg)
+![The Jupyter frontend talks ZeroMQ to the kernel host, which runs on Node or Deno. The host's KernelTarget sends cells, requests and interrupts to a separate target runtime, and results, output and messages come back: over CDP for Node and Deno, a pipe on fd 3 for Bun, and a WebSocket session to a driver Worker for workerd and celld. Only Node and Deno have the debugger and keep state when a busy cell is interrupted; workerd and celld have no prompt().](images/integrations/overview.svg)
 
 - **The kernel host** is the process Jupyter starts:
   `cdp-kernel kernel --runtime <name> --conn <file>` (`src/main.ts`). It
@@ -159,7 +159,7 @@ Deno) or over fd 3 (Bun). The two routes race, so on Node, Deno and Bun
 the target numbers every message and writes a matching marker to the
 pipes first:
 
-![The target writes a marker numbered 7 to stdout and stderr before sending message 7. The host publishes the message only after both pipes reach marker 7, and holds pipe text after the marker until the message is out, so the frontend sees "a", the display, then "b".](images/integrations/output-ordering.svg)
+![On Node and Deno the target writes a gated marker numbered 7 to stderr, then message 7 as a record on stdout. The host publishes the message only after both pipes reach 7, and holds pipe text after the marker until the message is out, so the frontend sees "a", the display, then "b". On Bun the message goes over fd 3 and both pipes carry the marker.](images/integrations/output-ordering.svg)
 
 The markers are `ESC[cdpk:<n>m]ESC` sequences, which `PipeDemux` in
 `src/target.ts` strips out. On Node and Deno a message record on stdout,
@@ -172,7 +172,7 @@ Jupyter interrupts with an `interrupt_request` on the control socket
 (kernelspecs set `interrupt_mode: "message"`). How the host stops the cell
 depends on the channel:
 
-![On Node and Deno the host sends Runtime.terminateExecution on a second CDP session and abandons the pending evaluate, keeping state. On Bun, workerd and celld the host pings the target: if it answers within 500 ms the cell's request is abandoned and state kept; otherwise the runtime is killed and restarts on the next cell.](images/integrations/interrupt.svg)
+![The frontend's interrupt_request arrives on the control socket. On Node and Deno the host resumes a paused debugger, sends Runtime.terminateExecution on a second CDP session and abandons the pending evaluate, keeping state. On Bun, workerd and celld the host pings the target: a waiting cell answers within 500 ms, so its request is abandoned and state kept; a busy cell can't, so the runtime is killed and restarts on the next cell without the earlier state.](images/integrations/interrupt.svg)
 
 On Node and Deno, a cell starts with `await __cdpk.tick()`, one macrotask.
 Without it, a busy loop would run inside the inspector's dispatch of

@@ -156,7 +156,7 @@ process:
 [Architecture](architecture.md) describes how cdp-kernel maps onto these
 pieces.
 
-![Deno 2.9 runs a kernel isolate and a REPL isolate in one process, joined by 13 Rust ops. cdp-kernel runs a host (Node or Deno) and a target runtime as two processes, joined by CDP over the inspector WebSocket plus stdout and stderr pipes.](images/study/two-halves.svg)
+![Deno 2.9 runs a kernel isolate and a REPL isolate in one process, joined by 13 Rust ops that are nearly all thin wrappers over CDP calls. cdp-kernel runs a host (Node or Deno) and a target runtime as two processes, joined by CDP over the inspector WebSocket plus stdout and stderr pipes.](images/study/two-halves.svg)
 
 The 13 ops are already CDP in disguise, so swapping the in-process channel
 for an `--inspect` WebSocket is the whole trick.
