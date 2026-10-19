@@ -6,6 +6,13 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- With "Caught Exceptions" on, the debugger no longer stops on an
+  exception that Deno's or Node's own built-in code throws and catches
+  itself, such as Deno's lazy setup of its Node options. That stop came
+  before the cell's own and could leave the cell waiting. Stepping also
+  skips over `ext:` and `node:` code
+  ([#380](https://github.com/tlockney/cdp-kernel/issues/380)).
+
 - Bun, workerd and celld targets that never become ready are stopped after
   60 s, as Node and Deno targets already were, and the first cell reports
   the failure instead of waiting forever. An interrupt while a target is

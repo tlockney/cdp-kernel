@@ -42,6 +42,9 @@ const EXCEPTION_FILTERS = [
   { filter: "uncaught", label: "Uncaught Exceptions", default: false },
 ];
 
+/** URLs of the runtime's built-in modules: Deno's `ext:`, Node's `node:`. */
+const RUNTIME_SCRIPTS = ["^ext:", "^node:"];
+
 /** Bindings the kernel itself installs, hidden from the variable views. */
 const KERNEL_GLOBALS = new Set(["__cdpk", "__cdpk_send", "jupyter", "prompt", "confirm"]);
 
@@ -297,6 +300,10 @@ export class Debugger {
     const channel = this.#channel;
     if (!channel) return;
     await channel.send("Debugger.enable");
+    // The runtime's own code: an exception it throws and catches itself (a
+    // lazy initialisation in Deno's ext: modules, say) doesn't pause, and
+    // stepping doesn't enter it (#380).
+    await channel.send("Debugger.setBlackboxPatterns", { patterns: RUNTIME_SCRIPTS });
     await channel.send("Debugger.setPauseOnExceptions", { state: this.#pauseOnExceptions });
     this.#cdpBreakpoints.clear();
     for (const path of this.#breakpoints.keys()) await this.#applyBreakpoints(path);
