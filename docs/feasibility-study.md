@@ -29,6 +29,10 @@ Deno has since said the runtime stays on a 2.9.x LTS line until October
 found after release is fixed. Both, and the current test counts, are
 folded in below. Each section links to the docs page that now covers its
 topic in more depth.
+
+Node versions in the study are as of that date. Since 0.6.0 (2026-10-18)
+the host and the Node target run on Node 22.18 and later, and CI tests
+Node 22, 24 and 26 ([Support policy](support.md#runtimes)).
 :::
 
 ::: details Revision of 2026-10-15
@@ -55,8 +59,9 @@ or Deno, plus the `Deno.jupyter` display API and a replacement for the parts
 of Deno's module loader that notebooks lean on: TypeScript, `npm:` and
 `jsr:`. It passes a conformance suite derived from Deno's own Jupyter tests
 on **Node 24 and 26** and **Deno 2.9 and the latest 2.x**, on Linux and
-macOS. A notebook written for `deno jupyter`, with Polars DataFrames,
-Vega-Lite, SVG and in-place display updates, gives the same outputs on both.
+macOS (as of 2026-10-16; Node 22 was added in 0.6.0). A notebook written
+for `deno jupyter`, with Polars DataFrames, Vega-Lite, SVG and in-place
+display updates, gives the same outputs on both.
 
 The other routes rank below it:
 
@@ -167,9 +172,10 @@ The spike was about 2,350 lines of TypeScript and plain ESM, plus about
 1,500 lines of tests. It now lives in its own repository,
 `tlockney/cdp-kernel`, at about 6,900 lines plus 5,700 lines of tests, and
 is published to npm and JSR as `@tlockney/cdp-kernel`. The host runs on
-Node 24+ with native type stripping, or on Deno when installed from JSR. Its
-runtime dependencies are still esbuild and acorn (with `acorn-walk`). The
-kernel host and the target runtime are separate processes:
+Node 24+ with native type stripping (22.18+ since 0.6.0), or on Deno when
+installed from JSR. Its runtime dependencies are still esbuild and acorn
+(with `acorn-walk`). The kernel host and the target runtime are separate
+processes:
 
 - The host speaks Jupyter to the frontend.
 - The target runs your code.
@@ -266,9 +272,10 @@ adds the gaps those tests leave. Kernelspecs go into a temporary
 
 *Revised:* the suite has grown from 28 checks on two targets to 275 across
 every target, and CI runs it on Linux and macOS against Node 24 and 26 and
-Deno 2.9 and the latest 2.x, eight combinations in all. One combination also
-runs it against the packed npm tarball and against the host running on
-Deno, the two ways the kernel ships.
+Deno 2.9 and the latest 2.x, eight combinations in all (as of 2026-10-16;
+CI has tested Node 22 too since 0.6.0). One combination also runs it
+against the packed npm tarball and against the host running on Deno, the
+two ways the kernel ships.
 
 Conformance suite, CI on main, 2026-10-15 (Ubuntu, Node 26, Deno 2.9):
 
@@ -477,7 +484,7 @@ that obstacle hasn't appeared.
   and the workerd and celld sessions are opened with a per-launch token.
 - **The interrupt recipe relies on observed V8 inspector behaviour.**
   *Pinned:* CI checks it on every combination of Node 24/26 and Deno
-  2.9/latest (#15).
+  2.9/latest (#15), and on Node 22 since 0.6.0.
 - **Deno targets use `--node-modules-dir=none`.** *Resolved (#13):* a Deno
   target honours the notebook's `deno.json` and project `node_modules`.
 - **Not done:** type checking and WebGPU display remain undone. *Done:* the
@@ -554,7 +561,7 @@ Added 2026-10-15, revised 2026-10-16. How the study's predictions held up:
 | Prediction | Outcome |
 | --- | --- |
 | The protocol half and display API port cleanly; CDP is the seam | Held. Node and Deno targets share one bootstrap, and the host now also runs on Deno. |
-| Interrupt via a second CDP session keeps state | Held on every CI combination of Node 24/26 and Deno 2.9/latest. |
+| Interrupt via a second CDP session keeps state | Held on every CI combination of Node 24/26 and Deno 2.9/latest, and on Node 22 since 0.6.0. |
 | workerd needs a request-scoped hybrid backend | Held. Built with one long-lived request instead of one per cell, so I/O carries over between cells. |
 | Bun needs an in-process backend; host, transformer and display carry over | Held, as described under [Bun](#bun). |
 | Comms are the largest missing protocol feature | Built on every target, with anywidget-style widgets checked in JupyterLab. |

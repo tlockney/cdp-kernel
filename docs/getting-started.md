@@ -29,6 +29,11 @@ You don't need Deno installed, or any knowledge of it, to use cdp-kernel
 with Node. Where Deno's notebook docs or blog posts show `Deno.jupyter`,
 cdp-kernel offers the same API as a global named `jupyter`.
 
+The *cdp* in the name is the Chrome DevTools Protocol, the protocol behind
+`--inspect` and Chrome's DevTools. It is how the kernel drives the Node or
+Deno process that runs your cells; the other runtimes are reached in ways
+of their own. You don't need to know it to use the kernel.
+
 ## Install
 
 You need two things: a Jupyter frontend and the kernel.
@@ -67,7 +72,8 @@ jupyter kernelspec list      # what Jupyter sees
 ganymede kernelspec list     # what Ganymede sees
 ```
 
-To run notebooks on Deno, Bun, workerd or celld instead, install a kernel
+To run notebooks on Deno, Bun, workerd (Cloudflare's runtime for Workers)
+or celld (which runs Workers on your own storage) instead, install a kernel
 for each (`--runtime deno` and so on). [Install](install.md) covers those,
 installing from JSR with Deno, and what each runtime needs. Linux and macOS
 are supported; Windows isn't yet.
