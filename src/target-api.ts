@@ -28,6 +28,8 @@ export interface KernelTarget {
   /** Resolves once all output and messages sent so far have been delivered. */
   flush(): Promise<void>;
   broadcastResult(executionCount: number, result: RemoteObject): Promise<void>;
+  /** A value's MIME bundle, as a cell's result would show it: for user_expressions (#340). */
+  format(value: RemoteObject): Promise<CdpParams>;
   dispatchComm(
     msgType: string,
     content: CdpParams,
@@ -54,6 +56,12 @@ export interface KernelTarget {
 export type TargetMessage =
   | { kind: "iopub"; msg_type: string; content: CdpParams; metadata: CdpParams; buffers: string[]; barrier: number }
   | { kind: "input_request"; prompt: string; password: boolean; barrier: number };
+
+/** A MIME bundle the target sent as JSON text; empty if it isn't one. */
+export function parseBundle(text: unknown): CdpParams {
+  const bundle = typeof text === "string" ? parseJson(text) : undefined;
+  return typeof bundle === "object" && bundle !== null && !Array.isArray(bundle) ? bundle as CdpParams : {};
+}
 
 /** The parsed value, or undefined for text that isn't JSON. */
 export function parseJson(text: string): unknown {

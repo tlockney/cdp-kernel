@@ -3,6 +3,7 @@
 // the language service in a worker thread, and the visual debugger.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
@@ -30,6 +31,16 @@ export interface ConnectionInfo {
   stdin_port: number;
   iopub_port: number;
   hb_port: number;
+}
+
+/** The installed TypeScript's version, for kernel_info's language_info (#340). */
+function typescriptVersion(): string | undefined {
+  try {
+    const { version } = createRequire(import.meta.url)("typescript/package.json") as { version?: unknown };
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Larger files get no source lines in a traceback. */
@@ -164,6 +175,7 @@ export class Kernel {
     this.#core = new KernelCore({
       runtime,
       version: VERSION,
+      languageVersion: typescriptVersion(),
       channels: new ZmqChannels(conn, log),
       launchTarget(events) {
         if (runtime === "bun") return BunTarget.launch(events);

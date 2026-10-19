@@ -4,6 +4,15 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- `execute_request`'s `user_expressions` are evaluated after a cell that
+  succeeds, and `execute_reply` returns each one's MIME bundle, or the
+  error it threw, as ipykernel does. They were ignored before.
+- `kernel_info_reply`'s `language_info.version` is the installed
+  TypeScript's version instead of `"5"`
+  ([#340](https://github.com/tlockney/cdp-kernel/issues/340)).
+
 ## 0.7.0 (2026-10-19)
 
 - Experimental: the kernel runs in a web page, with cells in a Web Worker
