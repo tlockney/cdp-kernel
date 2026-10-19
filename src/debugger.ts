@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { type CdpParams, isRecord, isRemoteObject, type RemoteObject } from "./cdp.ts";
 import { murmur2 } from "./murmur2.ts";
 import type { LineMap } from "./sourcemap.ts";
-import { type CellTransformOptions, SETTLE, transformCellWithLines } from "./transform.ts";
+import { type CellTransformOptions, SETTLE, transformCellWithLines, YIELD } from "./transform.ts";
 
 /** What the debugger needs from a CDP target: its session, with the Debugger domain. */
 export interface DebugChannel {
@@ -495,14 +495,15 @@ export class Debugger {
     // While paused, only a frame can evaluate: use the top one if none was named.
     const frame = typeof frameId === "number" ? this.#frames[frameId] : this.#stopped ? this.#frames[0] : undefined;
     // replMode (for the console's `await`) returns a promise the inspector
-    // holds only weakly: SETTLE closes that window, as for cells (#55). A
-    // side-effect-free lookup can't await, so it uses a plain evaluate.
+    // holds only weakly: YIELD and SETTLE close that window, as for cells
+    // (#55, #329). A side-effect-free lookup can't await, so it uses a plain
+    // evaluate.
     const res = frame
       ? await channel.send("Debugger.evaluateOnCallFrame", { callFrameId: frame.callFrameId, expression, throwOnSideEffect: pure })
       : pure
       ? await channel.send("Runtime.evaluate", { expression, contextId: channel.contextId, throwOnSideEffect: true })
       : await this.#withoutPausing(() =>
-        channel.send("Runtime.evaluate", { expression: expression + SETTLE, contextId: channel.contextId, replMode: true })
+        channel.send("Runtime.evaluate", { expression: YIELD + expression + SETTLE, contextId: channel.contextId, replMode: true })
       );
     if (isRecord(res.exceptionDetails)) {
       const exception = res.exceptionDetails.exception as RemoteObject | undefined;

@@ -26,7 +26,14 @@ export const SHIM = "__cdpk";
 // which is what lets a Runtime.terminateExecution from the control session
 // interrupt a busy loop. (Within that dispatch the inspector processes no
 // other messages, so an interrupt would never be seen.)
-const PRELUDE = `'use strict'; await ${SHIM}.tick();\n`;
+//
+// An expression that throws before its first await rejects the replMode
+// result promise at once, inside that dispatch, and a GC before the
+// inspector's then-callback runs fails the evaluate with "Promise was
+// collected" (#329). Yielding first moves the throw into a task, where
+// SETTLE's reasoning applies. The debug console uses YIELD for this.
+export const YIELD = `await ${SHIM}.tick();\n`;
+const PRELUDE = `'use strict'; ${YIELD}`;
 
 /**
  * Each replMode cell also ends by yielding one macrotask, so the script
