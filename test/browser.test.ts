@@ -42,7 +42,19 @@ const kernel = startBrowserKernel({
   createWorker: () => new Worker("./worker.js", { type: "module" }),
   cdn: location.origin + "/cdn/",
   log: () => {},
+  // A host page's own features (#384).
+  preload: ["./broken.mjs", "./preload.mjs"],
+  capabilities: { device: ["echo"] },
+  host: async ({ method, params }, signal) => {
+    if (method === "echo") return { echoed: params };
+    if (method === "fail") throw Object.assign(new Error("nope"), { name: "DeviceError", code: "denied" });
+    return new Promise((_, reject) => signal.addEventListener("abort", () => {
+      globalThis.aborted = (globalThis.aborted ?? 0) + 1;
+      reject(new Error("aborted"));
+    }));
+  },
 });
+globalThis.kernel = kernel;
 const seen = [];
 kernel.onMessage((channel, msg) => seen.push({ channel, msg }));
 function header(msg_type) {
@@ -66,7 +78,20 @@ globalThis.execute = (code) => request("shell", "execute_request", { code, silen
 globalThis.ready = true;
 </script>`;
 
+const PRELOAD = `export default function ({ host, jupyter }) {
+  globalThis.device = {
+    echo: (value) => host.request("echo", value),
+    fail: () => host.request("fail", null),
+    wait: (signal) => host.request("wait", null, { signal }),
+    events: [],
+    hasJupyter: typeof jupyter.display === "function",
+  };
+  host.onEvent((event, value) => globalThis.device.events.push([event, value]));
+}`;
+
 const FILES: Record<string, { type: string; body: string }> = {
+  "/preload.mjs": { type: "text/javascript", body: PRELOAD },
+  "/broken.mjs": { type: "text/javascript", body: "throw new Error('broken preload');" },
   "/local.mjs": { type: "text/javascript", body: "export const where = 'local';" },
   "/cdn/left-pad@1": { type: "text/javascript", body: "export default (s, n) => String(s).padStart(n);" },
 };
@@ -106,7 +131,8 @@ async function open(t: { after(fn: () => unknown): void }) {
   const request = (channel: string, type: string, content: object) =>
     page.evaluate(([ch, ty, co]) =>
       (globalThis as unknown as { request(a: unknown, b: unknown, c: unknown): Promise<Reply[]> }).request(ch, ty, co), [channel, type, content] as const);
-  return { execute, request };
+  const evaluate = <T>(expression: string) => page.evaluate((e) => (0, eval)(e) as T, expression);
+  return { execute, request, evaluate };
 }
 
 const of = (replies: Reply[], type: string) => replies.filter((r) => r.type === type).map((r) => r.content);
@@ -173,4 +199,34 @@ test("interrupting a waiting cell keeps the Worker's state", { skip }, async (t)
   await request("control", "interrupt_request", {});
   assert.equal(of(await waiting, "execute_reply")[0].ename, "Interrupted");
   assert.equal(result(await execute("kept")), "'yes'");
+});
+
+test("preload modules reach the host page, before the first cell and after a restart (#384)", { skip }, async (t) => {
+  const { execute, request, evaluate } = await open(t);
+
+  const info = of(await request("shell", "kernel_info_request", {}), "kernel_info_reply")[0];
+  assert.deepEqual(info.capabilities, { device: ["echo"] });
+
+  // The broken module before it didn't stop it.
+  assert.equal(result(await execute("device.hasJupyter")), "true");
+  assert.equal(result(await execute("(await device.echo({ n: 1, bytes: new Uint8Array([7]) })).echoed.bytes[0]")), "7");
+
+  let r = await execute("await device.fail().catch((e) => `${e.name} ${e.message} ${e.code}`)");
+  assert.equal(result(r), "'DeviceError nope denied'");
+
+  // Aborting a call cancels it on the page.
+  r = await execute("const c = new AbortController(); const p = device.wait(c.signal); c.abort(); await p.catch((e) => e.name)");
+  assert.equal(result(r), "'AbortError'");
+  assert.equal(await evaluate<number>("globalThis.aborted"), 1);
+
+  await evaluate("kernel.notifyHost('appearance', 'dark')");
+  assert.equal(result(await execute("JSON.stringify(device.events)")), `'[["appearance","dark"]]'`);
+
+  // An interrupted call is cancelled with its Worker, and the new Worker preloads again.
+  const busy = execute("device.wait(); while (true) {}");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await request("control", "interrupt_request", {});
+  await busy;
+  assert.equal(await evaluate<number>("globalThis.aborted"), 2);
+  assert.equal(result(await execute("typeof device.echo")), "'function'");
 });

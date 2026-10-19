@@ -6,6 +6,14 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The browser target can offer cells a page's own features: `preload`
+  modules run in the Worker before the first cell and after each restart,
+  and get a `host` whose requests the page answers with its `host`
+  handler, with cancellation through an `AbortSignal`. A `capabilities`
+  option is returned in `kernel_info_reply`, and `notifyHost` sends the
+  Worker events
+  ([#384](https://github.com/tlockney/cdp-kernel/issues/384)).
+
 - The debugger no longer stops on an exception thrown in Deno's or
   Node's own built-in code (`ext:` and `node:` scripts), as Chrome's
   ignore list does. With "Caught Exceptions" on, Deno's lazy setup of

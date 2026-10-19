@@ -8,6 +8,9 @@
 //
 // A Worker has no module resolution beyond URLs, so `npm:` and `jsr:`
 // specifiers, and bare package names, load from a CDN (esm.sh by default).
+//
+// The page can also offer cells its own features (#384): `host` requests go
+// to the page's handler, and `preload` modules run before the first cell.
 
 import { createJupyter } from "./display.mjs";
 import { createHandler } from "./evaluator.mjs";
@@ -68,6 +71,82 @@ const jupyter = createJupyter({
 let cdn = DEFAULT_CDN;
 
 
+// --- The host page (#384) -----------------------------------------------------
+// Requests to the page's `host` handler (src/browser/target.ts), and events
+// it sends. Preload modules get this object; cells only through them.
+const hostCalls = new Map();
+const hostListeners = new Set();
+let nextHostId = 0;
+
+function hostError(error) {
+  const err = new Error(String(error?.message ?? "the host request failed"));
+  if (typeof error?.name === "string") err.name = error.name;
+  if (error?.code !== undefined) err.code = error.code;
+  return err;
+}
+
+const host = {
+  /** Resolves with the page's answer; aborting `signal` cancels the call on the page too. */
+  request(method, params, { signal, transfer } = {}) {
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    const id = ++nextHostId;
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        hostCalls.delete(id);
+        post({ kind: "host", id, cancel: true });
+        reject(signal.reason);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const done = () => signal?.removeEventListener("abort", onAbort);
+      try {
+        globalThis.postMessage({ kind: "host", id, method, params }, transfer ?? []);
+      } catch (err) {
+        done(); // params structured clone can't copy
+        throw err;
+      }
+      hostCalls.set(id, { resolve, reject, done });
+    });
+  },
+  /** Calls `listener(event, value)` for each event the page sends; returns a function that stops it. */
+  onEvent(listener) {
+    hostListeners.add(listener);
+    return () => hostListeners.delete(listener);
+  },
+};
+
+function receiveHost(msg) {
+  if (msg.id === undefined) {
+    for (const listener of hostListeners) {
+      try {
+        listener(msg.event, msg.value);
+      } catch (err) {
+        reportUncaught("Uncaught", err);
+      }
+    }
+    return;
+  }
+  const call = hostCalls.get(msg.id);
+  if (!call) return; // cancelled
+  hostCalls.delete(msg.id);
+  call.done();
+  if (msg.error !== undefined) call.reject(hostError(msg.error));
+  else call.resolve(msg.result);
+}
+
+// Each module is imported in order, and a default export that is a function
+// is called with the host. A module that fails is reported, and the kernel
+// runs without it.
+async function preload(urls, base) {
+  for (const specifier of Array.isArray(urls) ? urls : []) {
+    try {
+      const mod = await import(new URL(specifier, base).href);
+      if (typeof mod.default === "function") await mod.default({ host, jupyter: jupyter.namespace });
+    } catch (err) {
+      reportUncaught(`Preloading ${specifier} failed`, err);
+    }
+  }
+}
+
 // --- The shim cells and the evaluator use -----------------------------------
 let handle = null;
 
@@ -106,6 +185,7 @@ function install({ base, cdn: cdnBase }) {
 async function answer(req) {
   if (req.op === "info") {
     install(req);
+    await preload(req.preload, req.base);
     return { userAgent: globalThis.navigator?.userAgent ?? "" };
   }
   if (handle === null) throw new Error("the driver wasn't sent info first");
@@ -114,6 +194,7 @@ async function answer(req) {
 
 globalThis.addEventListener("message", (event) => {
   const req = event.data;
+  if (req?.op === "host") return receiveHost(req);
   answer(req).then(
     (reply) => post({ kind: "reply", id: req.id, ...reply }),
     (err) => post({ kind: "reply", id: req.id, failure: String(err?.stack ?? err) }),

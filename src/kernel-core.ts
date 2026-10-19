@@ -76,6 +76,8 @@ export interface KernelHost {
   /** Shown once, in the first cell: e.g. why a project config wasn't used. */
   readonly warning?: string | null;
   readonly types?: TypeService | null;
+  /** Returned as `capabilities` in kernel_info_reply, when set: what the host offers cells (#384). */
+  readonly capabilities?: JsonObject;
   /** JupyterLab's visual debugger, for targets driven over CDP (#18). */
   createDebugger?(publish: (event: JsonObject) => void, transformOptions: () => CellTransformOptions): Debugger;
   /** A file's source, for the lines around a traceback frame (#322). */
@@ -479,6 +481,7 @@ export class KernelCore {
       // What current ipykernel advertises; JupyterLab itself goes by the
       // kernelspec's metadata.debugger.
       supported_features: this.#debugger !== null ? ["debugger"] : [],
+      ...(this.#host.capabilities ? { capabilities: this.#host.capabilities } : {}),
     };
   }
 

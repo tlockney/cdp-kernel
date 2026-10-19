@@ -30,7 +30,29 @@ export interface BrowserTargetOptions {
   base?: string;
   /** Where npm:, jsr: and bare imports load from; esm.sh by default. */
   cdn?: string;
+  /**
+   * Modules the Worker imports before the first cell, each time it starts,
+   * resolved against `base`. A module's default export, if a function, is
+   * called with `{ host, jupyter }` (#384).
+   */
+  preload?: string[];
+  /** Answers the Worker's `host.request` calls; without it they reject (#384). */
+  host?: HostHandler;
 }
+
+/** A request a preload module made with `host.request(method, params)`. */
+export interface HostRequest {
+  method: string;
+  params: unknown;
+}
+
+/**
+ * Resolves with the value `host.request` resolves with in the Worker, or
+ * rejects, and the Worker's promise rejects with an Error carrying the
+ * thrown error's `name`, `message` and `code`. `signal` aborts when the
+ * Worker cancels the call or stops.
+ */
+export type HostHandler = (request: HostRequest, signal: AbortSignal) => unknown;
 
 /** Rejects a request whose reply the target no longer waits for. */
 class Abandoned extends Error {}
@@ -46,14 +68,18 @@ export class BrowserTarget implements KernelTarget {
   readonly #pending = new Map<number, Pending>();
   /** Requests that interrupt() abandons when the driver can still answer. */
   readonly #interruptible = new Set<number>();
+  /** Host requests in flight, by the Worker's id (#384). */
+  readonly #hostCalls = new Map<number, AbortController>();
+  readonly #host: HostHandler | undefined;
   #nextId = 0;
   #interrupted = false;
   #stopNote: string | undefined;
   #exited = false;
 
-  private constructor(worker: WorkerLike, events: TargetEvents) {
+  private constructor(worker: WorkerLike, events: TargetEvents, host: HostHandler | undefined) {
     this.#worker = worker;
     this.#events = events;
+    this.#host = host;
     worker.addEventListener("message", (event) => this.#receive(event.data));
     // A driver that failed to load: what's pending can't be answered.
     worker.addEventListener("error", (event) => {
@@ -63,10 +89,10 @@ export class BrowserTarget implements KernelTarget {
   }
 
   static async launch(events: TargetEvents, options: BrowserTargetOptions): Promise<BrowserTarget> {
-    const target = new BrowserTarget(options.createWorker(), events);
+    const target = new BrowserTarget(options.createWorker(), events, options.host);
     const base = options.base ?? globalThis.location?.href ?? "file:///";
     try {
-      const { userAgent } = await target.#request("info", { base, cdn: options.cdn });
+      const { userAgent } = await target.#request("info", { base, cdn: options.cdn, preload: options.preload ?? [] });
       if (typeof userAgent === "string") target.versions.runtime = browserName(userAgent);
       target.versions.engine = engineName(typeof userAgent === "string" ? userAgent : "");
     } catch (err) {
@@ -79,6 +105,8 @@ export class BrowserTarget implements KernelTarget {
   #receive(msg: unknown): void {
     if (isRecord(msg) && msg.kind === "stream") {
       this.#events.stream(msg.name === "stderr" ? "stderr" : "stdout", String(msg.text));
+    } else if (isRecord(msg) && msg.kind === "host") {
+      this.#hostRequest(msg);
     } else if (isTargetMessage(msg)) {
       this.#events.message(msg);
     } else if (isRecord(msg) && msg.kind === "reply") {
@@ -92,10 +120,46 @@ export class BrowserTarget implements KernelTarget {
     }
   }
 
+  #hostRequest(msg: CdpParams): void {
+    const id = Number(msg.id);
+    if (msg.cancel === true) {
+      this.#hostCalls.get(id)?.abort();
+      this.#hostCalls.delete(id);
+      return;
+    }
+    const controller = new AbortController();
+    this.#hostCalls.set(id, controller);
+    const answer = (reply: CdpParams) => {
+      if (this.#hostCalls.get(id) !== controller) return; // cancelled, or the Worker stopped
+      this.#hostCalls.delete(id);
+      try {
+        this.#worker.postMessage({ op: "host", id, ...reply });
+      } catch (err) {
+        // A result structured clone can't copy, such as a function.
+        this.#worker.postMessage({ op: "host", id, error: describeHostError(err) });
+      }
+    };
+    const host = this.#host;
+    new Promise((resolve) => {
+      if (!host) throw new Error("this page offers no host requests");
+      resolve(host({ method: String(msg.method), params: msg.params }, controller.signal));
+    }).then(
+      (result) => answer({ result }),
+      (err) => answer({ error: describeHostError(err) }),
+    );
+  }
+
+  /** Sends `host.onEvent` listeners in the Worker an event (#384). */
+  notifyHost(event: string, value?: unknown): void {
+    if (!this.#exited) this.#worker.postMessage({ op: "host", event, value });
+  }
+
   #exit(code: number | null): void {
     if (this.#exited) return;
     this.#exited = true;
     this.#worker.terminate();
+    for (const controller of this.#hostCalls.values()) controller.abort();
+    this.#hostCalls.clear();
     // Reported before the requests it cut off fail, so the note lands in
     // the interrupted cell's output.
     this.#events.exit(code, this.#stopNote);
@@ -209,6 +273,18 @@ export class BrowserTarget implements KernelTarget {
   kill(): void {
     this.#exit(null);
   }
+}
+
+function describeHostError(err: unknown): CdpParams {
+  if (isRecord(err)) {
+    const { name, message, code } = err;
+    return {
+      name: typeof name === "string" ? name : "Error",
+      message: typeof message === "string" ? message : String(err),
+      ...(code === undefined ? {} : { code: code as CdpParams[string] }),
+    };
+  }
+  return { name: "Error", message: String(err) };
 }
 
 function toBase64(bytes: Uint8Array): string {

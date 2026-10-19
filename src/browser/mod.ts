@@ -10,6 +10,7 @@
 //   kernel.send("shell", executeRequest);
 
 import { KernelCore } from "../kernel-core.ts";
+import type { JsonObject } from "../message.ts";
 import type { TypeStripper, TypeStripperName } from "../transform.ts";
 // The browser build (scripts/build-browser.mjs) swaps package.ts, which
 // imports Node, for its VERSION alone.
@@ -18,13 +19,15 @@ import { type Channel, type JupyterMessage, type MessageListener, PageChannels }
 import { BrowserTarget, type BrowserTargetOptions } from "./target.ts";
 
 export type { Channel, JupyterMessage, MessageListener } from "./channels.ts";
-export { BrowserTarget, type BrowserTargetOptions, type WorkerLike } from "./target.ts";
+export { BrowserTarget, type BrowserTargetOptions, type HostHandler, type HostRequest, type WorkerLike } from "./target.ts";
 
 export interface BrowserKernelOptions extends BrowserTargetOptions {
   /** What strips cells' types; sucrase by default, since esbuild's native binary can't run in a page. */
   typeStrip?: TypeStripperName | TypeStripper;
   /** Where the kernel's own log lines go; console.debug by default. */
   log?(text: string): void;
+  /** Returned as `capabilities` in kernel_info_reply: what this page offers cells (#384). */
+  capabilities?: JsonObject;
 }
 
 export interface BrowserKernel {
@@ -34,6 +37,8 @@ export interface BrowserKernel {
   onMessage(listener: MessageListener): () => void;
   /** Settles once a shutdown_request has been answered. */
   readonly closed: Promise<void>;
+  /** An event for the Worker's `host.onEvent` listeners; dropped while no Worker runs (#384). */
+  notifyHost(event: string, value?: unknown): void;
 }
 
 export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel {
@@ -41,12 +46,14 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
   const log = options.log ?? ((text: string) => console.debug(`[cdp-kernel] ${text}`));
   let closed!: () => void;
   const closedPromise = new Promise<void>((resolve) => (closed = resolve));
+  let target: BrowserTarget | null = null;
   const core = new KernelCore({
     runtime: "browser",
     version: VERSION,
     channels,
-    launchTarget: (events) => BrowserTarget.launch(events, options),
+    launchTarget: async (events) => (target = await BrowserTarget.launch(events, options)),
     typeStrip: options.typeStrip ?? "sucrase",
+    capabilities: options.capabilities,
     log,
     exit: () => closed(),
   });
@@ -55,5 +62,6 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
     send: (channel, msg) => channels.deliver(channel, msg),
     onMessage: (listener) => channels.onMessage(listener),
     closed: closedPromise,
+    notifyHost: (event, value) => target?.notifyHost(event, value),
   };
 }
