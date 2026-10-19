@@ -13,11 +13,7 @@
   --code-string: #032f62;
   --code-type: #6f42c1;
   --inline-code-bg: rgba(142, 150, 170, 0.14);
-  --lvl-intro: #18794e;
-  --lvl-intro-bg: rgba(24, 121, 78, 0.14);
   --accent-soft: rgba(46, 110, 100, 0.14);
-  --lvl-adv: #6f42c1;
-  --lvl-adv-bg: rgba(111, 66, 193, 0.14);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 }
@@ -40,11 +36,7 @@
     --code-string: #9ecbff;
     --code-type: #b392f0;
     --inline-code-bg: rgba(101, 117, 133, 0.16);
-    --lvl-intro: #3dd68c;
-    --lvl-intro-bg: rgba(16, 185, 129, 0.16);
     --accent-soft: rgba(90, 168, 155, 0.16);
-    --lvl-adv: #c8abfa;
-    --lvl-adv-bg: rgba(159, 122, 234, 0.16);
   }
 }
 :root[data-theme="dark"] {
@@ -61,11 +53,7 @@
   --code-string: #9ecbff;
   --code-type: #b392f0;
   --inline-code-bg: rgba(101, 117, 133, 0.16);
-  --lvl-intro: #3dd68c;
-  --lvl-intro-bg: rgba(16, 185, 129, 0.16);
   --accent-soft: rgba(90, 168, 155, 0.16);
-  --lvl-adv: #c8abfa;
-  --lvl-adv-bg: rgba(159, 122, 234, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -182,9 +170,9 @@ pre code { font-size: inherit; }
   text-transform: uppercase;
 }
 /* The docs' level badges (docs/.vitepress/theme/custom.css). */
-.lvl.intro { color: var(--lvl-intro); background: var(--lvl-intro-bg); }
+.lvl.intro { color: var(--bg); background: var(--accent); }
 .lvl.guide { color: var(--accent); background: var(--accent-soft); }
-.lvl.adv { color: var(--lvl-adv); background: var(--lvl-adv-bg); }
+.lvl.adv { color: var(--accent); background: transparent; box-shadow: inset 0 0 0 1px var(--accent); }
 .diagram { display: block; width: 100%; height: auto; margin: 0 0 24px; border-radius: 8px; }
 
 .note { border-left: 3px solid var(--accent); padding: 4px 0 4px 20px; }
