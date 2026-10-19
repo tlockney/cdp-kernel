@@ -5,7 +5,9 @@ into Deno 2.9.6 (`deno jupyter`), that runs notebooks on several JavaScript runt
 host runs on Node or Deno; the code you type runs in a separate **target**
 runtime: Node or Deno over the Chrome DevTools Protocol, or Bun, workerd and
 celld, which evaluate cells in-process. In principle, anything else whose
-inspector speaks CDP works too.
+inspector speaks CDP works too. The kernel can also run inside a web page,
+with cells in a Web Worker and no server
+([The browser](https://cdp-kernel.org/docs/integration-browser), experimental).
 
 **Website:** <https://cdp-kernel.org/> ·
 **Docs:** [cdp-kernel.org/docs](https://cdp-kernel.org/docs/)
