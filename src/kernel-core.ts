@@ -65,6 +65,8 @@ export interface KernelHost {
   /** The target's name, for the banner and messages. */
   readonly runtime: string;
   readonly version: string;
+  /** The TypeScript version cells are checked against; TYPESCRIPT_VERSION if not given. */
+  readonly languageVersion?: string;
   readonly channels: KernelChannels;
   launchTarget(events: TargetEvents): Promise<KernelTarget>;
   /** What strips cells' types; esbuild by default (#238). */
@@ -84,6 +86,12 @@ export interface KernelHost {
   /** After shutdown_reply has gone out. */
   exit(): void;
 }
+
+/**
+ * kernel_info's language_info.version when the host doesn't know the
+ * installed TypeScript's: the major version package.json depends on.
+ */
+export const TYPESCRIPT_VERSION = "6";
 
 function fromBase64(text: string): Uint8Array {
   return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
@@ -406,6 +414,8 @@ export class KernelCore {
   async #loop(channel: ChannelName, handle: (msg: KernelMessage, peer: string) => Promise<void>): Promise<void> {
     while (!this.#shuttingDown) {
       const received = await this.#channels.recv(channel);
+      // Before the drop below: shellQueued() counted this message too, so
+      // a dropped one takes its own abort slot, not a queued cell's (#340).
       if (channel === "shell") {
         this.#aborting = this.#abortQueued > 0;
         if (this.#aborting) this.#abortQueued--;
@@ -433,7 +443,7 @@ export class KernelCore {
       implementation_version: this.#host.version,
       language_info: {
         name: "typescript",
-        version: "5",
+        version: this.#host.languageVersion ?? TYPESCRIPT_VERSION,
         mimetype: "text/x.typescript",
         file_extension: ".ts",
         pygments_lexer: "typescript",
@@ -735,6 +745,41 @@ export class KernelCore {
     return target.evaluate(transform(code));
   }
 
+  /** execute_request's user_expressions, each as its value's MIME bundle or the error it threw (#340). */
+  async #userExpressions(target: KernelTarget, expressions: unknown): Promise<JsonObject> {
+    const results: JsonObject = {};
+    if (typeof expressions !== "object" || expressions === null) return results;
+    for (const [name, expression] of Object.entries(expressions)) {
+      results[name] = await this.#userExpression(target, String(expression));
+    }
+    return results;
+  }
+
+  async #userExpression(target: KernelTarget, expression: string): Promise<JsonObject> {
+    try {
+      // On their own lines, so a trailing line comment can't swallow the paren.
+      const source = `(\n${expression}\n)`;
+      const result = await target.evaluate(`${target.transform(source, this.#transformOptions())}\n//# sourceURL=$cdpk$user-expression.ts`);
+      if (result.exceptionDetails) {
+        const exception = result.exceptionDetails.exception;
+        const described = exception
+          ? await target.describeError(exception)
+          : { name: "Error", message: result.exceptionDetails.text, stack: "" };
+        return {
+          status: "error",
+          ename: described.name || "Error",
+          evalue: described.message,
+          traceback: (described.stack || `${described.name}: ${described.message}`).split("\n"),
+        };
+      }
+      return { status: "ok", data: await target.format(result.result) as JsonObject, metadata: {} };
+    } catch (err) {
+      const ename = err instanceof CellSyntaxError ? "SyntaxError" : err instanceof Interrupted ? "Interrupted" : "Error";
+      const evalue = err instanceof Error ? err.message : String(err);
+      return { status: "error", ename, evalue, traceback: [`${ename}: ${evalue}`] };
+    }
+  }
+
   async #execute(msg: KernelMessage, peer: string): Promise<void> {
     const parent = msg.header;
     if (this.#aborting) {
@@ -763,6 +808,7 @@ export class KernelCore {
     }
 
     let error: ErrorContent | null = null;
+    let userExpressions: JsonObject = {};
     // nteract's structured traceback, sent as the error message's metadata (#322).
     let structured: JsonObject | null = null;
     this.#executing = true;
@@ -795,6 +841,8 @@ export class KernelCore {
       } else if (!silent && result.result.type !== "undefined") {
         await target.broadcastResult(count, result.result);
       }
+      // As in ipykernel: only after a cell that succeeded (#340).
+      if (!result.exceptionDetails) userExpressions = await this.#userExpressions(target, msg.content.user_expressions);
       await target.flush();
     } catch (err) {
       if (err instanceof CellSyntaxError) {
@@ -828,7 +876,7 @@ export class KernelCore {
         status: "ok",
         execution_count: count,
         payload: [],
-        user_expressions: {},
+        user_expressions: userExpressions,
       });
     }
     this.#status("idle", parent);
