@@ -4,6 +4,15 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- Starting a workerd kernel no longer trusts other users' entries in the
+  temp directory when it cleans up after dead kernels: it skips any
+  `cdpk-workerd-*` directory that isn't a private one of this user's, so
+  a planted `owner.json` can't make it kill another process (on macOS) or
+  stop the kernel starting. A cleanup that fails is ignored
+  ([#335](https://github.com/tlockney/cdp-kernel/issues/335)).
+
 ## 0.7.0 (2026-10-19)
 
 - Experimental: the kernel runs in a web page, with cells in a Web Worker

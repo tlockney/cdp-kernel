@@ -19,7 +19,7 @@ import { Buffer } from "node:buffer";
 import process from "node:process";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -216,8 +216,28 @@ function pidAlive(pid: number): boolean {
 function isWorkerdIn(pid: number, dir: string): boolean {
   try {
     if (process.platform === "linux") return readlinkSync(`/proc/${pid}/cwd`) === dir;
-    const args = execFileSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
-    return /workerd/.test(args) && args.includes("config.capnp");
+    // No cwd to compare elsewhere: the process must at least be ours and
+    // look like a workerd (#335).
+    const [uid, ...args] = execFileSync("ps", ["-o", "uid=,args=", "-p", String(pid)], { encoding: "utf8" }).trim().split(/\s+/);
+    const command = args.join(" ");
+    return Number(uid) === process.getuid?.() && /workerd/.test(command) && command.includes("config.capnp");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether `dir` is a directory mkdtemp made for this user: not a symlink,
+ * owned by us, and closed to everyone else. Anyone can create entries in
+ * tmpdir(), so nothing in a directory that fails this is trusted (#335).
+ * Windows has no uids; its tmpdir() is per-user.
+ */
+function isOwnPrivateDir(dir: string): boolean {
+  try {
+    const stat = lstatSync(dir);
+    if (!stat.isDirectory()) return false;
+    if (process.getuid === undefined) return true;
+    return stat.uid === process.getuid() && (stat.mode & 0o077) === 0;
   } catch {
     return false;
   }
@@ -237,11 +257,12 @@ export function sweepStaleWorkerdDirs(root = tmpdir()): void {
   }
   for (const name of names) {
     const dir = join(root, name);
+    if (!isOwnPrivateDir(dir)) continue;
     let owner: { host?: unknown; workerd?: unknown };
     try {
       owner = JSON.parse(readFileSync(join(dir, OWNER_FILE), "utf8"));
     } catch {
-      continue; // Another user's, from before owner files, or being set up.
+      continue; // From before owner files, or being set up.
     }
     if (typeof owner.host !== "number" || pidAlive(owner.host)) continue;
     if (typeof owner.workerd === "number" && isWorkerdIn(owner.workerd, dir)) {
@@ -251,7 +272,11 @@ export function sweepStaleWorkerdDirs(root = tmpdir()): void {
         // Gone already.
       }
     }
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // Cleanup is best effort; it must not stop this kernel starting.
+    }
   }
 }
 
