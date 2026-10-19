@@ -105,12 +105,17 @@ SHOTS = {
     "temperature": temperature,
     "progress": progress,
     "chart": lambda page, i: output_has(page, i, "apple"),
+    "chart-update": lambda page, i: output_has(page, i, "6"),
     "canvas": lambda page, i: time.sleep(0.5),
     "dice": dice,
     "views": lambda page, i: output_has(page, i, "count is 10"),
 }
 
 RUNNING_SHOTS = {"progress"}
+
+# name -> the earlier example whose output to wait on and capture, for a
+# cell that changes a widget shown higher up rather than showing its own
+OUTPUT_OF = {"chart-update": "chart"}
 
 # name -> text the cell's output must contain
 EXPECT = {"counter-get": "3"}  # captured mid-run, so started without waiting
@@ -184,9 +189,12 @@ def run(runtime, write):
             page.evaluate(OPEN_NOTEBOOK, "widgets.ipynb")
             wait_until(page, KERNEL_IDLE, timeout=30, what="notebook with an idle kernel")
             page.add_style_tag(content=SHOT_CSS)
-            # Hide the notebook's toolbar and side panels' influence on layout.
-            page.evaluate("() => window.jupyterapp.commands.execute('application:toggle-left-area')")
+            # Close the side panels, so the notebook is as wide as it can be.
+            # Collapse rather than toggle: a restored workspace or the
+            # kernel's debugger can leave either side open.
+            page.evaluate("() => { window.jupyterapp.shell.collapseLeft(); window.jupyterapp.shell.collapseRight(); }")
 
+            names = [name for name, _ in cells]
             for index, (name, _) in enumerate(cells):
                 if name in RUNNING_SHOTS:
                     page.evaluate(START_CELL, index)
@@ -199,10 +207,11 @@ def run(runtime, write):
                     output_has(page, index, EXPECT[name])
                 action = SHOTS.get(name)
                 if action:
-                    whole = action(page, index) == "cell"
+                    shown = names.index(OUTPUT_OF[name]) if name in OUTPUT_OF else index
+                    whole = action(page, shown) == "cell"
                     if write:
                         path = IMAGES / f"{name}.png"
-                        capture(page, index, whole, path)
+                        capture(page, shown, whole, path)
                         widths[name] = png_width(path) // SCALE
                 if name in RUNNING_SHOTS:
                     wait_until(page, KERNEL_IDLE, timeout=60, what=f"{name} to finish")
