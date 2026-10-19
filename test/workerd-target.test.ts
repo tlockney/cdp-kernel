@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chownSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -272,7 +272,7 @@ test("sweepStaleWorkerdDirs removes a dead kernel's directory and stops its work
   // A pid that has exited, standing in for a SIGKILLed kernel.
   const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
   const stale = join(root, "cdpk-workerd-stale");
-  mkdirSync(stale);
+  mkdirSync(stale, { mode: 0o700 });
   // Stands in for its workerd: a process running in that directory.
   const orphan = spawn("sleep", ["60"], { cwd: stale, stdio: "ignore" });
   t.after(() => orphan.kill("SIGKILL"));
@@ -280,10 +280,10 @@ test("sweepStaleWorkerdDirs removes a dead kernel's directory and stops its work
   writeFileSync(join(stale, "owner.json"), JSON.stringify({ host: dead, workerd: orphan.pid }));
   // A live kernel's, and one whose workerd pid now belongs to another process.
   const live = join(root, "cdpk-workerd-live");
-  mkdirSync(live);
+  mkdirSync(live, { mode: 0o700 });
   writeFileSync(join(live, "owner.json"), JSON.stringify({ host: process.pid, workerd: orphan.pid }));
   const reused = join(root, "cdpk-workerd-reused");
-  mkdirSync(reused);
+  mkdirSync(reused, { mode: 0o700 });
   writeFileSync(join(reused, "owner.json"), JSON.stringify({ host: dead, workerd: process.pid }));
 
   sweepStaleWorkerdDirs(root);
@@ -291,6 +291,39 @@ test("sweepStaleWorkerdDirs removes a dead kernel's directory and stops its work
   assert.ok(!existsSync(stale));
   assert.ok(existsSync(live), "a live kernel's directory is kept");
   assert.ok(!existsSync(reused), "a dead kernel's directory goes");
+});
+
+test("sweepStaleWorkerdDirs leaves directories that aren't this user's private ones alone", { skip: process.platform === "win32" }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "cdpk-sweep-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+  // Stands in for another user's workerd that a planted owner.json names.
+  const victim = spawn("sleep", ["60"], { stdio: "ignore" });
+  t.after(() => victim.kill("SIGKILL"));
+  const plant = (dir: string) => writeFileSync(join(dir, "owner.json"), JSON.stringify({ host: dead, workerd: victim.pid }));
+  // Readable by others: not one mkdtemp made.
+  const open = join(root, "cdpk-workerd-open");
+  mkdirSync(open, { mode: 0o755 });
+  plant(open);
+  // A symlink to a directory elsewhere.
+  const target = mkdtempSync(join(root, "elsewhere-"));
+  plant(target);
+  const link = join(root, "cdpk-workerd-link");
+  symlinkSync(target, link);
+  // Another user's: only root can make one here.
+  const foreign = join(root, "cdpk-workerd-foreign");
+  if (process.getuid?.() === 0) {
+    mkdirSync(foreign, { mode: 0o700 });
+    plant(foreign);
+    chownSync(foreign, 65534, 65534);
+  }
+
+  sweepStaleWorkerdDirs(root);
+  assert.ok(existsSync(open));
+  assert.ok(existsSync(join(target, "owner.json")));
+  if (process.getuid?.() === 0) assert.ok(existsSync(foreign));
+  assert.equal(victim.exitCode, null);
+  assert.equal(victim.signalCode, null);
 });
 
 test("the driver Worker refuses a session without the right token", { skip }, async (t) => {
