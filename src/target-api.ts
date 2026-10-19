@@ -63,6 +63,28 @@ export function parseBundle(text: unknown): CdpParams {
   return typeof bundle === "object" && bundle !== null && !Array.isArray(bundle) ? bundle as CdpParams : {};
 }
 
+/** How long a target may take from launch to a usable session. */
+export const START_TIMEOUT_MS = 60_000;
+
+/**
+ * `start`, or a rejection once `ms` pass without it settling. The caller
+ * stops whatever was starting: a runtime that never becomes ready would
+ * otherwise wedge the first cell (#52, #336).
+ */
+export async function withStartTimeout<T>(start: Promise<T>, what: string, ms: number = START_TIMEOUT_MS): Promise<T> {
+  // Its own rejection, once the deadline has passed, is the caller's to ignore.
+  start.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not start within ${ms / 1000}s`)), ms);
+  });
+  try {
+    return await Promise.race([start, stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The parsed value, or undefined for text that isn't JSON. */
 export function parseJson(text: string): unknown {
   try {

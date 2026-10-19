@@ -30,6 +30,7 @@ import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, type TargetEvents } from "./target.ts";
+import { withStartTimeout } from "./target-api.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
 import { ensureInstalledAsync, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
@@ -344,7 +345,7 @@ export class RawWorkerd implements WorkerHost {
       }
     })();
     try {
-      const host = new RawWorkerd(child, await Promise.race([ready, exited]), compatibilityDate);
+      const host = new RawWorkerd(child, await withStartTimeout(Promise.race([ready, exited]), "workerd"), compatibilityDate);
       starting = false;
       early = "";
       return host;
@@ -410,14 +411,17 @@ export class WorkerdTarget implements KernelTarget {
    * project's own Miniflare runs the driver with the project's bindings;
    * otherwise a workerd of its own does (#26).
    */
-  static async launch(events: TargetEvents, options: { cwd?: string; executable?: string } = {}): Promise<WorkerdTarget> {
+  static async launch(
+    events: TargetEvents,
+    options: { cwd?: string; executable?: string; startTimeoutMs?: number } = {},
+  ): Promise<WorkerdTarget> {
     const cwd = options.cwd ?? process.cwd();
     const project = findWranglerConfig(cwd);
     let host: WorkerHost | null = null;
     let notice: string | undefined;
     if (project !== null) {
       try {
-        host = await startMiniflare(project, cwd);
+        host = await startMiniflare(project, cwd, options.startTimeoutMs);
       } catch (err) {
         // Like a broken deno.json (#13): say why in the first cell, and run
         // without the project.
@@ -426,7 +430,7 @@ export class WorkerdTarget implements KernelTarget {
       }
     }
     host ??= await RawWorkerd.start(cwd, options.executable);
-    return await WorkerdTarget.open(host, cwd, events, "workerd", notice);
+    return await WorkerdTarget.open(host, cwd, events, "workerd", { notice, startTimeoutMs: options.startTimeoutMs });
   }
 
   /**
@@ -438,11 +442,13 @@ export class WorkerdTarget implements KernelTarget {
     cwd: string,
     events: TargetEvents,
     runtime: WorkersRuntime,
-    notice?: string,
+    options: { notice?: string; startTimeoutMs?: number } = {},
   ): Promise<WorkerdTarget> {
     const target = new WorkerdTarget(host, cwd, events, runtime);
+    let notice = options.notice;
     try {
-      const { v8, bindings, worker } = await target.#request("info");
+      // A driver that never answers is stopped (#336).
+      const { v8, bindings, worker } = await withStartTimeout(target.#request("info"), `the ${runtime} driver`, options.startTimeoutMs);
       if (typeof v8 === "string" && v8) target.versions.engine = `V8 ${v8}`;
       if (host.project !== undefined) {
         const names = Array.isArray(bindings) ? bindings.map(String).sort().join(", ") : "";

@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Bun, workerd and celld targets that never become ready are stopped after
+  60 s, as Node and Deno targets already were, and the first cell reports
+  the failure instead of waiting forever. An interrupt while a target is
+  starting now ends the cell waiting for it
+  ([#336](https://github.com/tlockney/cdp-kernel/issues/336)).
 - `execute_request`'s `user_expressions` are evaluated after a cell that
   succeeds, and `execute_reply` returns each one's MIME bundle, or the
   error it threw, as ipykernel does. They were ignored before.

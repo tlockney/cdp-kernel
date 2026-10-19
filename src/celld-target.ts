@@ -27,6 +27,7 @@ import { parseJsonc } from "./deno-config.ts";
 import { runtimeDir } from "./package.ts";
 import { childPids, killOnExit, reapWith } from "./children.ts";
 import type { TargetEvents } from "./target.ts";
+import { withStartTimeout } from "./target-api.ts";
 import type { WsChannel } from "./ws-client.ts";
 import { cellMeta, type WorkerHost, WorkerdTarget } from "./workerd-target.ts";
 import { builtinAliases, findWranglerConfig } from "./workers-project.ts";
@@ -260,7 +261,12 @@ class CelldHost implements WorkerHost {
       return channelOf(ws);
     })();
     try {
-      const host = new CelldHost(child, await Promise.race([ready, exited]), `celld ${version}`.trim(), projectConfig ?? undefined);
+      const host = new CelldHost(
+        child,
+        await withStartTimeout(Promise.race([ready, exited]), "celld"),
+        `celld ${version}`.trim(),
+        projectConfig ?? undefined,
+      );
       // Its server, in its own process group, outlives a SIGKILLed celld dev.
       for (const pid of childPids(child.pid ?? -1)) reapWith(pid, child);
       starting = false;
@@ -311,5 +317,5 @@ export async function launchCelld(
     }
   }
   host ??= await CelldHost.start(cwd, null, options.executable);
-  return await WorkerdTarget.open(host, cwd, events, "celld", notice);
+  return await WorkerdTarget.open(host, cwd, events, "celld", { notice });
 }

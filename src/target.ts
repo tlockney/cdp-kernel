@@ -13,7 +13,18 @@ import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
 import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
-import { type CdpRuntime, Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, type RuntimeName, type TargetEvents, type TargetMessage } from "./target-api.ts";
+import {
+  type CdpRuntime,
+  Interrupted,
+  isTargetMessage,
+  type KernelTarget,
+  parseBundle,
+  parseJson,
+  type RuntimeName,
+  type TargetEvents,
+  type TargetMessage,
+  withStartTimeout,
+} from "./target-api.ts";
 
 export { Interrupted, isTargetMessage, parseBundle, parseJson };
 export type { CdpRuntime, KernelTarget, RuntimeName, TargetEvents, TargetMessage } from "./target-api.ts";
@@ -27,8 +38,6 @@ export type { CdpRuntime, KernelTarget, RuntimeName, TargetEvents, TargetMessage
 const CELL_GROUP = "cdpk-cell";
 const LOOKUP_GROUP = "cdpk-lookup";
 
-/** How long a target may take from spawn to a usable session. */
-const START_TIMEOUT_MS = 60_000;
 const MARKER_RE = /\x1b\[cdpk:(\d+)(m?)\]\x1b/;
 const MAX_MARKER_LEN = 24;
 // Lines the runtimes print to stderr on their own: inspector notices, and
@@ -428,19 +437,12 @@ export class Target implements KernelTarget {
     // A start that fails or stalls must not leave the runtime running: its
     // pipes and inspector sockets would keep this process alive (#52).
     const sessions: CdpSession[] = [];
-    const timeoutMs = options.startTimeoutMs ?? START_TIMEOUT_MS;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const stalled = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${cmd} did not start within ${timeoutMs / 1000}s`)), timeoutMs);
-    });
     try {
-      return await Promise.race([Target.#start(runtime, events, cmd, child, sessions), stalled]);
+      return await withStartTimeout(Target.#start(runtime, events, cmd, child, sessions), cmd, options.startTimeoutMs);
     } catch (error) {
       for (const session of sessions) session.close();
       child.kill();
       throw error;
-    } finally {
-      clearTimeout(timer);
     }
   }
 

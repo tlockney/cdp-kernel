@@ -6,6 +6,8 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Target, type TargetEvents } from "../src/target.ts";
+import { BunTarget } from "../src/bun-target.ts";
+import { type WorkerHost, WorkerdTarget } from "../src/workerd-target.ts";
 
 const events: TargetEvents = { stream: () => {}, message: () => {}, exit: () => {} };
 
@@ -54,4 +56,34 @@ test("a target whose bootstrap never installs the shim is stopped when the start
   const pid = Number(readFileSync(pidFile, "utf8"));
   for (let i = 0; i < 40 && alive(pid); i++) await new Promise((r) => setTimeout(r, 25));
   assert.equal(alive(pid), false, "the stalled runtime was killed");
+});
+
+test("a bun target that never becomes ready is stopped when the start times out", { skip: process.platform === "win32" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cdpk-start-"));
+  const pidFile = join(dir, "pid");
+  const fake = join(dir, "fake-bun");
+  // Stays up but never says it's ready on its channel (#336).
+  writeFileSync(fake, `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 60\n`);
+  chmodSync(fake, 0o755);
+
+  await assert.rejects(BunTarget.launch(events, { executable: fake, startTimeoutMs: 500 }), /did not start within 0.5s/);
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  for (let i = 0; i < 40 && alive(pid); i++) await new Promise((r) => setTimeout(r, 25));
+  assert.equal(alive(pid), false, "the stalled runtime was killed");
+});
+
+test("a workerd driver that never answers is stopped when the start times out", async () => {
+  let stopped = false;
+  // A session that is open but never replies (#336).
+  const host: WorkerHost = {
+    runtime: "workerd test",
+    channel: { send: () => {}, onMessage: () => {}, onClose: () => {}, close: () => {} },
+    stop: () => void (stopped = true),
+    onExit: () => {},
+  };
+  await assert.rejects(
+    WorkerdTarget.open(host, tmpdir(), events, "workerd", { startTimeoutMs: 200 }),
+    /the workerd driver did not start within 0.2s/,
+  );
+  assert.equal(stopped, true, "the host was stopped");
 });
