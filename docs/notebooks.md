@@ -65,6 +65,52 @@ it, a Deno target uses it, as `deno jupyter` does:
   `react-jsxdev`, `precompile`, `react`), `jsxImportSource`,
   `jsxFactory`, `jsxFragmentFactory`, `experimentalDecorators`.
 
+For example, this `deno.json` maps `@/` to `./lib/` and compiles JSX
+with the automatic runtime from `my-jsx`, which the import map points at
+a local file:
+
+```json
+{
+  "imports": {
+    "@/": "./lib/",
+    "my-jsx/jsx-runtime": "./my-jsx/jsx-runtime.ts"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "my-jsx"
+  }
+}
+```
+
+```ts
+// lib/greet.ts
+export const greet = (name: string): string => `hello ${name}`;
+```
+
+```ts
+// my-jsx/jsx-runtime.ts: renders elements to HTML strings
+export function jsx(type: string, { children, ...attrs }: Record<string, unknown>): string {
+  const attrText = Object.entries(attrs).map(([k, v]) => ` ${k}="${v}"`).join("");
+  return `<${type}${attrText}>${[children].flat().join("")}</${type}>`;
+}
+export const jsxs = jsx;
+```
+
+A notebook in that directory, or below it, can then import through the
+alias and write JSX:
+
+```tsx
+import { greet } from "@/greet.ts";
+
+<b class="greeting">{greet("deno")}</b>
+```
+
+```
+'<b class="greeting">hello deno</b>'
+```
+
+With a JSX library, set `jsxImportSource` to its package instead.
+
 The import map wins over `node_modules`, as in Deno. The kernel never
 writes to the project's lockfile. A `deno.json` that doesn't parse is
 reported in the first cell's output, and the kernel runs as in a plain
