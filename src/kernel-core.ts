@@ -20,10 +20,12 @@ import {
   objectLiteralCandidate,
   type TypeStripper,
   type TypeStripperName,
+  transformCellWithLines,
 } from "./transform.ts";
 import { checkIsComplete, codePointToUtf16Index, exprAtCursor, inspectTarget, utf16ToCodePointIndex } from "./text.ts";
 import { type HistoryEntry, queryHistory } from "./history.ts";
 import type { EvaluateResult } from "./cdp.ts";
+import { buildTraceback, type CallFrame, type CellRecord, cellName, TRACEBACK_MIME } from "./traceback.ts";
 
 /** The channels a frontend sends requests on. */
 export type ChannelName = "shell" | "control" | "stdin";
@@ -74,6 +76,10 @@ export interface KernelHost {
   readonly types?: TypeService | null;
   /** JupyterLab's visual debugger, for targets driven over CDP (#18). */
   createDebugger?(publish: (event: JsonObject) => void, transformOptions: () => CellTransformOptions): Debugger;
+  /** A file's source, for the lines around a traceback frame (#322). */
+  readSource?(file: string): string | undefined;
+  /** Path or URL prefixes of the kernel's own runtime files, whose frames a traceback marks as library code. */
+  readonly kernelFiles?: readonly string[];
   log(text: string): void;
   /** After shutdown_reply has gone out. */
   exit(): void;
@@ -96,6 +102,9 @@ interface InputAnswer {
 }
 
 const NO_INPUT: InputAnswer = { value: null, interrupted: false };
+
+/** Cells remembered for tracebacks: a frame can be in a function any earlier cell defined. */
+const MAX_CELLS = 1000;
 
 interface ErrorContent extends JsonObject {
   ename: string;
@@ -152,6 +161,8 @@ export class KernelCore {
   readonly #types: TypeService | null;
   /** Cells run with store_history, for history_request (#10). */
   readonly #history: HistoryEntry[] = [];
+  /** Cells that ran, by the name their script ran under, for tracebacks (#322). */
+  readonly #cells = new Map<string, CellRecord>();
   readonly #session = crypto.randomUUID();
   #target: KernelTarget | null = null;
   #targetStarting: Promise<KernelTarget> | null = null;
@@ -660,14 +671,58 @@ export class KernelCore {
     input.settle({ value: typeof reply.content.value === "string" ? reply.content.value : null, interrupted: false });
   }
 
-  async #evaluateCell(target: KernelTarget, code: string): Promise<EvaluateResult> {
+  /**
+   * The structured form of a cell's error, and the classic lines with cell
+   * frames pointing at the cell's own lines. Null, with `error` as it was,
+   * if it can't be built: the user must always get the traceback.
+   */
+  #structuredTraceback(error: ErrorContent, stack: string, callFrames: CallFrame[] | undefined, cell: CellRecord): JsonObject | null {
+    try {
+      const traceback = buildTraceback({ ename: error.ename, evalue: error.evalue, stack, callFrames }, {
+        cell: (file) => {
+          const record = this.#cells.get(file);
+          if (record === undefined) return undefined;
+          let lines = null;
+          try {
+            lines = transformCellWithLines(record.code, this.#transformOptions()).lines;
+          } catch {
+            // A cell that ran transforms again; if not, its lines go unmapped.
+          }
+          return { ...record, lines };
+        },
+        readFile: (file) => this.#host.readSource?.(file),
+        kernelFiles: this.#host.kernelFiles,
+      }, cell);
+      error.traceback = traceback.lines;
+      return traceback.payload as JsonObject;
+    } catch (err) {
+      this.#host.log(`structured traceback failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  /** Remembers the cell under the name its script runs as. */
+  #remember(name: string, cell: CellRecord): void {
+    this.#cells.delete(name);
+    this.#cells.set(name, cell);
+    if (this.#cells.size > MAX_CELLS) this.#cells.delete(this.#cells.keys().next().value!);
+  }
+
+  async #evaluateCell(target: KernelTarget, cell: CellRecord): Promise<EvaluateResult> {
+    const code = cell.code;
     // Object-literal wrapping (Deno's evaluate_line_with_object_wrapping):
     // try `({ ... })` first and fall back to the code as written.
     // While debugging, cells carry the path JupyterLab gave them and keep a
     // line map, so breakpoints bind and frames point at the cell (#18).
     const debugging = this.#debugger?.started === true && target.debug !== undefined;
+    // Otherwise each cell's script is named for its code, so a traceback
+    // can tell which cell a frame is in (#322).
+    const name = debugging && this.#debugger ? this.#debugger.pathFor(code) : cellName(code);
+    this.#remember(name, cell);
     const transform = (source: string) =>
-      debugging && this.#debugger ? this.#debugger.cellScript(code, source) : target.transform(source, this.#transformOptions());
+      debugging && this.#debugger
+        ? this.#debugger.cellScript(code, source)
+        : `${target.transform(source, this.#transformOptions())}\n//# sourceURL=${name}`;
     const wrapped = objectLiteralCandidate(code);
     if (wrapped !== null) {
       try {
@@ -708,6 +763,8 @@ export class KernelCore {
     }
 
     let error: ErrorContent | null = null;
+    // nteract's structured traceback, sent as the error message's metadata (#322).
+    let structured: JsonObject | null = null;
     this.#executing = true;
     try {
       const target = await this.#ensureTarget();
@@ -716,7 +773,12 @@ export class KernelCore {
         this.#noticeShownFor = target;
         this.#publish("stream", { name: "stderr", text: `${target.notice}\n` });
       }
-      const result = await this.#evaluateCell(target, code);
+      const cell: CellRecord = {
+        code,
+        executionCount: silent || msg.content.store_history === false ? null : count,
+        cellId: typeof msg.metadata.cellId === "string" ? msg.metadata.cellId : null,
+      };
+      const result = await this.#evaluateCell(target, cell);
       // It ran, so its declarations exist, even if it threw part way.
       this.#types?.addCell(code);
       if (result.exceptionDetails) {
@@ -729,6 +791,7 @@ export class KernelCore {
           evalue: described.message,
           traceback: (described.stack || `${described.name}: ${described.message}`).split("\n"),
         };
+        structured = this.#structuredTraceback(error, described.stack, result.exceptionDetails.stackTrace?.callFrames, cell);
       } else if (!silent && result.result.type !== "undefined") {
         await target.broadcastResult(count, result.result);
       }
@@ -758,7 +821,7 @@ export class KernelCore {
         await new Promise((r) => setTimeout(r, 0));
         this.#abortQueued = this.#channels.shellQueued();
       }
-      this.#publish("error", error);
+      this.#publish("error", error, structured ? { metadata: { [TRACEBACK_MIME]: structured } } : {});
       this.#reply("shell", peer, msg, "execute_reply", { status: "error", execution_count: count, ...error });
     } else {
       this.#reply("shell", peer, msg, "execute_reply", {

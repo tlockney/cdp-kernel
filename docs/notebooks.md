@@ -84,6 +84,27 @@ For Workers and celld projects, see [Choosing a runtime](runtimes.md#workers-pro
 your variables, except for a busy cell on Bun, workerd or celld, which
 restarts the runtime (see [Choosing a runtime](runtimes.md)).
 
+## Errors
+
+When a cell throws, the traceback points at cells by their execution
+count and at the line you wrote, TypeScript types included, even for a
+function an earlier cell defined:
+
+```
+RangeError: tb 2
+    at failing (In[3]:3)
+    at In[4]:3
+```
+
+The error message also carries a structured form of the traceback in its
+metadata, under `application/vnd.nteract.traceback+json` (the payload
+[nteract](https://github.com/runtimed/runt/blob/main/docs/adr/traceback-output-protocol.md)
+defines): each frame's file, line, function name, a few source lines with
+the failing one marked, the cell's execution count and `cellId` when the
+frame is in a cell, and a `library` flag for frames in packages, the
+runtime and the kernel. Frontends that don't read it show the plain
+traceback.
+
 ## Inspection, completion and history
 
 **Tab** completes from two sources. TypeScript's language service reads
