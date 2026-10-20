@@ -18,8 +18,9 @@ class FakeWorker implements WorkerLike {
   postMessage(message: unknown): void {
     const msg = message as Record<string, unknown>;
     this.sent.push(msg);
-    // The driver's answer to "info", so launch() resolves.
+    // The driver's answers to "info", so launch() resolves, and to "ping", as an idle Worker's.
     if (msg.op === "info") queueMicrotask(() => this.emit({ kind: "reply", id: msg.id, userAgent: "Chrome/141" }));
+    if (msg.op === "ping") queueMicrotask(() => this.emit({ kind: "reply", id: msg.id }));
   }
   terminate(): void {
     this.terminated = true;
@@ -110,6 +111,23 @@ test("a Worker that stops aborts every host request in flight", async () => {
   target.kill();
   assert.equal(worker.terminated, true);
   assert.deepEqual(signals.map((s) => s.aborted), [true, true]);
+});
+
+test("interrupting an idle Worker cancels every host request in flight (#388)", async () => {
+  const signals: AbortSignal[] = [];
+  const host: HostHandler = (_request, s) => {
+    signals.push(s);
+    return new Promise(() => {});
+  };
+  const { worker, target } = await launch({ host });
+  worker.emit({ kind: "host", id: 1, method: "a", params: {} });
+  worker.emit({ kind: "host", id: 2, method: "b", params: {} });
+  await tick();
+  await target.interrupt();
+  assert.equal(worker.terminated, false);
+  assert.deepEqual(signals.map((s) => s.aborted), [true, true]);
+  const error = { name: "AbortError", message: "interrupted" };
+  assert.deepEqual(worker.hostReplies(), [{ op: "host", id: 1, error }, { op: "host", id: 2, error }]);
 });
 
 test("notifyHost sends an event until the Worker stops", async () => {

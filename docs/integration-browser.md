@@ -88,8 +88,10 @@ optional:
   `host.request(method, params, { signal, transfer })` resolves with what
   the handler returns, or rejects with an `Error` carrying the thrown
   error's `name`, `message` and `code`. The handler gets an `AbortSignal`
-  that aborts when the Worker aborts the call or stops, as an interrupt
-  of a busy cell does. Values cross by structured clone.
+  that aborts when the Worker aborts the call or stops, and on every
+  interrupt: an interrupt cancels each request in flight, and its
+  `host.request` promise rejects with an `AbortError`. Values cross by
+  structured clone.
 - **`capabilities`**: returned as `capabilities` in `kernel_info_reply`,
   so a frontend can see what the page offers.
 

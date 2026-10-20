@@ -149,6 +149,16 @@ export class BrowserTarget implements KernelTarget {
     );
   }
 
+  /** Aborts each host request in flight and rejects it in the Worker. */
+  #cancelHostCalls(): void {
+    const calls = [...this.#hostCalls];
+    this.#hostCalls.clear();
+    for (const [id, controller] of calls) {
+      controller.abort();
+      this.#worker.postMessage({ op: "host", id, error: { name: "AbortError", message: "interrupted" } });
+    }
+  }
+
   /** Sends `host.onEvent` listeners in the Worker an event (#384). */
   notifyHost(event: string, value?: unknown): void {
     if (!this.#exited) this.#worker.postMessage({ op: "host", event, value });
@@ -193,9 +203,10 @@ export class BrowserTarget implements KernelTarget {
 
   /**
    * A cell that's waiting on something leaves the Worker free: it answers a
-   * ping, and the cell is abandoned with its state intact. A busy cell
-   * can't be reached, so the Worker is terminated, and a new one starts on
-   * the next cell.
+   * ping, and the cell is abandoned with its state intact; host requests
+   * in flight are cancelled on the page, and reject in the Worker with an
+   * AbortError (#388). A busy cell can't be reached, so the Worker is
+   * terminated, and a new one starts on the next cell.
    */
   async interrupt(): Promise<void> {
     this.#interrupted = true;
@@ -210,6 +221,7 @@ export class BrowserTarget implements KernelTarget {
         this.#pending.delete(id);
         this.#interruptible.delete(id);
       }
+      this.#cancelHostCalls();
       return;
     }
     this.#stopNote = RESTART_NOTE;

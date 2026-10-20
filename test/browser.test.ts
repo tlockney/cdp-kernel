@@ -222,11 +222,19 @@ test("preload modules reach the host page, before the first cell and after a res
   await evaluate("kernel.notifyHost('appearance', 'dark')");
   assert.equal(result(await execute("JSON.stringify(device.events)")), `'[["appearance","dark"]]'`);
 
+  // Interrupting a cell that waits on a call cancels it on the page, and the call rejects (#388).
+  const waiting = execute("globalThis.w = device.wait().catch((e) => e.name); await w");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await request("control", "interrupt_request", {});
+  assert.equal(of(await waiting, "execute_reply")[0].ename, "Interrupted");
+  assert.equal(await evaluate<number>("globalThis.aborted"), 2);
+  assert.equal(result(await execute("await w")), "'AbortError'");
+
   // An interrupted call is cancelled with its Worker, and the new Worker preloads again.
   const busy = execute("device.wait(); while (true) {}");
   await new Promise((resolve) => setTimeout(resolve, 300));
   await request("control", "interrupt_request", {});
   await busy;
-  assert.equal(await evaluate<number>("globalThis.aborted"), 2);
+  assert.equal(await evaluate<number>("globalThis.aborted"), 3);
   assert.equal(result(await execute("typeof device.echo")), "'function'");
 });
