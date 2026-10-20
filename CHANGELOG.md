@@ -4,6 +4,15 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- An interrupt on the browser target cancels the host requests in
+  flight: the page's handler sees its `AbortSignal` abort, and the
+  Worker's `host.request` rejects with an `AbortError`. Before, a cell
+  waiting on a request ended, but the page never learned the call was
+  dead, so a native dialog it opened stayed up
+  ([#388](https://github.com/tlockney/cdp-kernel/issues/388)).
+
 ## 0.7.1 (2026-10-19)
 
 - The browser target can offer cells a page's own features: `preload`
