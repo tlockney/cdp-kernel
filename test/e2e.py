@@ -582,9 +582,16 @@ def checks(runtime, workdir, offline):
         assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "36|https://example.com/x|object", out
 
     def workerd_fetch(s):
-        reply, out = s.run("(await fetch('https://example.com/')).status", timeout=60)
-        assert reply["status"] == "ok", reply
-        assert strip_ansi(result_of(out)["text/plain"]) == "200", out
+        # example.com sometimes answers 503 (#390); a server error still shows
+        # the fetch left workerd, so try again rather than fail on it.
+        for _ in range(3):
+            reply, out = s.run("(await fetch('https://example.com/')).status", timeout=60)
+            assert reply["status"] == "ok", reply
+            status = strip_ansi(result_of(out)["text/plain"])
+            if not status.startswith("5"):
+                break
+            time.sleep(2)
+        assert status == "200", out
 
     def import_meta_workerd(s):
         # workerd has no cwd of its own; import.meta describes the notebook's.
