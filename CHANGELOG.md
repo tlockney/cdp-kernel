@@ -6,9 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
-- The workerd and celld end-to-end fetch test tries again when
-  example.com answers with a server error, which failed one nightly run
-  ([#390](https://github.com/tlockney/cdp-kernel/issues/390)).
+- The workerd and celld end-to-end fetch test accepts any HTTP status
+  from example.com, which answers 503 to macOS runners for minutes at a
+  time and failed two nightly runs
+  ([#390](https://github.com/tlockney/cdp-kernel/issues/390),
+  [#392](https://github.com/tlockney/cdp-kernel/issues/392)).
 - An interrupt on the browser target cancels the host requests in
   flight: the page's handler sees its `AbortSignal` abort, and the
   Worker's `host.request` rejects with an `AbortError`. Before, a cell

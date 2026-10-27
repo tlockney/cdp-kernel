@@ -582,16 +582,13 @@ def checks(runtime, workdir, offline):
         assert strip_ansi(result_of(out)["text/plain"]).strip("'\"") == "36|https://example.com/x|object", out
 
     def workerd_fetch(s):
-        # example.com sometimes answers 503 (#390); a server error still shows
-        # the fetch left workerd, so try again rather than fail on it.
-        for _ in range(3):
-            reply, out = s.run("(await fetch('https://example.com/')).status", timeout=60)
-            assert reply["status"] == "ok", reply
-            status = strip_ansi(result_of(out)["text/plain"])
-            if not status.startswith("5"):
-                break
-            time.sleep(2)
-        assert status == "200", out
+        # Any HTTP status shows the fetch left workerd and came back over TLS.
+        # example.com sometimes answers 503 to macOS runners for minutes at a
+        # time (#390, #392), so the test doesn't require a 200.
+        reply, out = s.run("(await fetch('https://example.com/')).status", timeout=60)
+        assert reply["status"] == "ok", reply
+        status = strip_ansi(result_of(out)["text/plain"])
+        assert status.isdigit() and 100 <= int(status) <= 599, out
 
     def import_meta_workerd(s):
         # workerd has no cwd of its own; import.meta describes the notebook's.
