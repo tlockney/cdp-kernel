@@ -223,7 +223,10 @@ for (const runtime of ["node", "deno"] as const) {
     // the runtime's own stands in for it.
     const { target, dap, request, next, run } = await session(t, runtime);
     const builtin = runtime === "deno" ? "ext:cdpk_test/internal.js" : "node:cdpk_test/internal";
-    await target.evaluate(`globalThis.internal = () => { try { throw new Error("internal") } catch { return 1 } };\nglobalThis.fails = () => { throw new Error("fails") };\n//# sourceURL=${builtin}`);
+    // Transformed as a cell is: a bare replMode evaluate can fail with
+    // "Promise was collected" on Deno (#394, as #55).
+    const helpers = `globalThis.internal = () => { try { throw new Error("internal") } catch { return 1 } };\nglobalThis.fails = () => { throw new Error("fails") };`;
+    await target.evaluate(`${target.transform(helpers, {})}\n//# sourceURL=${builtin}`);
     await request("initialize");
     await request("attach");
     await request("setExceptionBreakpoints", { filters: ["caught"] });
