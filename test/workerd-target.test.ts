@@ -8,12 +8,13 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chownSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import {
   bundleModule,
   compatibilityDateOf,
   findWorkerd,
+  nativeWorkerd,
   importSpecifiers,
   sweepStaleWorkerdDirs,
   RESTART_NOTE,
@@ -67,6 +68,37 @@ test("findWorkerd prefers a project's node_modules, then PATH", (t) => {
   mkdirSync(join(dir, "node_modules", ".bin"), { recursive: true });
   writeFileSync(join(dir, "node_modules", ".bin", bin), "");
   assert.equal(findWorkerd(nested), join(dir, "node_modules", ".bin", bin));
+});
+
+test("nativeWorkerd looks through the npm package's bin script to its binary (#397)", { skip: process.platform === "win32" }, (t) => {
+  const dir = scratch(t);
+  const pkg = join(dir, "node_modules", "workerd");
+  const binary = join(dir, "node_modules", "@cloudflare", "workerd-test", "bin", "workerd");
+  mkdirSync(join(pkg, "bin"), { recursive: true });
+  mkdirSync(join(pkg, "lib"), { recursive: true });
+  mkdirSync(dirname(binary), { recursive: true });
+  mkdirSync(join(dir, "node_modules", ".bin"), { recursive: true });
+  writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "workerd", main: "lib/main.js" }));
+  writeFileSync(join(pkg, "lib", "main.js"), `exports.default = ${JSON.stringify(binary)};`);
+  writeFileSync(join(pkg, "bin", "workerd"), "#!/usr/bin/env node\n");
+  writeFileSync(binary, "");
+  const shim = join(dir, "node_modules", ".bin", "workerd");
+  symlinkSync("../workerd/bin/workerd", shim);
+  assert.equal(nativeWorkerd(shim), binary);
+  // Installed globally: on PATH, a link into the package.
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  symlinkSync(join(pkg, "bin", "workerd"), join(bin, "workerd"));
+  const path = process.env.PATH;
+  process.env.PATH = bin;
+  t.after(() => (process.env.PATH = path));
+  assert.equal(nativeWorkerd("workerd"), binary);
+  // Anything else is used as given.
+  const other = join(dir, "other-workerd");
+  writeFileSync(other, "");
+  assert.equal(nativeWorkerd(other), other);
+  process.env.PATH = dir;
+  assert.equal(nativeWorkerd("workerd"), "workerd");
 });
 
 test("compatibilityDateOf reads workerd --version", () => {
