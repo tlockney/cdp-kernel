@@ -6,6 +6,10 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The Deno debugger test for exceptions in the runtime's own code sets
+  up its helpers the way a cell runs, so a garbage collection can no
+  longer fail it with "Promise was collected"
+  ([#394](https://github.com/tlockney/cdp-kernel/issues/394)).
 - The workerd and celld end-to-end fetch test accepts any HTTP status
   from example.com, which answers 503 to macOS runners for minutes at a
   time and failed two nightly runs
