@@ -42,9 +42,19 @@ jobs:
         run: |
           major=$(curl -fsSL https://nodejs.org/download/nightly/index.json | jq -r '.[0].version' | sed -E 's/^v([0-9]+).*/\1/')
           echo "major=$major" >> "$GITHUB_OUTPUT"
+      # setup-node's "latest" is the first entry of the release index, which
+      # can be a pre-release (v27.0.0-alpha.0 on 2026-10-29, #396).
+      # Pre-releases belong in the next lane, so take the newest version
+      # without a pre-release suffix.
+      - name: Node stable version
+        id: stable
+        if: matrix.channel == 'latest'
+        run: |
+          version=$(curl -fsSL https://nodejs.org/dist/index.json | jq -r 'map(.version | select(contains("-") | not)) | .[0] | ltrimstr("v")')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.channel == 'next' && format('{0}-nightly', steps.nightly.outputs.major) || 'latest' }}
+          node-version: ${{ matrix.channel == 'next' && format('{0}-nightly', steps.nightly.outputs.major) || steps.stable.outputs.version }}
       - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
