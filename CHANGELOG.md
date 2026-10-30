@@ -6,6 +6,12 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The workerd target runs workerd's own binary when it finds the npm
+  package's `bin/workerd` script, which is what a project gets when npm
+  skips the package's install script (as the npm that comes with Node 27
+  does unless allowed). Stopping that script left workerd running, so a
+  restarted or shut-down kernel kept it and the tests hung on Node 27
+  ([#397](https://github.com/tlockney/cdp-kernel/issues/397)).
 - The Deno debugger test for exceptions in the runtime's own code sets
   up its helpers the way a cell runs, so a garbage collection can no
   longer fail it with "Promise was collected"

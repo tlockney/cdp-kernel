@@ -19,10 +19,10 @@ import { Buffer } from "node:buffer";
 import process from "node:process";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
-import { builtinModules } from "node:module";
+import { copyFileSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { builtinModules, createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
@@ -96,6 +96,45 @@ export function findWorkerd(cwd: string): string {
     if (existsSync(bin)) return bin;
     if (dirname(dir) === dir) return "workerd";
   }
+}
+
+/**
+ * The native workerd binary behind `executable`. npm's workerd package
+ * installs bin/workerd as a Node script that runs the platform package's
+ * binary with execFileSync, and only its postinstall swaps the binary in.
+ * When install scripts don't run (the npm that comes with Node 27 blocks
+ * those not in allowScripts), killing that script leaves the binary running
+ * with the driver socket open, so it's never what the target spawns (#397).
+ * Anything that isn't the workerd package's script is returned as given.
+ */
+export function nativeWorkerd(executable: string): string {
+  const candidates: string[] = [];
+  let path = executable;
+  if (!isAbsolute(path) && !path.includes("/") && !path.includes("\\")) {
+    const dir = (process.env.PATH ?? "").split(delimiter).find((d) => d && existsSync(join(d, path)));
+    if (dir === undefined) return executable;
+    path = join(dir, path);
+  }
+  // node_modules/.bin/workerd, a link or (on Windows) a .cmd shim.
+  if (basename(dirname(path)) === ".bin") candidates.push(join(dirname(dirname(path)), "workerd"));
+  try {
+    // A link to <package>/bin/workerd, as a global install makes.
+    candidates.push(dirname(dirname(realpathSync(path))));
+  } catch {
+    return executable;
+  }
+  for (const pkg of candidates) {
+    try {
+      const { name } = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")) as { name?: unknown };
+      if (name !== "workerd") continue;
+      // The package's main export is the binary's path.
+      const binary = (createRequire(join(pkg, "package.json"))(join(pkg, "lib", "main.js")) as { default?: unknown }).default;
+      if (typeof binary === "string" && existsSync(binary)) return binary;
+    } catch {
+      // Not the npm package, or one this doesn't understand: use it as given.
+    }
+  }
+  return executable;
 }
 
 /** "workerd 2026-10-15" -> "2026-10-15": the newest date it supports. */
@@ -294,7 +333,7 @@ export class RawWorkerd implements WorkerHost {
   }
 
   static async start(cwd: string, executable?: string): Promise<RawWorkerd> {
-    const workerd = executable ?? findWorkerd(cwd);
+    const workerd = nativeWorkerd(executable ?? findWorkerd(cwd));
     const compatibilityDate = compatibilityDateOf(execFileSync(workerd, ["--version"], { encoding: "utf8" }));
     const source = await runtimeDir(new URL("../runtime/", import.meta.url).href);
     // mkdtemp makes the directory 0700: only this user reaches the socket,
