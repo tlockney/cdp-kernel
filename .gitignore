@@ -10,3 +10,6 @@ docs/.vitepress/dist/
 docs/.vitepress/cache/
 # Wrangler/Miniflare local cache and state (holds machine-specific data)
 .wrangler/
+# Python bytecode cache (test/e2e.py)
+__pycache__/
+*.pyc
