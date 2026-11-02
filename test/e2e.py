@@ -138,6 +138,11 @@ def checks(runtime, workdir, offline):
         info = s.kc.get_shell_msg(timeout=TIMEOUT)["content"]
         assert info["status"] == "ok"
         assert info["language_info"]["name"] == "typescript"
+        # JupyterLab's LSP adapter derives the language from the MIME type
+        # this way, ignoring name; it must come out as "typescript" (#400).
+        mime = info["language_info"]["mimetype"]
+        subtype = mime.split(";")[0].split("/")[1]
+        assert subtype.removeprefix("x-") == "typescript", mime
         assert runtime.split("-")[0] in info["banner"], info["banner"]
         package = json.loads((ROOT / "package.json").read_text())
         assert info["implementation_version"] == package["version"], info["implementation_version"]

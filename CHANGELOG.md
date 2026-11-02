@@ -4,6 +4,15 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- `kernel_info_reply`'s `language_info.mimetype` is
+  `application/typescript` instead of `text/x.typescript`, so
+  jupyterlab-lsp attaches TypeScript language servers to cdp-kernel
+  notebooks. JupyterLab picks the server by a language it derives from
+  the MIME type, and `text/x.typescript` gave `x.typescript`, which no
+  server lists ([#400](https://github.com/tlockney/cdp-kernel/issues/400)).
+
 ## 0.7.2 (2026-11-02)
 
 - The workerd target runs workerd's own binary when it finds the npm
