@@ -468,7 +468,12 @@ export class KernelCore {
       language_info: {
         name: "typescript",
         version: this.#host.languageVersion ?? TYPESCRIPT_VERSION,
-        mimetype: "text/x.typescript",
+        // JupyterLab's LSP adapter picks the language server by a language
+        // it derives from this MIME type, not from name: it drops the type
+        // and an "x-" prefix, so "text/x.typescript" became "x.typescript"
+        // and matched no server (#400). This is CodeMirror's MIME type for
+        // TypeScript and in jupyter-lsp's typescript-language-server spec.
+        mimetype: "application/typescript",
         file_extension: ".ts",
         pygments_lexer: "typescript",
         codemirror_mode: "typescript",
