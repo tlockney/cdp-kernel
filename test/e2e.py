@@ -361,6 +361,24 @@ def checks(runtime, workdir, offline):
                 break
         assert types == ["status", "status"], types
 
+    def usage_request(s):
+        # ipykernel's usage_reply fields; on Node and Deno the kernel's
+        # memory includes the target process's (#409).
+        s.run("globalThis.usageBytes = new Uint8Array(64 * 1024 * 1024).fill(1)")
+        msg = s.kc.session.msg("usage_request", {})
+        s.kc.control_channel.send(msg)
+        while True:
+            reply = s.kc.control_channel.get_msg(timeout=TIMEOUT)
+            if reply["parent_header"].get("msg_id") == msg["header"]["msg_id"]:
+                break
+        assert reply["msg_type"] == "usage_reply", reply
+        content = reply["content"]
+        assert isinstance(content["pid"], int) and content["hostname"], content
+        assert content["host_virtual_memory"]["total"] > 0, content
+        if sys.platform in ("linux", "darwin"):
+            assert content["kernel_memory"] > 64 * 1024 * 1024, content
+            assert content["kernel_cpu"] >= 0, content
+
     def control_status_and_shell_interrupt(s):
         # Control requests are wrapped in busy/idle too, and interrupt_request
         # is still accepted on shell (#124).
@@ -1046,6 +1064,7 @@ def checks(runtime, workdir, offline):
     tests += [interrupt_await_keeps_state] + ([interrupt_busy_restarts] if in_process else [interrupt])
     if runtime in ("node", "deno", "node-deno"):
         tests.append(exit_restarts)
+        tests.append(usage_request)
     if not offline:
         tests += [npm_import, jsr_import, typed_jsr_import, typed_globals]
         # Deno targets resolve npm: themselves; the lockfile is the kernel's.

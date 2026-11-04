@@ -49,7 +49,19 @@ export interface KernelTarget {
   diagnose?(): Promise<CdpParams>;
   /** Lets go of the last cell's result and error, once they are shown (#286). */
   releaseResults?(): Promise<void>;
+  /** The target process's memory and CPU time, for usage_request (#409). */
+  usage?(): Promise<TargetUsage>;
   kill(): void;
+}
+
+/** What a target measured of its own process; a field it can't measure is left out (#409). */
+export interface TargetUsage {
+  /** Resident memory, in bytes. */
+  memory?: number;
+  /** CPU time used since it started, in µs. */
+  cpuTime?: number;
+  /** When it started (ms since the epoch), the start of its first CPU interval. */
+  startedAt?: number;
 }
 
 /** Messages the bootstrap sends: message records on stdout, or Bun's channel. */
