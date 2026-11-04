@@ -495,6 +495,17 @@ export class KernelCore {
   // --- control channel ------------------------------------------------------
 
   async #handleControl(msg: KernelMessage, peer: string): Promise<void> {
+    // A frontend polls usage, and measuring can take a moment (`ps` on
+    // macOS): answer it beside the queue, so an interrupt or shutdown
+    // never waits behind a poll (#409).
+    if (msg.header.msg_type === "usage_request") {
+      void this.#handleControlRequest(msg, peer).catch((err) => this.#log(`usage_request failed: ${err}`));
+      return;
+    }
+    return this.#handleControlRequest(msg, peer);
+  }
+
+  async #handleControlRequest(msg: KernelMessage, peer: string): Promise<void> {
     // Every request is wrapped in busy/idle, as on shell (#124). JupyterLab
     // treats a debug request as done only once the kernel reports idle for
     // it. (Jupyter Server leaves debug_request out of the kernel's status.)

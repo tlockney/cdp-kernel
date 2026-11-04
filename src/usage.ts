@@ -22,8 +22,8 @@ export interface ProcessUsage {
  */
 const USER_HZ = 100;
 
-/** How long `ps` may take, under the 5 s clients allow control requests. */
-const PS_TIMEOUT_MS = 2_000;
+/** How long `ps` may take: Ganymede waits 2 s for a first usage_reply (tlockney/ganymede#364). */
+const PS_TIMEOUT_MS = 1_000;
 
 /** A process's usage on Linux (/proc) or macOS (`ps`); empty elsewhere or if it can't be read. */
 export async function processUsage(pid: number): Promise<ProcessUsage> {
@@ -126,7 +126,8 @@ async function hostMemory(): Promise<JsonObject> {
 export class UsageMeter {
   /** The host process's CPU time when last asked, and when that was (ms). */
   #host = { cpuTime: 0, at: Date.now() - process.uptime() * 1000 };
-  #target: { target: KernelTarget; cpuTime: number; at: number } | null = null;
+  /** The target's CPU time when last measured, keyed by when it started (not the target, which may be gone). */
+  #target: { startedAt: number | undefined; cpuTime: number; at: number } | null = null;
   #hostCpu = hostCpuTimes();
 
   /** `target` is the running target, or null while none runs. */
@@ -148,12 +149,16 @@ export class UsageMeter {
     let memory: number | null = process.memoryUsage().rss;
     if (target !== null) {
       if (targetUsage?.cpuTime === undefined) {
+        // The previous sample stays the baseline, so one missed sample
+        // doesn't make the next reply average over the target's life.
         cpu = null;
-        this.#target = null;
       } else {
-        const last = this.#target?.target === target ? this.#target : { cpuTime: 0, at: targetUsage.startedAt ?? now };
+        const { startedAt } = targetUsage;
+        const last = startedAt !== undefined && this.#target?.startedAt === startedAt
+          ? this.#target
+          : { cpuTime: 0, at: startedAt ?? now };
         cpu += percentOf(targetUsage.cpuTime - last.cpuTime, now - last.at);
-        this.#target = { target, cpuTime: targetUsage.cpuTime, at: now };
+        this.#target = { startedAt, cpuTime: targetUsage.cpuTime, at: now };
       }
       memory = targetUsage?.memory === undefined ? null : memory + targetUsage.memory;
     }

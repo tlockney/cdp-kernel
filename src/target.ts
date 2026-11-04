@@ -376,7 +376,8 @@ export class Target implements KernelTarget {
   /** Set once the main context is gone: the runtime is exiting (#130). */
   #exiting = false;
   readonly #exited: Promise<void>;
-  readonly #startedAt = Date.now();
+  /** When the runtime was spawned: the OS counts its CPU time from then (#409). */
+  readonly #startedAt: number;
   readonly #baselineGlobals = new Set<string>();
   readonly versions: { runtime: string; engine: string };
 
@@ -390,9 +391,11 @@ export class Target implements KernelTarget {
     gates: Gates,
     contextId: number,
     versions: { runtime: string; engine: string },
+    startedAt: number,
   ) {
     this.runtime = runtime;
     this.#child = child;
+    this.#startedAt = startedAt;
     this.#exited = new Promise((resolve) => {
       if (child.exitCode !== null || child.signalCode !== null) resolve();
       else child.once("exit", () => resolve());
@@ -432,6 +435,7 @@ export class Target implements KernelTarget {
     const esbuild = runtime === "node" ? esbuildBinary() : null;
     if (esbuild !== null) env.CDPK_ESBUILD_BINARY = esbuild;
     delete env.NO_COLOR;
+    const startedAt = Date.now();
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"], env });
     killOnExit(child);
     // Prompt replies and comm messages go to stdin; one written as the
@@ -441,7 +445,7 @@ export class Target implements KernelTarget {
     // pipes and inspector sockets would keep this process alive (#52).
     const sessions: CdpSession[] = [];
     try {
-      return await withStartTimeout(Target.#start(runtime, events, cmd, child, sessions), cmd, options.startTimeoutMs);
+      return await withStartTimeout(Target.#start(runtime, events, cmd, child, startedAt, sessions), cmd, options.startTimeoutMs);
     } catch (error) {
       for (const session of sessions) session.close();
       child.kill();
@@ -454,6 +458,7 @@ export class Target implements KernelTarget {
     events: TargetEvents,
     cmd: string,
     child: ChildProcessWithoutNullStreams,
+    startedAt: number,
     sessions: CdpSession[],
   ): Promise<Target> {
     child.stdout.setEncoding("utf8");
@@ -518,7 +523,7 @@ export class Target implements KernelTarget {
     await shell.send("Runtime.disable");
     await control.send("Runtime.enable");
 
-    target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" });
+    target = new Target(runtime, child, shell, control, stdout, stderr, gates, contextId, { runtime: "", engine: "" }, startedAt);
     // process.exit() or Deno.exit() destroys the context, then the runtime
     // waits for its inspector clients to disconnect before it exits. Let go,
     // so it exits and the kernel starts a fresh one (#130).

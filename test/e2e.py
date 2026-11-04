@@ -364,7 +364,7 @@ def checks(runtime, workdir, offline):
     def usage_request(s):
         # ipykernel's usage_reply fields; on Node and Deno the kernel's
         # memory includes the target process's (#409).
-        s.run("globalThis.usageBytes = new Uint8Array(64 * 1024 * 1024).fill(1)")
+        s.run("globalThis.usageBytes = new Uint8Array(256 * 1024 * 1024).fill(1)")
         msg = s.kc.session.msg("usage_request", {})
         s.kc.control_channel.send(msg)
         while True:
@@ -376,8 +376,11 @@ def checks(runtime, workdir, offline):
         assert isinstance(content["pid"], int) and content["hostname"], content
         assert content["host_virtual_memory"]["total"] > 0, content
         if sys.platform in ("linux", "darwin"):
-            assert content["kernel_memory"] > 64 * 1024 * 1024, content
+            # More than the kernel process holds: the target's 256 MiB too.
+            host_rss = int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(content["pid"])])) * 1024
+            assert content["kernel_memory"] - host_rss > 200 * 1024 * 1024, (host_rss, content)
             assert content["kernel_cpu"] >= 0, content
+        s.run("delete globalThis.usageBytes")
 
     def control_status_and_shell_interrupt(s):
         # Control requests are wrapped in busy/idle too, and interrupt_request

@@ -8,6 +8,9 @@ import { Target, type TargetEvents } from "../src/target.ts";
 import type { KernelTarget } from "../src/target-api.ts";
 import { loadTypeStripper } from "../src/transform.ts";
 import { parseCpuTime, processUsage, UsageMeter } from "../src/usage.ts";
+import { KernelCore } from "../src/kernel-core.ts";
+import type { JsonObject } from "../src/message.ts";
+import { FakeChannels } from "./fake-channels.ts";
 
 await loadTypeStripper("esbuild");
 
@@ -60,6 +63,70 @@ test("a target's memory and CPU are added to the host's", async () => {
   assert.ok((reply.kernel_memory as number) > 1e12, JSON.stringify(reply));
   // One second of CPU in about one second since it started.
   assert.ok((reply.kernel_cpu as number) >= 50, JSON.stringify(reply));
+});
+
+test("a missed sample keeps the previous CPU baseline", async () => {
+  // A target an hour old, idle until now.
+  const startedAt = Date.now() - 3_600_000;
+  let sample: { cpuTime?: number; memory?: number } = { cpuTime: 0, memory: 1 };
+  const target = { usage: async () => ({ ...sample, startedAt }) } as unknown as KernelTarget;
+  const meter = new UsageMeter();
+  await meter.reply(target);
+  sample = { memory: 1 };
+  assert.equal("kernel_cpu" in await meter.reply(target), false);
+  // Then busy: half a second of CPU in the last half second or so.
+  await new Promise((r) => setTimeout(r, 500));
+  sample = { cpuTime: 500_000, memory: 1 };
+  const reply = await meter.reply(target);
+  assert.ok((reply.kernel_cpu as number) >= 50, JSON.stringify(reply));
+});
+
+test("a restarted target's CPU counts from its own start", async () => {
+  const meter = new UsageMeter();
+  const old = { usage: async () => ({ cpuTime: 100_000_000, startedAt: Date.now() - 200_000 }) } as unknown as KernelTarget;
+  await meter.reply(old);
+  // Long enough that the host's own share of the next interval is small.
+  await new Promise((r) => setTimeout(r, 500));
+  // A new target: its CPU time isn't measured against the old one's.
+  const startedAt = Date.now() - 1000;
+  const fresh = { usage: async () => ({ cpuTime: 0, startedAt }) } as unknown as KernelTarget;
+  const reply = await meter.reply(fresh);
+  assert.ok((reply.kernel_cpu as number) < 50, JSON.stringify(reply));
+});
+
+test("an interrupt doesn't wait behind a slow usage_request", async () => {
+  const channels = new FakeChannels();
+  let measured!: (content: JsonObject) => void;
+  const core = new KernelCore({
+    runtime: "node",
+    version: "0",
+    channels,
+    launchTarget: () => new Promise<KernelTarget>(() => {}),
+    usage: () => new Promise<JsonObject>((resolve) => (measured = resolve)),
+    log: () => {},
+    exit: () => {},
+  });
+  void core.run();
+  channels.push("control", "usage_request");
+  channels.push("control", "interrupt_request");
+  assert.equal((await channels.replyOf("interrupt_reply")).content.status, "ok");
+  measured({ pid: 1 });
+  assert.deepEqual((await channels.replyOf("usage_reply")).content, { pid: 1 });
+});
+
+test("a host that can't measure usage still answers usage_request", async () => {
+  const channels = new FakeChannels();
+  const core = new KernelCore({
+    runtime: "browser",
+    version: "0",
+    channels,
+    launchTarget: () => new Promise<KernelTarget>(() => {}),
+    log: () => {},
+    exit: () => {},
+  });
+  void core.run();
+  channels.push("control", "usage_request");
+  assert.deepEqual((await channels.replyOf("usage_reply")).content, {});
 });
 
 for (const runtime of ["node", "deno"] as const) {
