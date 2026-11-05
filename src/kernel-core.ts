@@ -80,6 +80,8 @@ export interface KernelHost {
   readonly capabilities?: JsonObject;
   /** JupyterLab's visual debugger, for targets driven over CDP (#18). */
   createDebugger?(publish: (event: JsonObject) => void, transformOptions: () => CellTransformOptions): Debugger;
+  /** usage_reply's content: the host's and the running target's (null while none runs) memory and CPU (#409). */
+  usage?(target: KernelTarget | null): Promise<JsonObject>;
   /** A file's source, for the lines around a traceback frame (#322). */
   readSource?(file: string): string | undefined;
   /** Path or URL prefixes of the kernel's own runtime files, whose frames a traceback marks as library code. */
@@ -493,6 +495,17 @@ export class KernelCore {
   // --- control channel ------------------------------------------------------
 
   async #handleControl(msg: KernelMessage, peer: string): Promise<void> {
+    // A frontend polls usage, and measuring can take a moment (`ps` on
+    // macOS): answer it beside the queue, so an interrupt or shutdown
+    // never waits behind a poll (#409).
+    if (msg.header.msg_type === "usage_request") {
+      void this.#handleControlRequest(msg, peer).catch((err) => this.#log(`usage_request failed: ${err}`));
+      return;
+    }
+    return this.#handleControlRequest(msg, peer);
+  }
+
+  async #handleControlRequest(msg: KernelMessage, peer: string): Promise<void> {
     // Every request is wrapped in busy/idle, as on shell (#124). JupyterLab
     // treats a debug request as done only once the kernel reports idle for
     // it. (Jupyter Server leaves debug_request out of the kernel's status.)
@@ -518,6 +531,17 @@ export class KernelCore {
         ]);
         this.#reply(channel, peer, msg, "interrupt_reply", { status: "ok" });
         break;
+      case "usage_request": {
+        // Without starting a target: a frontend polls this (#409). A host
+        // that can't measure anything still answers, so the frontend
+        // doesn't wait out its timeout.
+        const usage = this.#host.usage?.(this.#target).catch((err): JsonObject => {
+          this.#log(`usage_request failed: ${err}`);
+          return {};
+        });
+        this.#reply(channel, peer, msg, "usage_reply", (await usage) ?? {});
+        break;
+      }
       case "debug_request": {
         let reply: JsonObject;
         if (this.#debugger === null) {

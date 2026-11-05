@@ -20,6 +20,7 @@ import { cacheRoot, VERSION } from "./package.ts";
 import { watchParent } from "./parent.ts";
 import { KernelCore } from "./kernel-core.ts";
 import { ZmqChannels } from "./zmq-channels.ts";
+import { UsageMeter } from "./usage.ts";
 
 export interface ConnectionInfo {
   ip: string;
@@ -172,6 +173,7 @@ export class Kernel {
       }
     }
     const denoCompat = options.denoCompat ?? false;
+    const usage = new UsageMeter();
     this.#core = new KernelCore({
       runtime,
       version: VERSION,
@@ -192,6 +194,7 @@ export class Kernel {
       createDebugger: runtime === "node" || runtime === "deno"
         ? (publish, transformOptions) => new Debugger(publish, transformOptions)
         : undefined,
+      usage: (target) => usage.reply(target),
       readSource,
       kernelFiles: kernelFiles(),
       log,
