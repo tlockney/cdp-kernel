@@ -87,6 +87,11 @@ export interface KernelHost {
   /** Path or URL prefixes of the kernel's own runtime files, whose frames a traceback marks as library code. */
   readonly kernelFiles?: readonly string[];
   log(text: string): void;
+  /**
+   * A fault in the kernel's own code, for crash reports (#422). Never an
+   * error a cell threw: those come back from the target as results.
+   */
+  report?(err: unknown, where: string): void;
   /** After shutdown_reply has gone out. */
   exit(): void;
 }
@@ -283,6 +288,18 @@ export class KernelCore {
     this.#host.log(text);
   }
 
+  /** Logs a fault in the kernel's own handling, and reports it if the host does (#422). */
+  #fault(where: string, err: unknown): void {
+    this.#log(`${where}: ${err instanceof Error ? err.stack : err}`);
+    // A cell's syntax and an interrupt are the user's, not faults.
+    if (err instanceof CellSyntaxError || err instanceof Interrupted) return;
+    try {
+      this.#host.report?.(err, where);
+    } catch {
+      // Reporting mustn't take the kernel down with it.
+    }
+  }
+
   /** A state dump, for a kernel that has stopped answering (#237). */
   async logState(): Promise<void> {
     const handling = this.#handling;
@@ -404,7 +421,7 @@ export class KernelCore {
   #targetEvents(): TargetEvents {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
-      message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
+      message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#fault("error handling target message", err)),
       exit: (code, note) => {
         this.#target = null;
         // What its cells declared died with it.
@@ -500,7 +517,7 @@ export class KernelCore {
       try {
         await handle(received.msg, received.peer);
       } catch (err) {
-        this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
+        this.#fault("error handling message", err);
       }
     }
   }
@@ -562,7 +579,7 @@ export class KernelCore {
         }
         await this.#handleShell(msg, peer);
       } catch (err) {
-        this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
+        this.#fault("error handling message", err);
       } finally {
         if (main) this.#handling = null;
       }
@@ -608,7 +625,7 @@ export class KernelCore {
     // macOS): answer it beside the queue, so an interrupt or shutdown
     // never waits behind a poll (#409).
     if (msg.header.msg_type === "usage_request") {
-      void this.#handleControlRequest(msg, peer).catch((err) => this.#log(`usage_request failed: ${err}`));
+      void this.#handleControlRequest(msg, peer).catch((err) => this.#fault("usage_request failed", err));
       return;
     }
     return this.#handleControlRequest(msg, peer);
@@ -635,7 +652,7 @@ export class KernelCore {
       case "interrupt_request":
         // Answer even if the target doesn't (#121); the interrupt goes on.
         await Promise.race([
-          this.#interrupt().catch((err) => this.#log(`interrupt failed: ${err}`)),
+          this.#interrupt().catch((err) => this.#fault("interrupt failed", err)),
           new Promise((r) => setTimeout(r, INTERRUPT_REPLY_WAIT_MS)),
         ]);
         this.#reply(channel, peer, msg, "interrupt_reply", { status: "ok" });
@@ -893,7 +910,7 @@ export class KernelCore {
       error.traceback = traceback.lines;
       return traceback.payload as JsonObject;
     } catch (err) {
-      this.#host.log(`structured traceback failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.#fault("structured traceback failed", err);
       return null;
     }
   }

@@ -16,6 +16,9 @@
   "imports": {
     "acorn": "npm:acorn@^8.15.0",
     "acorn-walk": "npm:acorn-walk@^8.3.4",
+    // Imported only when a host turns crash reports on (src/crash-report.ts).
+    "@sentry/core": "npm:@sentry/core@^11.10.0",
+    "@sentry/core/server": "npm:@sentry/core@^11.10.0/server",
     "esbuild": "npm:esbuild@^0.25.10",
     "sucrase": "npm:sucrase@^3.35.1",
     "typescript": "npm:typescript@^6.0.3"

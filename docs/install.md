@@ -208,12 +208,37 @@ Environment variables the kernel reads:
 | `CDPK_CACHE_DIR` | Directory of the npm package cache. |
 | `ESBUILD_BINARY_PATH` | The esbuild binary used to compile imported `.ts` and `.tsx` files on Node, when the one installed with the package can't be found or shouldn't be used. |
 | `CDPK_DEBUG_TRACE` | `1` logs the [debugger](debugger.md)'s protocol traffic to the server log. |
+| `CDP_KERNEL_SENTRY_DSN` | Turns on [crash reports](#crash-reports) to this Sentry DSN. |
 
 Variables are read by the kernel process, which inherits the
 environment of the Jupyter server (or VS Code) that starts it. Set them
 there, or in the kernelspec's `env` field (re-running `install` rewrites
 `kernel.json` and drops it). Variables named `CDPK_E2E_*`
 are for the test suite ([Development](development.md#tests)).
+
+## Crash reports
+
+The kernel can report faults in its own code to [Sentry](https://sentry.io):
+a request handler that throws, or an exception that would end the kernel
+process. It is off unless the program that starts the kernel turns it on,
+with `--sentry-dsn DSN` on the `kernel` command line or the
+`CDP_KERNEL_SENTRY_DSN` environment variable. Ganymede does so when its
+user has opted in. When it is off, the Sentry SDK isn't loaded.
+
+Errors from cells are never reported: cells run in the target process,
+and their errors reach the notebook as usual. A report holds the error's
+type, message (cut to 500 characters) and stack, the kernel's version,
+and the OS, its version and the CPU architecture. Paths under the home
+directory are sent as `~/...`. Nothing else is: no hostname, environment,
+cell source, outputs or variables. The kernel removes the DSN variable
+from the environment it passes to the target, so cells can't read it.
+
+`cdp-kernel report-test` sends one test report the same way, to check
+the setup: it prints `report-test: sent`, or exits non-zero when Sentry
+didn't accept the report.
+
+The reports use `@sentry/core`, an optional dependency of the npm package
+(`npm install --omit=optional` leaves it out, and reports are then off).
 
 ## From a checkout
 

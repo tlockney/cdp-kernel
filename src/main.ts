@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // cdp-kernel CLI.
 //   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] [--name NAME] [--display NAME]
-//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] --conn CONNECTION_FILE
+//   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] [--sentry-dsn DSN] --conn CONNECTION_FILE
+//   cdp-kernel report-test [--sentry-dsn DSN]
 //   cdp-kernel list
 //   cdp-kernel uninstall [NAME...] [--name NAME] [--all]
 //   cdp-kernel version
@@ -10,7 +11,9 @@
 // `deno jupyter`; see runtime/deno-compat.mjs. --type-strip picks what
 // removes cells' types (src/transform.ts). --no-language-service turns off
 // typed completion (src/language-service.ts), which costs about 150 MB
-// while in use.
+// while in use. --sentry-dsn (or CDP_KERNEL_SENTRY_DSN) turns on crash
+// reports of the kernel's own faults (src/crash-report.ts); report-test sends
+// one, to check a host's setup.
 
 import process from "node:process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -21,6 +24,7 @@ import { Kernel, parseConnectionInfo } from "./kernel.ts";
 import type { RuntimeName } from "./target.ts";
 import { isTypeStripperName, type TypeStripperName } from "./transform.ts";
 import { hostRuntime, kernelArgv, moduleOrigin, VERSION } from "./package.ts";
+import { DSN_ENV, startCrashReports } from "./crash-report.ts";
 
 function isRuntime(value: unknown): value is RuntimeName {
   return value === "node" || value === "deno" || value === "bun" || value === "workerd" || value === "celld";
@@ -155,7 +159,7 @@ function uninstall(names: string[], all: boolean): void {
 }
 
 const USAGE =
-  "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version";
+  "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld [--sentry-dsn DSN] --conn FILE | report-test [--sentry-dsn DSN] | version";
 
 /** The command line, or exit 2 with the usage when it doesn't parse (an unknown option, a missing value). */
 function parseCommandLine() {
@@ -171,6 +175,7 @@ function parseCommandLine() {
         "deno-compat": { type: "boolean", default: false },
         "type-strip": { type: "string", default: "esbuild" },
         "no-language-service": { type: "boolean", default: false },
+        "sentry-dsn": { type: "string" },
         help: { type: "boolean", short: "h", default: false },
       },
     });
@@ -204,6 +209,15 @@ const languageService = values["no-language-service"] !== true;
 // Deno targets have the real namespace; the shim is for Node.
 const denoCompat = values["deno-compat"] === true && runtime === "node";
 
+// Crash reports are the host's choice (#422). The variable isn't passed on
+// to the target, where cells could read it.
+const sentryDsn = values["sentry-dsn"] ?? process.env[DSN_ENV];
+delete process.env[DSN_ENV];
+
+function logError(text: string): void {
+  process.stderr.write(`[cdp-kernel] ${text}\n`);
+}
+
 switch (positionals[0]) {
   case "install": {
     const suffix = denoCompat ? "-deno" : "";
@@ -222,7 +236,13 @@ switch (positionals[0]) {
       console.error("kernel: --conn CONNECTION_FILE is required");
       process.exit(2);
     }
-    const kernel = new Kernel(parseConnectionInfo(readFileSync(values.conn, "utf8")), runtime, { denoCompat, typeStrip, languageService });
+    const reports = await startCrashReports(sentryDsn, runtime, logError);
+    const kernel = new Kernel(parseConnectionInfo(readFileSync(values.conn, "utf8")), runtime, {
+      denoCompat,
+      typeStrip,
+      languageService,
+      report: reports?.report,
+    });
     await kernel.run();
     break;
   }
@@ -232,6 +252,22 @@ switch (positionals[0]) {
   case "uninstall":
     uninstall([...positionals.slice(1), ...(values.name ? [values.name] : [])], values.all === true);
     break;
+  case "report-test": {
+    // A host checks its crash report setup with this: it sends one test
+    // fault the way a kernel would.
+    const reports = await startCrashReports(sentryDsn, runtime, logError);
+    if (reports === null) {
+      console.error(`report-test: crash reports are off; pass --sentry-dsn or set ${DSN_ENV}`);
+      process.exit(2);
+    }
+    reports.report(new Error("cdp-kernel report-test"), "report-test");
+    if (!await reports.flush(10_000)) {
+      console.error("report-test: Sentry didn't take the report within 10 s");
+      process.exit(1);
+    }
+    console.log("report-test: sent");
+    break;
+  }
   case "version":
     console.log(VERSION);
     break;

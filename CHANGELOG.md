@@ -6,6 +6,12 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Opt-in crash reports: when the host passes `--sentry-dsn` or sets
+  `CDP_KERNEL_SENTRY_DSN`, faults in the kernel's own code are sent to
+  Sentry, with only the error, its stack, the kernel version, OS and
+  architecture. Cell errors are never sent, and the Sentry SDK isn't
+  loaded unless reports are on. `cdp-kernel report-test` sends a test
+  report ([#422](https://github.com/tlockney/cdp-kernel/issues/422)).
 - The kernel supports kernel subshells (JEP 91): `kernel_info_reply`
   lists `kernel subshells`, the control channel answers
   `create_subshell_request`, `delete_subshell_request` and

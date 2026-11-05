@@ -155,6 +155,8 @@ export class Kernel {
       typeStrip?: TypeStripperName | TypeStripper;
       /** Typed completion from TypeScript's language service; on by default (#273). */
       languageService?: boolean;
+      /** Where faults in the kernel's own code go, when the host opted in to crash reports (#422). */
+      report?: (err: unknown, where: string) => void;
     } = {},
   ) {
     const notebookDir = options.notebookDir ?? process.cwd();
@@ -198,6 +200,7 @@ export class Kernel {
       readSource,
       kernelFiles: kernelFiles(),
       log,
+      report: options.report,
       exit: () => process.exit(0),
     });
   }

@@ -88,6 +88,7 @@
     "wrangler": "4.151.0"
   },
   "optionalDependencies": {
+    "@sentry/core": "^11.10.0",
     "sucrase": "^3.35.1"
   }
 }
