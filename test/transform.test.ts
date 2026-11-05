@@ -4,7 +4,7 @@ import { CellSyntaxError, loadTypeStripper, objectLiteralCandidate, rewriteModul
 
 await loadTypeStripper("esbuild");
 
-const PRELUDE = "'use strict'; await __cdpk.tick();\n";
+const PRELUDE = "'use strict'; __cdpk.startCell(); await __cdpk.tick();\n";
 
 interface ImportCall {
   specifier: string;

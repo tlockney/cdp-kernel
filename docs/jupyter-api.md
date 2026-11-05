@@ -509,15 +509,17 @@ accept it as is: `fetch(url, { signal: jupyter.signal })`,
 `addEventListener(type, listener, { signal: jupyter.signal })`, or
 `setTimeout` from `node:timers/promises`.
 
-- An interrupt of a running cell or comm handler aborts it, including a
-  cell waiting in `prompt()`. Its `reason` is a `DOMException` named
-  `AbortError`, with the message `Execution interrupted`.
-- It stays aborted until the next cell starts, and that cell gets a new
-  one. Read it once, when the work starts, and keep it: code reading
-  `jupyter.signal` later would get the newer signal.
-- Until an interrupt, every cell gets the same signal. A timer or request
-  that an earlier cell started with it is cancelled by the next interrupt
-  too.
+- Each cell gets its own signal, and an interrupt aborts only the running
+  cell's, including a cell waiting in `prompt()`. A timer or request that
+  an earlier, finished cell started with its signal keeps going. The
+  `reason` is a `DOMException` named `AbortError`, with the message
+  `Execution interrupted`.
+- A [comm handler](widgets.md#comms) that starts while no cell runs gets
+  its own signal too, which an interrupt during it aborts. A handler that
+  runs during a cell (on a kernel subshell) shares the cell's.
+- Read it once, when the work starts, and keep it. The kernel can't tell
+  which cell a timer callback or a later `await` belongs to, so reading
+  `jupyter.signal` there gets the signal of whatever started last.
 - It behaves the same on every runtime. It matters most on Bun, workerd,
   celld and the browser target, where an interrupted cell's pending work
   keeps running.

@@ -66,6 +66,8 @@ export class BunTarget implements KernelTarget {
   #messages: Promise<void> = Promise.resolve();
   /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
   #interrupts = 0;
+  /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
+  #cells = 0;
   #stopNote: string | undefined;
   readonly #startedAt = Date.now();
 
@@ -202,7 +204,12 @@ export class BunTarget implements KernelTarget {
   }
 
   async evaluate(script: string): Promise<EvaluateResult> {
-    return asEvaluateResult(await this.#interruptible("eval", { code: script }, "Execution"));
+    this.#cells++;
+    try {
+      return asEvaluateResult(await this.#interruptible("eval", { code: script }, "Execution"));
+    } finally {
+      this.#cells--;
+    }
   }
 
   /**
@@ -261,6 +268,7 @@ export class BunTarget implements KernelTarget {
       content,
       metadata,
       buffers: buffers.map((b) => Buffer.from(b).toString("base64")),
+      ownSignal: this.#cells === 0,
     }, "Comm handler");
     if (isRecord(reply.error)) {
       const { name, message, stack } = reply.error;

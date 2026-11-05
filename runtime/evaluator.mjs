@@ -44,7 +44,7 @@ export function createHandler(shim, evaluate = (code) => (0, eval)(code)) {
       case "eval": {
         // The host uses a result's handle before its next cell.
         handles.clear();
-        shim.renewSignal?.();
+        shim.startCell?.();
         try {
           const box = await evaluate(request.code);
           return { result: box === undefined ? { type: "undefined" } : remote(box[0]) };
@@ -63,7 +63,13 @@ export function createHandler(shim, evaluate = (code) => (0, eval)(code)) {
         return { value: shim.describeError(take(request.handle)) };
       case "comm":
         try {
-          const handled = await shim.commDispatch(request.msgType, request.content, request.metadata, request.buffers);
+          const handled = await shim.commDispatch(
+            request.msgType,
+            request.content,
+            request.metadata,
+            request.buffers,
+            request.ownSignal === true,
+          );
           return { handled: handled === true };
         } catch (err) {
           return { error: JSON.parse(shim.describeError(err)) };

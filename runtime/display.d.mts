@@ -43,9 +43,9 @@ export interface JupyterNamespace {
   /** An anywidget-compatible widget; display the result to show it. */
   widget(options: WidgetOptions): Widget;
   /**
-   * Aborted when the kernel is interrupted. It stays aborted until the next
-   * cell starts, which gets a new signal; until an interrupt, every cell
-   * gets the same one.
+   * Aborted when the kernel interrupts this cell. Each cell gets its own,
+   * as does a comm handler that starts while no cell runs. Read it when
+   * the work starts: a later read gets the signal of whatever started last.
    */
   readonly signal: AbortSignal;
 }
@@ -57,12 +57,21 @@ export interface Jupyter {
   formatNow(obj: unknown): unknown;
   confirm(message?: string): boolean;
   prompt(message?: string, defaultValue?: string, options?: { password?: boolean }): string | null;
-  /** Routes a frontend comm message into the kernel's comms. */
-  commDispatch: Comms["dispatch"];
-  /** Aborts jupyter.signal: the kernel was interrupted. */
+  /**
+   * Routes a frontend comm message into the kernel's comms. `ownSignal`
+   * (no cell is running) gives its handlers their own jupyter.signal.
+   */
+  commDispatch(
+    msgType: string,
+    content: { [key: string]: unknown },
+    metadata: { [key: string]: unknown },
+    buffers: Uint8Array[],
+    ownSignal?: boolean,
+  ): Promise<boolean>;
+  /** A new jupyter.signal: a cell is starting (#421). */
+  startCell(): void;
+  /** Aborts the running cell's and comm handlers' jupyter.signal: the kernel was interrupted. */
   abortSignal(): void;
-  /** A new jupyter.signal if the current one is aborted: a cell is starting. */
-  renewSignal(): void;
 }
 
 export function escapeHTML(str: string): string;

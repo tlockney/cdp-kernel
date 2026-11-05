@@ -33,7 +33,9 @@ export const SHIM = "__cdpk";
 // collected" (#329). Yielding first moves the throw into a task, where
 // SETTLE's reasoning applies. The debug console uses YIELD for this.
 export const YIELD = `await ${SHIM}.tick();\n`;
-const PRELUDE = `'use strict'; ${YIELD}`;
+// startCell gives the cell its own jupyter.signal (#421) before any of its
+// code runs.
+const PRELUDE = `'use strict'; ${SHIM}.startCell(); ${YIELD}`;
 
 /**
  * Each replMode cell also ends by yielding one macrotask, so the script

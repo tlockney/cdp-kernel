@@ -443,20 +443,37 @@ export function createJupyter(host) {
 
   // jupyter.signal (#418): aborted when the kernel is interrupted, so cell
   // code can stop waiting on what the interrupt can't reach, such as a comm
-  // reply. It stays aborted until the next cell starts, so code the
-  // interrupt abandoned sees it aborted; that cell gets a new one.
-  let controller = new AbortController();
-  function abortSignal() {
-    controller.abort(new DOMException("Execution interrupted", "AbortError"));
+  // reply. Each cell gets its own, as does a comm handler that starts while
+  // no cell runs; a handler during a cell shares the cell's. An interrupt
+  // aborts only those of the cell and handlers running (#421).
+  let current = new AbortController();
+  /** The controllers of comm handlers running with their own signal. */
+  const handlers = new Set();
+  function startCell() {
+    current = new AbortController();
   }
-  function renewSignal() {
-    if (controller.signal.aborted) controller = new AbortController();
+  function abortSignal() {
+    const reason = new DOMException("Execution interrupted", "AbortError");
+    current.abort(reason);
+    for (const controller of handlers) controller.abort(reason);
+    handlers.clear();
+  }
+  async function commDispatch(msgType, content, metadata, buffers, ownSignal = false) {
+    if (!ownSignal) return await comms.dispatch(msgType, content, metadata, buffers);
+    const controller = new AbortController();
+    current = controller;
+    handlers.add(controller);
+    try {
+      return await comms.dispatch(msgType, content, metadata, buffers);
+    } finally {
+      handlers.delete(controller);
+    }
   }
 
   return {
     namespace: {
       get signal() {
-        return controller.signal;
+        return current.signal;
       },
       broadcast,
       display,
@@ -473,8 +490,8 @@ export function createJupyter(host) {
     formatNow,
     confirm,
     prompt,
-    commDispatch: comms.dispatch,
+    commDispatch,
+    startCell,
     abortSignal,
-    renewSignal,
   };
 }

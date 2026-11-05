@@ -74,6 +74,8 @@ export class BrowserTarget implements KernelTarget {
   #nextId = 0;
   /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
   #interrupts = 0;
+  /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
+  #cells = 0;
   #stopNote: string | undefined;
   #exited = false;
 
@@ -199,7 +201,12 @@ export class BrowserTarget implements KernelTarget {
   }
 
   async evaluate(script: string): Promise<EvaluateResult> {
-    return asEvaluateResult(await this.#interruptibly("eval", { code: script }, "Execution"));
+    this.#cells++;
+    try {
+      return asEvaluateResult(await this.#interruptibly("eval", { code: script }, "Execution"));
+    } finally {
+      this.#cells--;
+    }
   }
 
   /**
@@ -250,7 +257,13 @@ export class BrowserTarget implements KernelTarget {
     metadata: CdpParams,
     buffers: Uint8Array[],
   ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }> {
-    const reply = await this.#interruptibly("comm", { msgType, content, metadata, buffers: buffers.map(toBase64) }, "Comm handler");
+    const reply = await this.#interruptibly("comm", {
+      msgType,
+      content,
+      metadata,
+      buffers: buffers.map(toBase64),
+      ownSignal: this.#cells === 0,
+    }, "Comm handler");
     if (isRecord(reply.error)) {
       const { name, message, stack } = reply.error;
       return { error: { name: String(name), message: String(message), stack: String(stack) } };

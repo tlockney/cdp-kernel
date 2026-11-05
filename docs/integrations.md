@@ -227,6 +227,9 @@ Once the cell is stopped or abandoned, the host aborts
 the target, so cell code still waiting can stop: `__cdpk.abortSignal()`
 over `Runtime.callFunctionOn` on Node and Deno, an `abort` request on the
 others. It does so after rejecting the cell's request, so the reply of a
-cell that then ends can't take the place of `Interrupted`. The next cell starts with a new signal: on Node
-and Deno the host calls `__cdpk.renewSignal()` before it, and the other
-targets' `eval` renews it first.
+cell that then ends can't take the place of `Interrupted`. Each cell
+starts with a new signal: on Node and Deno the cell's prelude calls
+`__cdpk.startCell()`, and the other targets' `eval` does. A comm message
+the host dispatches while no cell runs carries `ownSignal`, so its
+handlers get a signal of their own; an interrupt aborts the running
+cell's and those handlers' signals only.

@@ -1,6 +1,7 @@
 // jupyter.signal (#418): an interrupt aborts it, so a cell waiting on
-// something the interrupt can't reach, such as a comm reply, can stop; the
-// next cell gets a new one. test/browser.test.ts covers the browser target.
+// something the interrupt can't reach, such as a comm reply, can stop. Each
+// cell, and each comm handler that starts while no cell runs, gets its own
+// (#421). test/browser.test.ts covers the browser target.
 import { type TestContext, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -25,31 +26,63 @@ function jupyter() {
   return createJupyter({ inspect: String, base64: () => "", readFile: () => new Uint8Array(), send: () => {}, input: () => null });
 }
 
-test("the signal stays the same until aborted, and is renewed only once aborted", () => {
+test("each cell gets its own signal, and an interrupt aborts only the running cell's", () => {
   const j = jupyter();
+  j.startCell();
   const first = j.namespace.signal;
-  j.renewSignal();
-  assert.equal(j.namespace.signal, first, "renewed without an interrupt");
+  j.startCell();
+  const second = j.namespace.signal;
+  assert.notEqual(first, second);
   j.abortSignal();
-  assert.ok(first.aborted);
-  assert.equal(first.reason.name, "AbortError");
-  assert.equal(first.reason.message, "Execution interrupted");
-  // Code the interrupt abandoned still sees it aborted, until a cell starts.
-  assert.equal(j.namespace.signal, first);
-  j.renewSignal();
-  assert.notEqual(j.namespace.signal, first);
+  assert.ok(second.aborted);
+  assert.equal(second.reason.name, "AbortError");
+  assert.equal(second.reason.message, "Execution interrupted");
+  assert.ok(!first.aborted, "a finished cell's signal");
+  j.startCell();
   assert.ok(!j.namespace.signal.aborted);
 });
 
-test("the evaluator aborts the signal on request and renews it for the next cell", async () => {
+test("a comm handler with no cell running gets its own signal; one during a cell shares the cell's", async () => {
   const j = jupyter();
-  const shim = { abortSignal: j.abortSignal, renewSignal: j.renewSignal } as unknown as EvaluatorShim;
-  const handle = createHandler(shim, () => Promise.resolve([j.namespace.signal.aborted]));
-  const first = j.namespace.signal;
-  await handle({ op: "abort" });
-  assert.ok(first.aborted);
+  const seen: AbortSignal[] = [];
+  let release = () => {};
+  j.namespace.comm.registerTarget("t", async () => {
+    seen.push(j.namespace.signal);
+    await new Promise<void>((resolve) => (release = resolve));
+  });
+  j.startCell();
+  const cell = j.namespace.signal;
+  j.abortSignal();
+  // Between cells, after that interrupt: a fresh signal, which an interrupt aborts.
+  const own = j.commDispatch("comm_open", { comm_id: "a", target_name: "t" }, {}, [], true);
+  await Promise.resolve();
+  assert.notEqual(seen[0], cell);
+  assert.ok(!seen[0].aborted);
+  j.abortSignal();
+  assert.ok(seen[0].aborted);
+  release();
+  await own;
+  // During a cell: the cell's.
+  j.startCell();
+  const shared = j.commDispatch("comm_open", { comm_id: "b", target_name: "t" }, {}, [], false);
+  await Promise.resolve();
+  assert.equal(seen[1], j.namespace.signal);
+  release();
+  await shared;
+});
+
+test("the evaluator starts a cell on eval, passes ownSignal to comms and aborts on request", async () => {
+  const calls: unknown[] = [];
+  const shim = {
+    startCell: () => calls.push("startCell"),
+    abortSignal: () => calls.push("abort"),
+    commDispatch: (...args: unknown[]) => (calls.push(["comm", args[4]]), Promise.resolve(true)),
+  } as unknown as EvaluatorShim;
+  const handle = createHandler(shim, () => Promise.resolve([1]));
   await handle({ op: "eval", code: "" });
-  assert.ok(!j.namespace.signal.aborted);
+  await handle({ op: "comm", msgType: "comm_msg", content: {}, metadata: {}, buffers: [], ownSignal: true });
+  await handle({ op: "abort" });
+  assert.deepEqual(calls, ["startCell", ["comm", true], "abort"]);
 });
 
 // The cell announces a comm and waits for the frontend's answer on it,
@@ -100,16 +133,33 @@ const settle = () => new Promise((r) => setTimeout(r, 300));
 for (const [name, { launch: start, skip }] of Object.entries(targets)) {
   test(`${name}: a cell awaiting a comm reply with jupyter.signal ends on interrupt`, { skip }, async (t) => {
     const { target, check } = await launch(t, start);
-    await check("globalThis.log = []; globalThis.before = jupyter.signal; 0");
-    assert.equal(await check("jupyter.signal === before"), "true", "a new signal without an interrupt");
+    await check("globalThis.log = []; globalThis.first = jupyter.signal; 0");
+    assert.equal(await check("jupyter.signal !== first"), "true", "each cell's own signal");
     const cell = assert.rejects(target.evaluate(target.transform(AWAIT_REPLY, {})), Interrupted);
     await settle();
     await target.interrupt();
     await cell;
     await settle();
     assert.equal(await check(`log.join() === "AbortError,ended"`), "true", await check("log.join()"));
-    assert.equal(await check("before.aborted"), "true");
-    assert.equal(await check("jupyter.signal !== before && !jupyter.signal.aborted"), "true", "the next cell's signal");
+    assert.equal(await check("first.aborted"), "false", "a finished cell's signal");
+    assert.equal(await check("jupyter.signal.aborted"), "false", "the next cell's signal");
+
+    // A comm handler between cells gets its own signal, which an interrupt aborts.
+    await check(`globalThis.seen = [];
+      jupyter.comm.registerTarget("t", async () => {
+        const signal = jupyter.signal;
+        seen.push(signal.aborted);
+        await new Promise((_, reject) => signal.addEventListener("abort", () => {
+          seen.push("aborted");
+          reject(signal.reason);
+        }, { once: true }));
+      }); 0`);
+    const handler = assert.rejects(target.dispatchComm("comm_open", { comm_id: "c1", target_name: "t", data: {} }, {}, []), Interrupted);
+    await settle();
+    await target.interrupt();
+    await handler;
+    await settle();
+    assert.equal(await check(`seen.join() === "false,aborted"`), "true", await check("seen.join()"));
   });
 }
 
@@ -124,10 +174,8 @@ test("node: interrupting a prompt aborts the signal", async (t) => {
     },
   });
   t.after(() => target?.kill());
-  const before = await target.evaluate(target.transform("globalThis.before = jupyter.signal; 0", {}));
-  assert.equal(before.exceptionDetails, undefined);
-  const res = await target.evaluate(target.transform(`prompt("q")`, {}));
+  const res = await target.evaluate(target.transform(`globalThis.inPrompt = jupyter.signal; prompt("q")`, {}));
   assert.ok(res.exceptionDetails, "the prompt threw");
-  const after = await target.evaluate(target.transform("before.aborted && !jupyter.signal.aborted", {}));
+  const after = await target.evaluate(target.transform("inPrompt.aborted && !jupyter.signal.aborted", {}));
   assert.equal(after.result.value, true);
 });

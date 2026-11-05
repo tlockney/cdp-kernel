@@ -83,11 +83,13 @@ acorn rewrites `import`/`export`; see
 adds two lines:
 
 ```js
-'use strict'; await __cdpk.tick();
+'use strict'; __cdpk.startCell(); await __cdpk.tick();
 // ...the cell...
 ;let __cdpk_settled = await __cdpk.tick();
 ```
 
+`startCell()` gives the cell its own
+[`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal).
 It then sends:
 
 ```json
@@ -197,8 +199,8 @@ was busy or waiting.
 Then it calls `__cdpk.abortSignal()`, which aborts
 [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal), so
 code waiting on a promise only it can settle can stop. If the termination
-is still pending and ends that call, the host calls it once more. Before
-the next cell, the host calls `__cdpk.renewSignal()` for a new signal.
+is still pending and ends that call, the host calls it once more. Each
+cell's prelude calls `__cdpk.startCell()`, which gives it a new signal.
 
 ## Errors outside a cell
 

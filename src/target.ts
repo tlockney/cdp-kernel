@@ -370,8 +370,8 @@ export class Target implements KernelTarget {
   #undelivered = 0;
   /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
   #interrupts = 0;
-  /** jupyter.signal was aborted: the next cell renews it first (#418). */
-  #signalAborted = false;
+  /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
+  #cells = 0;
   #paused = false;
   /** What the debugger asked to pause on (#307), and how many kernel calls hold it off. */
   #pauseOnExceptions = "none";
@@ -726,10 +726,7 @@ export class Target implements KernelTarget {
   /** Runs transformed cell code. Rejects with Interrupted after interrupt(). */
   async evaluate(script: string): Promise<EvaluateResult> {
     const interrupts = this.#interrupts;
-    if (this.#signalAborted) {
-      this.#signalAborted = false;
-      await this.#evaluateSync(`${SHIM}.renewSignal()`).catch(interrupted("Execution"));
-    }
+    this.#cells++;
     try {
       return await this.#evaluateRaw(script);
     } catch (err) {
@@ -744,6 +741,8 @@ export class Target implements KernelTarget {
         throw new Error(`${this.runtime} exited`);
       }
       throw err;
+    } finally {
+      this.#cells--;
     }
   }
 
@@ -787,7 +786,6 @@ export class Target implements KernelTarget {
    * so it gets a second.
    */
   async #abortSignal(): Promise<void> {
-    this.#signalAborted = true;
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await this.callFunctionOn(`function () { globalThis.${SHIM}.abortSignal(); return true; }`, [])
         .catch((): CdpParams => ({}));
@@ -871,6 +869,7 @@ export class Target implements KernelTarget {
       content,
       metadata,
       buffers: buffers.map((b) => Buffer.from(b).toString("base64")),
+      ownSignal: this.#cells === 0,
     }));
     this.#child.stdin.write(`comm ${record.length}\n`);
     this.#child.stdin.write(record);
@@ -964,8 +963,6 @@ export class Target implements KernelTarget {
   }
 
   replyInput(value: string | null, interrupted = false): void {
-    // The prompt aborts jupyter.signal as it throws (#418).
-    if (interrupted) this.#signalAborted = true;
     this.#child.stdin.write(JSON.stringify({ value, interrupted }) + "\n");
   }
 
