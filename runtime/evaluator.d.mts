@@ -2,12 +2,16 @@
 export interface EvaluatorShim {
   broadcastResult(executionCount: number, value: unknown): void | Promise<void>;
   describeError(value: unknown): string;
-  commDispatch(msgType: string, content: object, metadata: object, buffers64: string[]): Promise<unknown>;
+  commDispatch(msgType: string, content: object, metadata: object, buffers64: string[], ownSignal?: boolean): Promise<unknown>;
   barrier(): number;
   /** inspect_request's text for a dotted path, or null (#10). */
   inspectPath(path: string, detail: number): string | null;
   /** Resolves a dotted path without running getters; see introspect.mjs. */
   resolvePath?(path: string): import("./introspect.mjs").Resolved;
+  /** A new jupyter.signal, as a cell starts (#421). */
+  startCell?(): void;
+  /** Aborts the running cell's and comm handlers' jupyter.signal, after an interrupt (#418). */
+  abortSignal?(cellRunning?: boolean): void;
 }
 
 /** A request from the host: an `op` plus its parameters. */

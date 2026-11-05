@@ -256,7 +256,9 @@ As on Bun, nothing can stop JavaScript that's running, so the host sends a
 - If the driver answers within 500 ms, the cell was only waiting. The host
   abandons the cell's request and the cell ends as interrupted. The
   session, its I/O objects and every global stay, and whatever the cell
-  started keeps running.
+  started keeps running. The host then sends `abort`, which aborts
+  [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal),
+  so code that watches it can stop.
 - If not, the cell is busy. The host stops the runtime (`SIGKILL` for
   workerd, `dispose()` for Miniflare, the process tree for celld) and the
   next cell starts a new one without the earlier state. The cell's output

@@ -143,9 +143,13 @@ function install(env) {
     broadcastResult: jupyter.broadcastResult,
     // execute_request's user_expressions (#340).
     formatJson: async (value) => JSON.stringify(await jupyter.namespace.format(value)),
-    async commDispatch(msgType, content, metadata, buffers64) {
+    // jupyter.signal (#418, #421): a new one as each cell starts; the host
+    // aborts the running ones on interrupt.
+    startCell: jupyter.startCell,
+    abortSignal: jupyter.abortSignal,
+    async commDispatch(msgType, content, metadata, buffers64, ownSignal) {
       const buffers = buffers64.map((b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0)));
-      return await jupyter.commDispatch(msgType, content, metadata, buffers);
+      return await jupyter.commDispatch(msgType, content, metadata, buffers, ownSignal);
     },
     describeError(value) {
       if (value instanceof Error) {

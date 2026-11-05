@@ -74,6 +74,8 @@ export class BrowserTarget implements KernelTarget {
   #nextId = 0;
   /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
   #interrupts = 0;
+  /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
+  #cells = 0;
   #stopNote: string | undefined;
   #exited = false;
 
@@ -199,18 +201,26 @@ export class BrowserTarget implements KernelTarget {
   }
 
   async evaluate(script: string): Promise<EvaluateResult> {
-    return asEvaluateResult(await this.#interruptibly("eval", { code: script }, "Execution"));
+    this.#cells++;
+    try {
+      return asEvaluateResult(await this.#interruptibly("eval", { code: script }, "Execution"));
+    } finally {
+      this.#cells--;
+    }
   }
 
   /**
    * A cell that's waiting on something leaves the Worker free: it answers a
    * ping, and the cell is abandoned with its state intact; host requests
    * in flight are cancelled on the page, and reject in the Worker with an
-   * AbortError (#388). A busy cell can't be reached, so the Worker is
+   * AbortError (#388), and jupyter.signal is aborted (#418). A busy cell
+   * can't be reached, so the Worker is
    * terminated, and a new one starts on the next cell.
    */
   async interrupt(): Promise<void> {
     this.#interrupts++;
+    // Before abandoning the cell's request, which ends the count.
+    const cellRunning = this.#cells > 0;
     const running = [...this.#interruptible];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),
@@ -223,6 +233,10 @@ export class BrowserTarget implements KernelTarget {
         this.#interruptible.delete(id);
       }
       this.#cancelHostCalls();
+      // After the cell is abandoned, so its reply can't end it first
+      // (#418). Not awaited: requests are answered in order, and an abort
+      // listener that never returns mustn't hold up the interrupt.
+      void this.#request("abort", { cell: cellRunning }).catch(() => {});
       return;
     }
     this.#stopNote = RESTART_NOTE;
@@ -245,7 +259,13 @@ export class BrowserTarget implements KernelTarget {
     metadata: CdpParams,
     buffers: Uint8Array[],
   ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }> {
-    const reply = await this.#interruptibly("comm", { msgType, content, metadata, buffers: buffers.map(toBase64) }, "Comm handler");
+    const reply = await this.#interruptibly("comm", {
+      msgType,
+      content,
+      metadata,
+      buffers: buffers.map(toBase64),
+      ownSignal: this.#cells === 0,
+    }, "Comm handler");
     if (isRecord(reply.error)) {
       const { name, message, stack } = reply.error;
       return { error: { name: String(name), message: String(message), stack: String(stack) } };

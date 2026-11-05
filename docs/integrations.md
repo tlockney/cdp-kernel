@@ -221,3 +221,15 @@ On the other targets there is no way to stop JavaScript that is running,
 so a cell that is still computing costs the runtime and its state. A cell
 that is only waiting (on a timer, `fetch`, a promise) is abandoned in place:
 whatever it started keeps running, and its later output still appears.
+
+Once the cell is stopped or abandoned, the host aborts
+[`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal) in
+the target, so cell code still waiting can stop: `__cdpk.abortSignal()`
+over `Runtime.callFunctionOn` on Node and Deno, an `abort` request on the
+others. It does so after rejecting the cell's request, so the reply of a
+cell that then ends can't take the place of `Interrupted`. Each cell
+starts with a new signal: on Node and Deno the cell's prelude calls
+`__cdpk.startCell()`, and the other targets' `eval` does. A comm message
+the host dispatches while no cell runs carries `ownSignal`, so its
+handlers get a signal of their own; an interrupt aborts the running
+cell's and those handlers' signals only.

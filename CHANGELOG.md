@@ -6,6 +6,13 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Cell code can see an interrupt: `jupyter.signal` is an `AbortSignal`
+  that an interrupt aborts. A cell awaiting a comm reply, or other work
+  only it can end, can pass it on and stop on interrupt, on every
+  runtime. Each cell gets its own signal, as does a comm handler that
+  starts while no cell runs, so an interrupt stops only the running work
+  ([#418](https://github.com/tlockney/cdp-kernel/issues/418),
+  [#421](https://github.com/tlockney/cdp-kernel/issues/421)).
 - Opt-in crash reports: with `CDP_KERNEL_CRASH_REPORTS=1` in its
   environment, the kernel sends faults in its own code (not errors in
   cells) to Sentry, scrubbed of paths and content. Off by default; no new

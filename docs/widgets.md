@@ -571,6 +571,10 @@ const ask = jupyter.comm.open("my.app", { question: "ready?" });
 const answer = await new Promise((resolve) => ask.onMsg((m) => resolve(m.data)));
 ```
 
+An interrupt doesn't settle that promise. To end the wait on interrupt,
+reject it when [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal)
+aborts.
+
 Handlers still share the cell's JavaScript thread: a cell that never
 awaits holds them until it ends. While a cell runs, a handler's output
 (and a `prompt()` in it) is shown under that cell. An interrupt stops the

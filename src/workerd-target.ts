@@ -443,6 +443,8 @@ export class WorkerdTarget implements KernelTarget {
   #nextId = 0;
   /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
   #interrupts = 0;
+  /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
+  #cells = 0;
   #stopNote: string | undefined;
   #exitedOnce = false;
   readonly #startedAt = Date.now();
@@ -577,6 +579,15 @@ export class WorkerdTarget implements KernelTarget {
   }
 
   async evaluate(script: string): Promise<EvaluateResult> {
+    this.#cells++;
+    try {
+      return await this.#evaluate(script);
+    } finally {
+      this.#cells--;
+    }
+  }
+
+  async #evaluate(script: string): Promise<EvaluateResult> {
     const modules: Record<string, string> = {};
     for (const specifier of importSpecifiers(script)) {
       if (BUILTIN.test(specifier) || this.#sent.has(specifier)) continue;
@@ -593,11 +604,14 @@ export class WorkerdTarget implements KernelTarget {
   /**
    * A cell that's waiting on something leaves the driver free: it answers a
    * ping, and the cell is abandoned with the session intact (its pending
-   * work still runs, as on Bun). A busy cell can't be reached, so workerd is
-   * stopped and restarts on the next cell.
+   * work still runs, as on Bun, and jupyter.signal tells it to stop). A busy
+   * cell can't be reached, so workerd is stopped and restarts on the next
+   * cell.
    */
   async interrupt(): Promise<void> {
     this.#interrupts++;
+    // Before abandoning the cell's request, which ends the count.
+    const cellRunning = this.#cells > 0;
     const running = [...this.#interruptible];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),
@@ -609,6 +623,10 @@ export class WorkerdTarget implements KernelTarget {
         this.#pending.delete(id);
         this.#interruptible.delete(id);
       }
+      // After the cell is abandoned, so its reply can't end it first
+      // (#418). Not awaited: requests are answered in order, and an abort
+      // listener that never returns mustn't hold up the interrupt.
+      void this.#request("abort", { cell: cellRunning }).catch(() => {});
       return;
     }
     this.#stopNote = restartNote(this.runtime);
@@ -636,6 +654,7 @@ export class WorkerdTarget implements KernelTarget {
       content,
       metadata,
       buffers: buffers.map((b) => Buffer.from(b).toString("base64")),
+      ownSignal: this.#cells === 0,
     }, "Comm handler");
     if (isRecord(reply.error)) {
       const { name, message, stack } = reply.error;

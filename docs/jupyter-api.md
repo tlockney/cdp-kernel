@@ -22,6 +22,7 @@ at the end.
 | [`jupyter.format(value)`](#getting-a-bundle-with-format) | Compute the output for a value without showing it. |
 | [`jupyter.broadcast(type, content)`](#raw-messages-with-broadcast) | Send a raw Jupyter message, for things the helpers don't cover. |
 | `jupyter.comm`, `jupyter.widget` | Comms and interactive widgets: see [Widgets and comms](widgets.md). Not in Deno. |
+| [`jupyter.signal`](#stopping-on-interrupt-jupyter-signal) | An `AbortSignal` that an interrupt aborts, so a waiting cell can stop. Not in Deno. |
 
 `prompt()` and `confirm()` are globals rather than members, and are covered
 [below](#asking-for-input-prompt-and-confirm).
@@ -482,6 +483,46 @@ When nothing can answer, `prompt` returns `null` and `confirm` returns
 `false`. That happens when the frontend has no input channel (some
 headless runners, such as `nbconvert --execute`), and always on workerd and
 celld. Code meant to run unattended should handle `null`.
+
+## Stopping on interrupt: `jupyter.signal`
+
+An interrupt ends the running cell, but it can't settle a promise the cell
+is waiting on. The kernel stops waiting for the cell; the cell's own
+`await` stays pending. When only your code can end the wait, such as a
+reply over a [comm](widgets.md#comms), pass it `jupyter.signal` so it can
+give up and clean up:
+
+```ts
+const ask = jupyter.comm.open("my.app", { question: "ready?" });
+const signal = jupyter.signal;
+const answer = await new Promise((resolve, reject) => {
+  ask.onMsg((m) => resolve(m.data));
+  signal.addEventListener("abort", () => {
+    ask.close();
+    reject(signal.reason);
+  }, { once: true });
+});
+```
+
+`jupyter.signal` is an ordinary `AbortSignal`, so APIs that take one
+accept it as is: `fetch(url, { signal: jupyter.signal })`,
+`addEventListener(type, listener, { signal: jupyter.signal })`, or
+`setTimeout` from `node:timers/promises`.
+
+- Each cell gets its own signal, and an interrupt aborts only the running
+  cell's, including a cell waiting in `prompt()`. A timer or request that
+  an earlier, finished cell started with its signal keeps going. The
+  `reason` is a `DOMException` named `AbortError`, with the message
+  `Execution interrupted`.
+- A [comm handler](widgets.md#comms) that starts while no cell runs gets
+  its own signal too, which an interrupt during it aborts. A handler that
+  runs during a cell (on a kernel subshell) shares the cell's.
+- Read it once, when the work starts, and keep it. The kernel can't tell
+  which cell a timer callback or a later `await` belongs to, so reading
+  `jupyter.signal` there gets the signal of whatever started last.
+- It behaves the same on every runtime. It matters most on Bun, workerd,
+  celld and the browser target, where an interrupted cell's pending work
+  keeps running.
 
 ## Notebooks written for Deno
 

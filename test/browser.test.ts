@@ -201,6 +201,31 @@ test("interrupting a waiting cell keeps the Worker's state", { skip }, async (t)
   assert.equal(result(await execute("kept")), "'yes'");
 });
 
+test("an interrupt aborts jupyter.signal, so a cell awaiting a comm reply ends (#418)", { skip }, async (t) => {
+  const { execute, request } = await open(t);
+  await execute("var log = [], first = jupyter.signal");
+  const waiting = execute(`
+    const comm = jupyter.comm.open("ask", {});
+    const signal = jupyter.signal;
+    try {
+      await new Promise((resolve, reject) => {
+        comm.onMsg((m) => resolve(m.data));
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    } catch (err) {
+      log.push(err.name);
+      comm.close();
+    } finally {
+      log.push("ended");
+    }`);
+  await new Promise((r) => setTimeout(r, 300));
+  await request("control", "interrupt_request", {});
+  assert.equal(of(await waiting, "execute_reply")[0].ename, "Interrupted");
+  assert.equal(result(await execute("log.join()")), "'AbortError,ended'");
+  // Only the interrupted cell's signal (#421).
+  assert.equal(result(await execute("first.aborted || jupyter.signal.aborted")), "false");
+});
+
 test("preload modules reach the host page, before the first cell and after a restart (#384)", { skip }, async (t) => {
   const { execute, request, evaluate } = await open(t);
 

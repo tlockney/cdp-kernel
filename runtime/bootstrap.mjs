@@ -97,7 +97,9 @@ const jupyter = createJupyter({
     const reply = JSON.parse(line);
     if (reply.interrupted === true) {
       // Interrupted while waiting for the answer: unwind the cell, as
-      // KeyboardInterrupt does in Python's input() (#121).
+      // KeyboardInterrupt does in Python's input() (#121). The host
+      // doesn't interrupt the target then, so abort jupyter.signal here.
+      jupyter.abortSignal(reply.cell !== false);
       const err = new Error("Execution interrupted");
       err.name = "Interrupted";
       throw err;
@@ -217,6 +219,10 @@ globalThis.__cdpk = {
   broadcastResult: jupyter.broadcastResult,
   // execute_request's user_expressions (#340).
   formatJson: async (value) => JSON.stringify(await jupyter.namespace.format(value)),
+  // jupyter.signal (#418, #421): a new one as each cell starts; the host
+  // aborts the running ones on interrupt.
+  startCell: jupyter.startCell,
+  abortSignal: jupyter.abortSignal,
   // The debugger's rich variable viewer (#18), synchronously: it runs while
   // the target is paused. A value whose $display is async shows as text.
   richBundle(value) {
@@ -225,10 +231,10 @@ globalThis.__cdpk = {
   },
   // Frontend comm messages (#9), from the host's shell channel. Handlers
   // run after one macrotask, like cells, so interrupt can reach them.
-  async commDispatch(msgType, content, metadata, buffers64) {
+  async commDispatch(msgType, content, metadata, buffers64, ownSignal) {
     await yieldTask();
     const buffers = buffers64.map((b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0)));
-    return await jupyter.commDispatch(msgType, content, metadata, buffers);
+    return await jupyter.commDispatch(msgType, content, metadata, buffers, ownSignal);
   },
   // The same, for a message the host wrote to stdin (Node and Deno). A
   // value passed as a CDP call argument is compiled as source, and V8's
@@ -237,8 +243,8 @@ globalThis.__cdpk = {
   // await, so messages are taken in the order the host wrote them.
   commDispatchFromStdin() {
     const dispatch = () => {
-      const { msgType, content, metadata, buffers } = readCommRecord();
-      return globalThis.__cdpk.commDispatch(msgType, content, metadata, buffers);
+      const { msgType, content, metadata, buffers, ownSignal } = readCommRecord();
+      return globalThis.__cdpk.commDispatch(msgType, content, metadata, buffers, ownSignal === true);
     };
     // Node's inspector can run this call in the middle of a blocking stdin
     // read, e.g. a prompt's, when the message came on a kernel subshell

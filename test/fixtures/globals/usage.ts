@@ -17,7 +17,10 @@ class Badge implements Displayable {
 }
 await jupyter.display(new Badge("ok"));
 
+const stop: AbortSignal = jupyter.signal;
+stop.throwIfAborted();
+
 const name: string | null = prompt("Name?", "anon", { password: false });
 const sure: boolean = confirm("Sure?");
 
-export { bundle, img, name, sure, svg };
+export { bundle, img, name, stop, sure, svg };

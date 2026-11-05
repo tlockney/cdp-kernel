@@ -441,8 +441,47 @@ export function createJupyter(host) {
 
   const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
 
+  // jupyter.signal (#418): aborted when the kernel is interrupted, so cell
+  // code can stop waiting on what the interrupt can't reach, such as a comm
+  // reply. Each cell gets its own, as does a comm handler that starts while
+  // no cell runs; a handler during a cell shares the cell's. An interrupt
+  // aborts only those of the cell and handlers running (#421).
+  /** The last cell's controller. */
+  let cell = new AbortController();
+  /** What jupyter.signal returns: that of whatever started last. */
+  let current = cell;
+  /** Controllers of running comm handlers, with how many handlers use each. */
+  const handlers = new Map();
+  function startCell() {
+    current = cell = new AbortController();
+  }
+  /** `cellRunning`: the host has a cell in flight, so the last cell's signal is aborted too. */
+  function abortSignal(cellRunning = true) {
+    const reason = new DOMException("Execution interrupted", "AbortError");
+    if (cellRunning) cell.abort(reason);
+    for (const controller of handlers.keys()) controller.abort(reason);
+    handlers.clear();
+  }
+  async function commDispatch(msgType, content, metadata, buffers, ownSignal = false) {
+    // A handler during a cell shares the cell's signal, and is tracked
+    // apart from it: it can outlive the cell.
+    const controller = ownSignal ? new AbortController() : cell;
+    if (ownSignal) current = controller;
+    handlers.set(controller, (handlers.get(controller) ?? 0) + 1);
+    try {
+      return await comms.dispatch(msgType, content, metadata, buffers);
+    } finally {
+      const left = (handlers.get(controller) ?? 0) - 1;
+      if (left > 0) handlers.set(controller, left);
+      else handlers.delete(controller);
+    }
+  }
+
   return {
     namespace: {
+      get signal() {
+        return current.signal;
+      },
       broadcast,
       display,
       format,
@@ -458,6 +497,8 @@ export function createJupyter(host) {
     formatNow,
     confirm,
     prompt,
-    commDispatch: comms.dispatch,
+    commDispatch,
+    startCell,
+    abortSignal,
   };
 }
