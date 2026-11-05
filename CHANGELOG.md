@@ -13,6 +13,10 @@ Issue and pull request numbers refer to
   starts while no cell runs, so an interrupt stops only the running work
   ([#418](https://github.com/tlockney/cdp-kernel/issues/418),
   [#421](https://github.com/tlockney/cdp-kernel/issues/421)).
+- Opt-in crash reports: with `CDP_KERNEL_CRASH_REPORTS=1` in its
+  environment, the kernel sends faults in its own code (not errors in
+  cells) to Sentry, scrubbed of paths and content. Off by default; no new
+  dependency ([#422](https://github.com/tlockney/cdp-kernel/issues/422)).
 - The kernel supports kernel subshells (JEP 91): `kernel_info_reply`
   lists `kernel subshells`, the control channel answers
   `create_subshell_request`, `delete_subshell_request` and

@@ -127,3 +127,24 @@ release.
 [Known gaps](known-gaps.md) lists what isn't supported yet. Report bugs and
 ask for features in
 [GitHub issues](https://github.com/tlockney/cdp-kernel/issues).
+
+## Crash reports
+
+Off unless the program that starts the kernel turns them on by setting
+`CDP_KERNEL_CRASH_REPORTS=1` in the kernel's environment. Ganymede does
+this when its user has opted in to crash reporting
+([privacy](https://ganymede-server.com/docs/privacy)); a kernelspec's
+`env` can set it too. While it's off, nothing is installed and nothing
+is sent.
+
+When on, a fault in the kernel's own code (an exception that escapes a
+message handler, or one that would end the process) is sent to
+cdp-kernel's Sentry project. A report has the error's type and message,
+its stack with frames in cdp-kernel's own files by their path in the
+package and other frames by function name only, the cdp-kernel version,
+the host and target runtimes, and the OS and architecture. Home
+directories in the message become `~` and URLs keep only their path.
+Errors your cells throw are not faults and are never sent, and neither
+is cell source, output, variables, other file paths, environment
+variables or the host name. At most ten reports are sent per kernel.
+`CDP_KERNEL_SENTRY_DSN` sends them to another Sentry project instead.
