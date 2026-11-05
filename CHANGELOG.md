@@ -18,6 +18,10 @@ Issue and pull request numbers refer to
   the MIME type, and `text/x.typescript` gave `x.typescript`, which no
   server lists ([#400](https://github.com/tlockney/cdp-kernel/issues/400)).
 
+- `cdp-kernel --help` (or `-h`, `help`) prints the usage, and an
+  unknown option or a missing value says which instead of printing a
+  Node stack trace ([#414](https://github.com/tlockney/cdp-kernel/issues/414)).
+
 ## 0.7.2 (2026-11-02)
 
 - The workerd target runs workerd's own binary when it finds the npm

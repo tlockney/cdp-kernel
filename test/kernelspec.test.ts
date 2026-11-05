@@ -105,3 +105,17 @@ test("install refuses a name that isn't a kernel name", (t) => {
   assert.ok(!existsSync(join(dir, "evil")));
   assert.ok(!existsSync(join(dir, "kernels")));
 });
+
+test("--help prints the usage; an unknown option says which, without a stack trace", (t) => {
+  const dir = dataDir(t);
+  for (const arg of ["--help", "-h", "help"]) {
+    const r = cli(dir, arg);
+    assert.equal(r.status, 0, arg);
+    assert.match(r.stdout, /^usage: cdp-kernel install/, arg);
+  }
+  const r = cli(dir, "install", "--bogus");
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /^cdp-kernel: Unknown option '--bogus'\nusage: cdp-kernel/);
+  assert.doesNotMatch(r.stderr, /\n\s+at /);
+  assert.ok(!existsSync(join(dir, "kernels")), "nothing was installed");
+});
