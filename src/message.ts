@@ -2,7 +2,7 @@
 // kernel's message handling (src/kernel-core.ts) builds and reads. The
 // framing and HMAC signing that ZeroMQ peers need are in src/wire.ts.
 
-export const PROTOCOL_VERSION = "5.3";
+export const PROTOCOL_VERSION = "5.5";
 
 export type JsonObject = { [key: string]: unknown };
 

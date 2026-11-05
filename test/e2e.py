@@ -939,6 +939,59 @@ def checks(runtime, workdir, offline):
         closes = [m for m in msgs if m["msg_type"] == "comm_close"]
         assert len(closes) == 1 and closes[0]["content"]["comm_id"] == "nobody-1", msgs
 
+    def comm_on_subshell_while_cell_awaits(s):
+        # Kernel subshells (JEP 91, #417): JupyterLab sends comm messages on
+        # a subshell, so one reaches a cell that awaits it.
+        info = s.kc.kernel_info()
+        while True:
+            got = s.kc.get_shell_msg(timeout=TIMEOUT)
+            if got["parent_header"].get("msg_id") == info:
+                break
+        assert "kernel subshells" in got["content"]["supported_features"], got["content"]
+        create = s.kc.session.msg("create_subshell_request", {})
+        s.kc.control_channel.send(create)
+        while True:
+            reply = s.kc.control_channel.get_msg(timeout=TIMEOUT)
+            if reply["parent_header"].get("msg_id") == create["header"]["msg_id"]:
+                break
+        assert reply["content"]["status"] == "ok", reply
+        subshell = reply["content"]["subshell_id"]
+        msg_id = s.kc.execute('const subshellComm = jupyter.comm.open("ask", {});\n'
+                              'await new Promise((r) => subshellComm.onMsg((m) => r(m.data.answer * 2)))')
+        deadline = time.time() + TIMEOUT
+        comm_id = None
+        result = None
+        execute_reply = None
+        while execute_reply is None or (result is None and execute_reply["status"] == "ok"):
+            assert time.time() < deadline, "the cell never got the comm message"
+            try:
+                got = s.kc.get_iopub_msg(timeout=0.1)
+                if got["parent_header"].get("msg_id") == msg_id:
+                    if got["msg_type"] == "comm_open" and comm_id is None:
+                        comm_id = got["content"]["comm_id"]
+                        msg = s.kc.session.msg("comm_msg", {"comm_id": comm_id, "data": {"answer": 21}})
+                        msg["header"]["subshell_id"] = subshell
+                        s.kc.session.send(s.kc.shell_channel.socket, msg)
+                    elif got["msg_type"] == "execute_result":
+                        result = got["content"]
+            except Empty:
+                pass
+            try:
+                got = s.kc.get_shell_msg(timeout=0.05)
+                if got["parent_header"].get("msg_id") == msg_id:
+                    execute_reply = got["content"]
+            except Empty:
+                pass
+        assert execute_reply["status"] == "ok", execute_reply
+        assert "42" in strip_ansi(result["data"]["text/plain"]), result
+        delete = s.kc.session.msg("delete_subshell_request", {"subshell_id": subshell})
+        s.kc.control_channel.send(delete)
+        while True:
+            reply = s.kc.control_channel.get_msg(timeout=TIMEOUT)
+            if reply["parent_header"].get("msg_id") == delete["header"]["msg_id"]:
+                break
+        assert reply["content"] == {"status": "ok"}, reply
+
     def comm_frontend_close(s):
         _, out = s.run("globalThis.closedWith = null;\nc1.onClose((m) => { closedWith = m.data; });\nc1.id")
         comm_id = strip_ansi(result_of(out)["text/plain"]).strip("'\"")
@@ -1047,8 +1100,8 @@ def checks(runtime, workdir, offline):
         prompt_stdin, prompt_without_stdin, uncaught_later,
         complete, typed_complete, is_complete, inspect_tooltips, inspect_runs_nothing, history_tail, kernelspec_debugger,
         comm_kernel_open_and_info, comm_frontend_msg_reaches_kernel, comm_frontend_open_echoes,
-        comm_unknown_target_is_closed, comm_frontend_close, widget_roundtrip, comm_handler_error_is_reported,
-        silent_publishes_only_status, control_status_and_shell_interrupt,
+        comm_unknown_target_is_closed, comm_frontend_close, comm_on_subshell_while_cell_awaits,
+        widget_roundtrip, comm_handler_error_is_reported, silent_publishes_only_status, control_status_and_shell_interrupt,
         stop_on_error, stop_on_error_dropped_message, user_expressions,
     ]
     if runtime in ("workerd", "celld"):

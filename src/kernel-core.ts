@@ -115,6 +115,46 @@ interface InputAnswer {
 
 const NO_INPUT: InputAnswer = { value: null, interrupted: false };
 
+/** A shell message waiting its turn on the main shell or a subshell. */
+interface Queued extends Received {
+  /** Queued behind a cell that failed: answered as aborted (#123). */
+  abort: boolean;
+}
+
+/**
+ * Shell messages handled one at a time, in order: the main shell, or a
+ * kernel subshell (JEP 91, #417), each with its own.
+ */
+class ShellQueue {
+  readonly items: Queued[] = [];
+  #wake: (() => void) | null = null;
+  #closed = false;
+
+  push(item: Queued): void {
+    if (this.#closed) return;
+    this.items.push(item);
+    this.#wake?.();
+  }
+
+  /** The next message; null once closed. */
+  async next(): Promise<Queued | null> {
+    for (;;) {
+      if (this.#closed) return null;
+      const item = this.items.shift();
+      if (item !== undefined) return item;
+      await new Promise<void>((resolve) => (this.#wake = resolve));
+      this.#wake = null;
+    }
+  }
+
+  /** What's still queued is dropped. */
+  close(): void {
+    this.#closed = true;
+    this.items.length = 0;
+    this.#wake?.();
+  }
+}
+
 /** Cells remembered for tracebacks: a frame can be in a function any earlier cell defined. */
 const MAX_CELLS = 1000;
 
@@ -181,13 +221,14 @@ export class KernelCore {
   #executionCount = 0;
   #parent: JsonObject = {};
   #allowStdin = false;
-  #executing = false;
-  /**
-   * stop_on_error (#123): how many of the shell messages queued when a cell
-   * failed are still to come, and whether the one being handled is one.
-   */
-  #abortQueued = 0;
+  /** Cells and comm handlers running in the target. */
+  #running = 0;
+  /** stop_on_error (#123): the message being handled was queued behind a failed cell. */
   #aborting = false;
+  /** Messages without a subshell_id, in the order they came. */
+  readonly #mainShell = new ShellQueue();
+  /** Kernel subshells (JEP 91, #417): subshell_id -> its queue. */
+  readonly #subshells = new Map<string, ShellQueue>();
   /** The input_request waiting for its input_reply, if any. */
   #input: { msgId: string; settle: (answer: InputAnswer) => void } | null = null;
   /** An interrupt is waiting on the target. */
@@ -215,7 +256,7 @@ export class KernelCore {
     this.#ensureTarget().catch((err) => this.#log(`target failed to start: ${err}`));
     // Transforms are synchronous, so the stripper loads before any cell.
     if (typeof this.#typeStrip === "string") await loadTypeStripper(this.#typeStrip);
-    await Promise.all([this.#loop("shell", (m, p) => this.#handleShell(m, p)),
+    await Promise.all([this.#readShell(), this.#runShell(this.#mainShell, true),
       this.#loop("control", (m, p) => this.#handleControl(m, p)),
       this.#loop("stdin", (m) => this.#handleStdin(m))]);
   }
@@ -242,8 +283,9 @@ export class KernelCore {
     if (target?.diagnose) targetState = await target.diagnose().catch((err) => `diagnose failed: ${err}`);
     this.#log(`state: ${JSON.stringify({
       shell: handling && { msgType: handling.msgType, msgId: handling.msgId, ms: Date.now() - handling.since },
-      queued: this.#channels.shellQueued(),
-      executing: this.#executing,
+      queued: this.#mainShell.items.length + this.#channels.shellQueued(),
+      subshells: this.#subshells.size,
+      running: this.#running,
       interrupting: this.#interrupting,
       awaitingInput: this.#input !== null,
       target: targetState,
@@ -277,24 +319,29 @@ export class KernelCore {
     const type = msg.header.msg_type;
     const commId = String(msg.content.comm_id ?? "");
     const target = await this.#ensureTarget();
-    // Kernel messages the handlers send are replies to this message.
-    this.#parent = msg.header;
-    this.#allowStdin = false;
-    this.#executing = true;
+    // Kernel messages the handlers send are replies to this message, unless
+    // it came on a subshell while a cell runs (#417): the target's output
+    // doesn't say which it came from, so it stays the cell's.
+    if (this.#running === 0) {
+      this.#parent = msg.header;
+      this.#allowStdin = false;
+    }
+    const parent = msg.header;
     let handled = false;
+    this.#running++;
     try {
       const result = await target.dispatchComm(type, msg.content, msg.metadata, msg.buffers);
       if ("error" in result) {
         const { name, message, stack } = result.error;
-        this.#publish("stream", { name: "stderr", text: `Error in ${type} handler: ${stack || `${name}: ${message}`}\n` });
+        this.#publish("stream", { name: "stderr", text: `Error in ${type} handler: ${stack || `${name}: ${message}`}\n` }, { parent });
       } else {
         handled = result.handled;
       }
     } catch (err) {
       if (!(err instanceof Interrupted)) throw err;
-      this.#publish("stream", { name: "stderr", text: `${type} handler interrupted\n` });
+      this.#publish("stream", { name: "stderr", text: `${type} handler interrupted\n` }, { parent });
     } finally {
-      this.#executing = false;
+      this.#running--;
     }
     await target.flush().catch(() => {});
     if (type === "comm_open") {
@@ -303,7 +350,7 @@ export class KernelCore {
       } else {
         // An unknown target, or a handler that failed: the protocol asks the
         // kernel to close the comm so the frontend doesn't wait on it.
-        this.#publish("comm_close", { comm_id: commId, data: {} });
+        this.#publish("comm_close", { comm_id: commId, data: {} }, { parent });
       }
     } else if (type === "comm_close") {
       this.#comms.delete(commId);
@@ -399,7 +446,7 @@ export class KernelCore {
       this.#interruptStart();
       return;
     }
-    if (!this.#target || !this.#executing) return;
+    if (!this.#target || this.#running === 0) return;
     this.#interrupting = true;
     try {
       await this.#target.interrupt();
@@ -440,22 +487,64 @@ export class KernelCore {
   async #loop(channel: ChannelName, handle: (msg: KernelMessage, peer: string) => Promise<void>): Promise<void> {
     while (!this.#shuttingDown) {
       const received = await this.#channels.recv(channel);
-      // Before the drop below: shellQueued() counted this message too, so
-      // a dropped one takes its own abort slot, not a queued cell's (#340).
-      if (channel === "shell") {
-        this.#aborting = this.#abortQueued > 0;
-        if (this.#aborting) this.#abortQueued--;
-      }
       // Malformed, or on ZeroMQ unsigned or forged: dropped, as in Deno.
       if (received === null) continue;
-      const { peer, msg } = received;
       try {
-        if (channel === "shell") this.#handling = { msgType: msg.header.msg_type, msgId: msg.header.msg_id, since: Date.now() };
-        await handle(msg, peer);
+        await handle(received.msg, received.peer);
+      } catch (err) {
+        this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
+      }
+    }
+  }
+
+  /**
+   * Takes every shell message as it comes and queues it for the main shell
+   * or its subshell, so a subshell's message isn't stuck behind a running
+   * cell (#417).
+   */
+  async #readShell(): Promise<void> {
+    while (!this.#shuttingDown) {
+      const received = await this.#channels.recv("shell");
+      // Malformed, or on ZeroMQ unsigned or forged: dropped, as in Deno.
+      if (received === null) continue;
+      const subshellId = received.msg.header.subshell_id;
+      // Cells share one target and one parent header, so a cell sent on a
+      // subshell waits its turn on the main shell.
+      if (typeof subshellId !== "string" || received.msg.header.msg_type === "execute_request") {
+        this.#mainShell.push({ ...received, abort: false });
+        continue;
+      }
+      const queue = this.#subshells.get(subshellId);
+      if (queue !== undefined) {
+        queue.push({ ...received, abort: false });
+        continue;
+      }
+      // Answered, so the frontend doesn't wait on it.
+      const replyType = SHELL_REPLIES[received.msg.header.msg_type];
+      if (replyType !== undefined) {
+        const error: ErrorContent = { ename: "SubshellNotFound", evalue: `No subshell with id ${subshellId}`, traceback: [] };
+        this.#reply("shell", received.peer, received.msg, replyType, { status: "error", ...error });
+      }
+      this.#log(`dropping ${received.msg.header.msg_type} for unknown subshell ${subshellId}`);
+    }
+  }
+
+  /** Handles one queue's messages in turn. */
+  async #runShell(queue: ShellQueue, main: boolean): Promise<void> {
+    while (!this.#shuttingDown) {
+      const queued = await queue.next();
+      if (queued === null) return;
+      const { peer, msg } = queued;
+      try {
+        if (main) {
+          this.#aborting = queued.abort;
+          this.#handling = { msgType: msg.header.msg_type, msgId: msg.header.msg_id, since: Date.now() };
+        }
+        await this.#handleShell(msg, peer);
       } catch (err) {
         this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
       } finally {
-        if (channel === "shell") this.#handling = null;
+        if (main) this.#handling = null;
       }
     }
   }
@@ -487,7 +576,7 @@ export class KernelCore {
       debugger: this.#debugger !== null,
       // What current ipykernel advertises; JupyterLab itself goes by the
       // kernelspec's metadata.debugger.
-      supported_features: this.#debugger !== null ? ["debugger"] : [],
+      supported_features: this.#debugger !== null ? ["debugger", "kernel subshells"] : ["kernel subshells"],
       ...(this.#host.capabilities ? { capabilities: this.#host.capabilities } : {}),
     };
   }
@@ -530,6 +619,35 @@ export class KernelCore {
           new Promise((r) => setTimeout(r, INTERRUPT_REPLY_WAIT_MS)),
         ]);
         this.#reply(channel, peer, msg, "interrupt_reply", { status: "ok" });
+        break;
+      case "create_subshell_request": {
+        const subshellId = crypto.randomUUID();
+        const queue = new ShellQueue();
+        this.#subshells.set(subshellId, queue);
+        void this.#runShell(queue, false);
+        this.#reply(channel, peer, msg, "create_subshell_reply", { status: "ok", subshell_id: subshellId });
+        break;
+      }
+      case "delete_subshell_request": {
+        const subshellId = String(msg.content.subshell_id ?? "");
+        const queue = this.#subshells.get(subshellId);
+        if (queue === undefined) {
+          this.#reply(channel, peer, msg, "delete_subshell_reply", {
+            status: "error",
+            ename: "SubshellNotFound",
+            evalue: `No subshell with id ${subshellId}`,
+            traceback: [],
+          });
+          break;
+        }
+        // A message it is handling finishes; what's queued is dropped.
+        this.#subshells.delete(subshellId);
+        queue.close();
+        this.#reply(channel, peer, msg, "delete_subshell_reply", { status: "ok" });
+        break;
+      }
+      case "list_subshell_request":
+        this.#reply(channel, peer, msg, "list_subshell_reply", { status: "ok", subshell_id: [...this.#subshells.keys()] });
         break;
       case "usage_request": {
         // Without starting a target: a frontend polls this (#409). A host
@@ -865,7 +983,7 @@ export class KernelCore {
     let userExpressions: JsonObject = {};
     // nteract's structured traceback, sent as the error message's metadata (#322).
     let structured: JsonObject | null = null;
-    this.#executing = true;
+    this.#running++;
     try {
       const target = await this.#targetForCell();
       if (target.notice !== undefined && this.#noticeShownFor !== target) {
@@ -910,7 +1028,7 @@ export class KernelCore {
         error = { ename: "KernelError", evalue: message, traceback: [message] };
       }
     } finally {
-      this.#executing = false;
+      this.#running--;
     }
     // The result and error are shown: nothing refers to them any more (#286).
     await this.#target?.releaseResults?.();
@@ -920,8 +1038,9 @@ export class KernelCore {
         // Abort what was queued behind this cell (JupyterLab's Run All sends
         // every cell at once), but nothing sent after the client sees the
         // error. A macrotask first lets bytes already received be parsed.
+        // Shell messages are queued as they're read, so by then each is.
         await new Promise((r) => setTimeout(r, 0));
-        this.#abortQueued = this.#channels.shellQueued();
+        for (const queued of this.#mainShell.items) queued.abort = true;
       }
       this.#publish("error", error, structured ? { metadata: { [TRACEBACK_MIME]: structured } } : {});
       this.#reply("shell", peer, msg, "execute_reply", { status: "error", execution_count: count, ...error });

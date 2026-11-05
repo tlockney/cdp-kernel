@@ -445,18 +445,28 @@ function readLine() {
   }
 }
 
-/** The next prompt reply's line, past any comm record left unread. */
+/**
+ * Comm records read while waiting for a prompt's reply. A comm message on
+ * a kernel subshell (#417) can be written while a cell waits in input();
+ * its dispatch runs after, and takes it from here.
+ */
+const commRecords = [];
+
+/** The next prompt reply's line; comm records before it are kept. */
 function readInputReply() {
   for (;;) {
     const line = readLine();
     const comm = line === null ? null : COMM_HEADER.exec(line);
     if (comm === null) return line;
-    readExactly(Number(comm[1]));
+    const body = readExactly(Number(comm[1]));
+    if (body !== null) commRecords.push(body);
   }
 }
 
 /** The next comm message, past any prompt reply left unread. */
 function readCommRecord() {
+  const kept = commRecords.shift();
+  if (kept !== undefined) return JSON.parse(new TextDecoder().decode(kept));
   for (;;) {
     const line = readLine();
     if (line === null) throw new Error("stdin closed before a comm message arrived");
