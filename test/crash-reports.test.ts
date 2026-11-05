@@ -113,14 +113,33 @@ function kernel(options: { launch: () => Promise<KernelTarget>; types?: TypeServ
 
 test("a fault in a shell handler reaches the host", async () => {
   const { channels, faults, stop } = kernel({
-    launch: () => Promise.reject(new Error("internal: no target")),
+    launch: () => new Promise<KernelTarget>(() => {}),
+    types: {
+      complete: () => {
+        throw new Error("internal: language service broke");
+      },
+    } as unknown as TypeService,
   });
   try {
     const id = channels.push("shell", "complete_request", { code: "a", cursor_pos: 1 });
     assert.equal((await channels.replyOf("complete_reply", id)).content.status, "error");
     while (faults.length === 0) await new Promise((r) => setTimeout(r, 5));
     assert.equal(faults[0].where, "shell handler");
-    assert.match(String(faults[0].err), /no target/);
+    assert.match(String(faults[0].err), /language service broke/);
+  } finally {
+    stop();
+  }
+});
+
+test("a target that fails to launch is not a fault", async () => {
+  const { channels, faults, stop } = kernel({
+    launch: () => Promise.reject(new Error("node exited (1) before its inspector came up: /opt/x")),
+  });
+  try {
+    const id = channels.push("shell", "complete_request", { code: "a", cursor_pos: 1 });
+    assert.equal((await channels.replyOf("complete_reply", id)).content.status, "error");
+    await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(faults, []);
   } finally {
     stop();
   }

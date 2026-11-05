@@ -102,6 +102,9 @@ export interface KernelHost {
  */
 export const TYPESCRIPT_VERSION = "6";
 
+/** Errors from launching a target, which `KernelHost.fault` doesn't get. */
+const launchFailures = new WeakSet<object>();
+
 function fromBase64(text: string): Uint8Array {
   return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 }
@@ -385,6 +388,9 @@ export class KernelCore {
       return target;
     }, (err) => {
       this.#targetStarting = null;
+      // Usually the user's environment (a missing runtime, a bad config),
+      // not a kernel fault, and its message quotes the child's stderr.
+      if (typeof err === "object" && err !== null) launchFailures.add(err);
       throw err;
     });
     return this.#targetStarting;
@@ -406,13 +412,19 @@ export class KernelCore {
     }
   }
 
+  /** Tells the host of a fault in the kernel's own code; a target that failed to launch isn't one (#422). */
+  #fault(err: unknown, where: string): void {
+    if (typeof err === "object" && err !== null && launchFailures.has(err)) return;
+    this.#host.fault?.(err, where);
+  }
+
   #targetEvents(): TargetEvents {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
       message: (msg) =>
         void this.#onTargetMessage(msg).catch((err) => {
           this.#log(`error handling target message: ${err}`);
-          this.#host.fault?.(err, "target message");
+          this.#fault(err, "target message");
         }),
       exit: (code, note) => {
         this.#target = null;
@@ -510,7 +522,7 @@ export class KernelCore {
         await handle(received.msg, received.peer);
       } catch (err) {
         this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
-        this.#host.fault?.(err, `${channel} handler`);
+        this.#fault(err, `${channel} handler`);
       }
     }
   }
@@ -573,7 +585,7 @@ export class KernelCore {
         await this.#handleShell(msg, peer);
       } catch (err) {
         this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
-        this.#host.fault?.(err, "shell handler");
+        this.#fault(err, "shell handler");
       } finally {
         if (main) this.#handling = null;
       }
