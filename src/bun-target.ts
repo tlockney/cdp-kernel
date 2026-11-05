@@ -64,7 +64,8 @@ export class BunTarget implements KernelTarget {
   readonly #interruptibleIds = new Set<number>();
   #exitedOnce = false;
   #messages: Promise<void> = Promise.resolve();
-  #interrupted = false;
+  /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
+  #interrupts = 0;
   #stopNote: string | undefined;
   readonly #startedAt = Date.now();
 
@@ -191,11 +192,11 @@ export class BunTarget implements KernelTarget {
 
   /** A request that interrupt() may cut short. */
   async #interruptible(op: string, params: CdpParams, what: string): Promise<CdpParams> {
-    this.#interrupted = false;
+    const interrupts = this.#interrupts;
     try {
       return await this.#request(op, params, true);
     } catch (err) {
-      if (err instanceof Abandoned || this.#interrupted) throw new Interrupted(`${what} interrupted`);
+      if (err instanceof Abandoned || this.#interrupts !== interrupts) throw new Interrupted(`${what} interrupted`);
       throw err;
     }
   }
@@ -212,7 +213,7 @@ export class BunTarget implements KernelTarget {
    * the process is stopped and restarts on the next cell, losing its state.
    */
   async interrupt(): Promise<void> {
-    this.#interrupted = true;
+    this.#interrupts++;
     const running = [...this.#interruptibleIds];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),

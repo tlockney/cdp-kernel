@@ -368,7 +368,8 @@ export class Target implements KernelTarget {
   #messages: Promise<void> = Promise.resolve();
   /** Messages received but not yet delivered. */
   #undelivered = 0;
-  #interrupted = false;
+  /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
+  #interrupts = 0;
   #paused = false;
   /** What the debugger asked to pause on (#307), and how many kernel calls hold it off. */
   #pauseOnExceptions = "none";
@@ -722,11 +723,11 @@ export class Target implements KernelTarget {
 
   /** Runs transformed cell code. Rejects with Interrupted after interrupt(). */
   async evaluate(script: string): Promise<EvaluateResult> {
-    this.#interrupted = false;
+    const interrupts = this.#interrupts;
     try {
       return await this.#evaluateRaw(script);
     } catch (err) {
-      if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Execution interrupted");
+      if (err instanceof CdpAbandoned || this.#interrupts !== interrupts) throw new Interrupted("Execution interrupted");
       // The control session's executionContextDestroyed event can arrive
       // after the shell session's error reply (#271 moved it there).
       if (err instanceof CdpError && err.message.includes("Execution context was destroyed")) this.#onExit();
@@ -764,7 +765,7 @@ export class Target implements KernelTarget {
    * evaluate is abandoned here and the session stays usable.
    */
   async interrupt(): Promise<void> {
-    this.#interrupted = true;
+    this.#interrupts++;
     // A paused isolate runs nothing to terminate: let it go first (#18).
     if (this.#paused) await this.#shell.send("Debugger.resume").catch(() => {});
     await this.#control.send("Runtime.terminateExecution");
@@ -839,7 +840,7 @@ export class Target implements KernelTarget {
     metadata: CdpParams,
     buffers: Uint8Array[],
   ): Promise<{ handled: boolean } | { error: { name: string; message: string; stack: string } }> {
-    this.#interrupted = false;
+    const interrupts = this.#interrupts;
     // Over stdin, not as call arguments: V8 caches an argument's source,
     // so the data would stay in the target's memory (#287).
     const record = Buffer.from(JSON.stringify({
@@ -854,7 +855,7 @@ export class Target implements KernelTarget {
     try {
       res = await this.#callAsyncFunctionOn(`function () { return globalThis.${SHIM}.commDispatchFromStdin(); }`, []);
     } catch (err) {
-      if (err instanceof CdpAbandoned || this.#interrupted) throw new Interrupted("Comm handler interrupted");
+      if (err instanceof CdpAbandoned || this.#interrupts !== interrupts) throw new Interrupted("Comm handler interrupted");
       throw err;
     }
     const details = res.exceptionDetails as EvaluateResult["exceptionDetails"];

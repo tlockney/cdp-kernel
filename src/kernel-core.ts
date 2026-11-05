@@ -165,6 +165,11 @@ interface ErrorContent extends JsonObject {
   traceback: string[];
 }
 
+/** The error reply for a subshell that doesn't exist (#417). */
+function subshellNotFound(evalue: string): JsonObject {
+  return { status: "error", ename: "SubshellNotFound", evalue, traceback: [`SubshellNotFound: ${evalue}`] };
+}
+
 /** Shell requests other than execute_request, and their reply types. */
 const SHELL_REPLIES: Record<string, string> = {
   kernel_info_request: "kernel_info_reply",
@@ -259,7 +264,7 @@ export class KernelCore {
     this.#ensureTarget().catch((err) => this.#log(`target failed to start: ${err}`));
     // Transforms are synchronous, so the stripper loads before any cell.
     if (typeof this.#typeStrip === "string") await loadTypeStripper(this.#typeStrip);
-    await Promise.all([this.#readShell(), this.#runShell(this.#mainShell, true),
+    await Promise.all([this.#readShell(), this.#runShell(this.#mainShell),
       this.#loop("control", (m, p) => this.#handleControl(m, p)),
       this.#loop("stdin", (m) => this.#handleStdin(m))]);
   }
@@ -536,16 +541,16 @@ export class KernelCore {
     const type = msg.header.msg_type;
     this.#log(`refusing ${type}: ${evalue}`);
     this.#status("busy", msg.header);
-    const error: ErrorContent = { ename: "SubshellNotFound", evalue, traceback: [`SubshellNotFound: ${evalue}`] };
     const replyType = type === "execute_request" ? "execute_reply" : SHELL_REPLIES[type];
-    if (replyType !== undefined) this.#reply("shell", peer, msg, replyType, { status: "error", ...error });
+    if (replyType !== undefined) this.#reply("shell", peer, msg, replyType, subshellNotFound(evalue));
     // As for an unknown target: the frontend shouldn't wait on the comm.
     if (type === "comm_open") this.#publish("comm_close", { comm_id: String(msg.content.comm_id ?? ""), data: {} }, { parent: msg.header });
     this.#status("idle", msg.header);
   }
 
   /** Handles one queue's messages in turn. */
-  async #runShell(queue: ShellQueue, main: boolean): Promise<void> {
+  async #runShell(queue: ShellQueue): Promise<void> {
+    const main = queue === this.#mainShell;
     while (!this.#shuttingDown) {
       const queued = await queue.next();
       if (queued === null) return;
@@ -591,7 +596,7 @@ export class KernelCore {
       debugger: this.#debugger !== null,
       // What current ipykernel advertises; JupyterLab itself goes by the
       // kernelspec's metadata.debugger.
-      supported_features: this.#debugger !== null ? ["debugger", "kernel subshells"] : ["kernel subshells"],
+      supported_features: [...(this.#debugger !== null ? ["debugger"] : []), "kernel subshells"],
       ...(this.#host.capabilities ? { capabilities: this.#host.capabilities } : {}),
     };
   }
@@ -639,7 +644,7 @@ export class KernelCore {
         const subshellId = crypto.randomUUID();
         const queue = new ShellQueue();
         this.#subshells.set(subshellId, queue);
-        void this.#runShell(queue, false);
+        void this.#runShell(queue);
         this.#reply(channel, peer, msg, "create_subshell_reply", { status: "ok", subshell_id: subshellId });
         break;
       }
@@ -647,12 +652,7 @@ export class KernelCore {
         const subshellId = String(msg.content.subshell_id ?? "");
         const queue = this.#subshells.get(subshellId);
         if (queue === undefined) {
-          this.#reply(channel, peer, msg, "delete_subshell_reply", {
-            status: "error",
-            ename: "SubshellNotFound",
-            evalue: `No subshell with id ${subshellId}`,
-            traceback: [],
-          });
+          this.#reply(channel, peer, msg, "delete_subshell_reply", subshellNotFound(`No subshell with id ${subshellId}`));
           break;
         }
         // A message it is handling finishes; what's queued is refused.
