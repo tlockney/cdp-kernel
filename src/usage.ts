@@ -67,6 +67,22 @@ async function psUsage(pid: number): Promise<ProcessUsage> {
   return usage;
 }
 
+/**
+ * Several processes' usage added up, for a target that runs in more than
+ * one (Miniflare's workerd). A figure any of them can't report is left out.
+ */
+export async function processesUsage(pids: readonly number[]): Promise<ProcessUsage> {
+  const each = await Promise.all(pids.map((pid) => processUsage(pid)));
+  const sum = (key: keyof ProcessUsage) =>
+    each.length > 0 && each.every((u) => u[key] !== undefined) ? each.reduce((n, u) => n + u[key]!, 0) : undefined;
+  const usage: ProcessUsage = {};
+  const memory = sum("memory");
+  const cpuTime = sum("cpuTime");
+  if (memory !== undefined) usage.memory = memory;
+  if (cpuTime !== undefined) usage.cpuTime = cpuTime;
+  return usage;
+}
+
 /** `ps`'s `time`: [[dd-]hh:]mm:ss[.cc], in seconds; null if it isn't one. */
 export function parseCpuTime(text: string): number | null {
   const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec(text);

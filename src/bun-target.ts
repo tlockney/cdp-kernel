@@ -16,7 +16,8 @@ import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
-import { withStartTimeout } from "./target-api.ts";
+import { type TargetUsage, withStartTimeout } from "./target-api.ts";
+import { processUsage } from "./usage.ts";
 
 /**
  * How long an interrupted target has to answer a ping. A cell waiting on a
@@ -65,6 +66,7 @@ export class BunTarget implements KernelTarget {
   #messages: Promise<void> = Promise.resolve();
   #interrupted = false;
   #stopNote: string | undefined;
+  readonly #startedAt = Date.now();
 
   private constructor(child: ChildProcess, channel: Duplex, events: TargetEvents) {
     this.#child = child;
@@ -290,6 +292,12 @@ export class BunTarget implements KernelTarget {
 
   replyInput(value: string | null, interrupted = false): void {
     this.#child.stdin?.write(JSON.stringify({ value, interrupted }) + "\n");
+  }
+
+  /** The bun process's resident memory and CPU time, from the OS (#410). */
+  async usage(): Promise<TargetUsage> {
+    const pid = this.#child.pid;
+    return { startedAt: this.#startedAt, ...(pid === undefined ? {} : await processUsage(pid)) };
   }
 
   kill(): void {
