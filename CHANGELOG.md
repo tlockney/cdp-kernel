@@ -7,10 +7,11 @@ Issue and pull request numbers refer to
 ## Unreleased
 
 - The kernel answers `usage_request` on the control channel with
-  ipykernel's `usage_reply` fields. On Node and Deno, `kernel_memory` and
-  `kernel_cpu` include the target process, where cells run; other targets
-  leave those two out
-  ([#409](https://github.com/tlockney/cdp-kernel/issues/409)).
+  ipykernel's `usage_reply` fields. On Node, Deno, Bun and workerd,
+  `kernel_memory` and `kernel_cpu` include the target process, where
+  cells run; celld and the browser target leave those two out
+  ([#409](https://github.com/tlockney/cdp-kernel/issues/409),
+  [#410](https://github.com/tlockney/cdp-kernel/issues/410)).
 - `kernel_info_reply`'s `language_info.mimetype` is
   `application/typescript` instead of `text/x.typescript`, so
   jupyterlab-lsp attaches TypeScript language servers to cdp-kernel

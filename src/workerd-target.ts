@@ -30,7 +30,8 @@ import { transformCellForEval } from "./transform.ts";
 import { runtimeDir } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, type TargetEvents } from "./target.ts";
-import { withStartTimeout } from "./target-api.ts";
+import { type TargetUsage, withStartTimeout } from "./target-api.ts";
+import { processesUsage } from "./usage.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
 import { ensureInstalledAsync, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
@@ -234,6 +235,12 @@ export interface WorkerHost {
   readonly project?: string;
   /** The open session with the driver. */
   readonly channel: WsChannel;
+  /**
+   * The workerd processes that run the driver, for usage_request (#410).
+   * Left out where they aren't ours to measure (celld), and the reply
+   * then leaves the kernel's memory and CPU out.
+   */
+  readonly pids?: readonly number[];
   /** Stops the runtime; `now` even while a cell is busy. */
   stop(now: boolean): void;
   onExit(listener: (code: number | null) => void): void;
@@ -325,6 +332,10 @@ export class RawWorkerd implements WorkerHost {
   readonly runtime: string;
   readonly channel: WsChannel;
   readonly #child: ChildProcess;
+
+  get pids(): readonly number[] {
+    return this.#child.pid === undefined ? [] : [this.#child.pid];
+  }
 
   private constructor(child: ChildProcess, channel: WsChannel, runtime: string) {
     this.#child = child;
@@ -433,6 +444,7 @@ export class WorkerdTarget implements KernelTarget {
   #interrupted = false;
   #stopNote: string | undefined;
   #exitedOnce = false;
+  readonly #startedAt = Date.now();
 
   private constructor(host: WorkerHost, cwd: string, events: TargetEvents, runtime: WorkersRuntime) {
     this.runtime = runtime;
@@ -660,6 +672,12 @@ export class WorkerdTarget implements KernelTarget {
 
   /** Never asked for: prompt() in workerd answers null without asking. */
   replyInput(): void {}
+
+  /** The workerd processes' resident memory and CPU time, from the OS (#410). */
+  async usage(): Promise<TargetUsage> {
+    const pids = this.#host.pids ?? [];
+    return { startedAt: this.#startedAt, ...(await processesUsage(pids)) };
+  }
 
   kill(): void {
     // workerd's graceful shutdown waits for open connections, the session

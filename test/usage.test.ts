@@ -3,11 +3,17 @@
 import { type TestContext, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { BunTarget } from "../src/bun-target.ts";
 import { Target, type TargetEvents } from "../src/target.ts";
+import { WorkerdTarget } from "../src/workerd-target.ts";
+import { hasBun } from "./bun.ts";
 import type { KernelTarget } from "../src/target-api.ts";
 import { loadTypeStripper } from "../src/transform.ts";
-import { parseCpuTime, processUsage, UsageMeter } from "../src/usage.ts";
+import { parseCpuTime, processesUsage, processUsage, UsageMeter } from "../src/usage.ts";
 import { KernelCore } from "../src/kernel-core.ts";
 import type { JsonObject } from "../src/message.ts";
 import { FakeChannels } from "./fake-channels.ts";
@@ -18,6 +24,7 @@ const hasDeno = spawnSync("deno", ["--version"]).status === 0;
 /** Where the OS reports a process's memory and CPU time. */
 const measurable = process.platform === "linux" || process.platform === "darwin";
 const events: TargetEvents = { stream: () => {}, message: () => {}, exit: () => {} };
+const WORKERD = join(fileURLToPath(new URL("../", import.meta.url)), "node_modules", ".bin", "workerd");
 
 test("parseCpuTime reads ps's time column", () => {
   assert.equal(parseCpuTime("0:01.25"), 1.25);
@@ -36,6 +43,16 @@ test("processUsage reads this process's memory and CPU time", { skip: !measurabl
 test("processUsage leaves out a process that is gone", async () => {
   const done = spawnSync(process.execPath, ["-e", "0"]);
   assert.deepEqual(await processUsage(done.pid ?? 0), {});
+});
+
+test("processesUsage adds processes up, and leaves out what one can't report", { skip: !measurable }, async () => {
+  const one = await processUsage(process.pid);
+  const two = await processesUsage([process.pid, process.pid]);
+  assert.ok(two.memory! >= one.memory! * 1.5, `${one.memory} -> ${two.memory}`);
+  assert.ok(two.cpuTime! >= one.cpuTime! * 2, `${one.cpuTime} -> ${two.cpuTime}`);
+  const done = spawnSync(process.execPath, ["-e", "0"]);
+  assert.deepEqual(await processesUsage([process.pid, done.pid ?? 0]), {});
+  assert.deepEqual(await processesUsage([]), {});
 });
 
 test("with no target running the reply covers the host alone", async () => {
@@ -129,11 +146,21 @@ test("a host that can't measure usage still answers usage_request", async () => 
   assert.deepEqual((await channels.replyOf("usage_reply")).content, {});
 });
 
-for (const runtime of ["node", "deno"] as const) {
-  const skip = !measurable ? "no process usage on this OS" : runtime === "deno" && !hasDeno ? "deno not on PATH" : false;
+const launchers = {
+  node: { launch: () => Target.launch("node", events), missing: false },
+  deno: { launch: () => Target.launch("deno", events), missing: !hasDeno && "deno not on PATH" },
+  bun: { launch: () => BunTarget.launch(events), missing: !hasBun() && "bun not on PATH" },
+  workerd: {
+    launch: () => WorkerdTarget.launch(events, { executable: WORKERD }),
+    missing: (!existsSync(WORKERD) || process.platform === "win32") && "no workerd",
+  },
+};
+
+for (const [runtime, { launch: start, missing }] of Object.entries(launchers)) {
+  const skip = !measurable ? "no process usage on this OS" : missing;
 
   async function launch(t: TestContext) {
-    const target = await Target.launch(runtime, events);
+    const target: KernelTarget = await start();
     t.after(() => target.kill());
     const run = async (code: string) => {
       const res = await target.evaluate(target.transform(code, {}));
@@ -144,11 +171,11 @@ for (const runtime of ["node", "deno"] as const) {
 
   test(`a ${runtime} target's memory counts what its cells hold outside the JS heap`, { skip }, async (t) => {
     const { target, run } = await launch(t);
-    const before = await target.usage();
+    const before = await target.usage!();
     assert.ok(before.memory !== undefined && before.cpuTime !== undefined, JSON.stringify(before));
     // 256 MiB of typed array memory, touched so it is resident.
     await run("globalThis.big = new Uint8Array(256 * 1024 * 1024).fill(1)");
-    const after = await target.usage();
+    const after = await target.usage!();
     assert.ok(after.memory! - before.memory! > 200 * 1024 * 1024, `${before.memory} -> ${after.memory}`);
   });
 
@@ -156,7 +183,12 @@ for (const runtime of ["node", "deno"] as const) {
     const { target } = await launch(t);
     const meter = new UsageMeter();
     await meter.reply(target);
-    const cell = target.evaluate(target.transform("{ const end = Date.now() + 1500; while (Date.now() < end); }", {}));
+    // workerd's clock stands still while a cell runs without I/O, so there
+    // the cell counts instead of watching the time.
+    const busy = runtime === "workerd"
+      ? "{ let n = 0; for (let i = 0; i < 4e9; i++) n += i & 1; }"
+      : "{ const end = Date.now() + 1500; while (Date.now() < end); }";
+    const cell = target.evaluate(target.transform(busy, {}));
     await new Promise((r) => setTimeout(r, 1000));
     const started = Date.now();
     const reply = await meter.reply(target);

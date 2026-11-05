@@ -186,9 +186,11 @@ class MiniflareHost implements WorkerHost {
   #stopped = false;
 
   readonly #forget: (() => void)[];
+  readonly pids: readonly number[];
 
   constructor(mf: Miniflare, channel: WsChannel, version: string, project: string, workerd: number[]) {
     this.#mf = mf;
+    this.pids = workerd;
     // Miniflare kills its workerd only on a normal exit; the helper in
     // src/children.ts kills it if this process is SIGKILLed (#241).
     this.#forget = workerd.map(reap);

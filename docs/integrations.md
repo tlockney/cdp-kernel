@@ -80,7 +80,7 @@ calls nothing else, so this list is the complete contract:
 | `inspect(path, detail)` | Shift+Tab inspection, without running user code. |
 | `debug` | The V8 `Debugger` domain, on Node and Deno only ([Debugger](debugger.md)). |
 | `replyInput(value)` | The frontend's answer to an `input_request`. |
-| `usage()` | Optional. The target process's memory and CPU time, for `usage_request` (see [Resource usage](#resource-usage)). Node and Deno only. |
+| `usage()` | Optional. The target process's memory and CPU time, for `usage_request` (see [Resource usage](#resource-usage)). Node, Deno, Bun and workerd. |
 | `notice` | A line shown once, in the first cell, such as which project's bindings loaded. |
 | `kill()` | Stops the target on shutdown or restart. |
 
@@ -172,19 +172,20 @@ sends a `usage_request` on the control socket. cdp-kernel answers with a
 | `host_virtual_memory` | `total` everywhere; `available`, `percent` and `free` on Linux; `free` on macOS. |
 
 Cells run in the target, a separate process, so the kernel process's own
-figures would miss everything a notebook holds. On Node and Deno the host
-reads the target process's resident memory and CPU time from the OS
-(`/proc` on Linux, `ps` on macOS), which counts native memory such as
-Buffers and typed arrays as well as the V8 heap. On another OS it falls
-back to the heap size from CDP's `Runtime.getHeapUsage` and leaves
-`kernel_cpu` out. A request doesn't start a target: before the first one
-starts, the figures are the kernel process's alone.
+figures would miss everything a notebook holds. On Node, Deno, Bun and
+workerd the host reads the target process's resident memory and CPU time
+from the OS (`/proc` on Linux, `ps` on macOS), which counts native memory
+such as Buffers and typed arrays as well as the JavaScript heap. For a
+Workers project, that is the workerd processes its Miniflare started. On
+another OS, Node and Deno fall back to the heap size from CDP's
+`Runtime.getHeapUsage` and leave `kernel_cpu` out; Bun and workerd leave
+both out. A request doesn't start a target: before the first one starts,
+the figures are the kernel process's alone.
 
-Bun, workerd, celld and the browser target don't report their usage yet
-([#410](https://github.com/tlockney/cdp-kernel/issues/410)),
-so while one runs the reply leaves `kernel_memory` and `kernel_cpu` out
-rather than report the host's figures as the kernel's. Processes a cell
-starts itself, such as `child_process.spawn`, aren't counted.
+celld and the browser target don't report their usage, so while one runs
+the reply leaves `kernel_memory` and `kernel_cpu` out rather than report
+the host's figures as the kernel's. Processes a cell starts itself, such
+as `child_process.spawn`, aren't counted.
 
 ## Output ordering
 
