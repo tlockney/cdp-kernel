@@ -11,9 +11,10 @@ export class FakeChannels implements KernelChannels {
   readonly #waiting = new Map<ChannelName, (received: Received) => void>();
   #onReply: () => void = () => {};
 
-  push(channel: ChannelName, msgType: string, content: KernelMessage["content"] = {}): void {
+  /** Sends a request; returns its msg_id. `header` adds fields, e.g. a subshell_id. */
+  push(channel: ChannelName, msgType: string, content: KernelMessage["content"] = {}, header: Record<string, unknown> = {}): string {
     const msg: KernelMessage = {
-      header: { msg_id: crypto.randomUUID(), session: "s", date: "", username: "u", msg_type: msgType, version: "5.3" },
+      header: { msg_id: crypto.randomUUID(), session: "s", date: "", username: "u", msg_type: msgType, version: "5.5", ...header },
       parentHeader: {},
       metadata: {},
       content,
@@ -23,6 +24,7 @@ export class FakeChannels implements KernelChannels {
     this.#waiting.delete(channel);
     if (waiting) waiting({ peer: "p", msg });
     else this.#queues.set(channel, [...(this.#queues.get(channel) ?? []), { peer: "p", msg }]);
+    return msg.header.msg_id;
   }
 
   recv(channel: ChannelName): Promise<Received | null> {
@@ -50,10 +52,12 @@ export class FakeChannels implements KernelChannels {
 
   sendStdin(): void {}
 
-  /** The first reply of this type, once it is sent. */
-  async replyOf(msgType: string): Promise<OutgoingMessage> {
+  /** The first reply of this type (to `parentId`, if given), once it is sent. */
+  async replyOf(msgType: string, parentId?: string): Promise<OutgoingMessage> {
     for (;;) {
-      const found = this.replies.find((m) => m.header.msg_type === msgType);
+      const found = this.replies.find((m) =>
+        m.header.msg_type === msgType && (parentId === undefined || m.parentHeader.msg_id === parentId)
+      );
       if (found) return found;
       await new Promise<void>((resolve) => (this.#onReply = resolve));
     }

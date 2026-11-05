@@ -72,7 +72,8 @@ export class BrowserTarget implements KernelTarget {
   readonly #hostCalls = new Map<number, AbortController>();
   readonly #host: HostHandler | undefined;
   #nextId = 0;
-  #interrupted = false;
+  /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
+  #interrupts = 0;
   #stopNote: string | undefined;
   #exited = false;
 
@@ -188,11 +189,11 @@ export class BrowserTarget implements KernelTarget {
   }
 
   async #interruptibly(op: string, params: CdpParams, what: string): Promise<CdpParams> {
-    this.#interrupted = false;
+    const interrupts = this.#interrupts;
     try {
       return await this.#request(op, params, true);
     } catch (err) {
-      if (err instanceof Abandoned || this.#interrupted) throw new Interrupted(`${what} interrupted`);
+      if (err instanceof Abandoned || this.#interrupts !== interrupts) throw new Interrupted(`${what} interrupted`);
       throw err;
     }
   }
@@ -209,7 +210,7 @@ export class BrowserTarget implements KernelTarget {
    * terminated, and a new one starts on the next cell.
    */
   async interrupt(): Promise<void> {
-    this.#interrupted = true;
+    this.#interrupts++;
     const running = [...this.#interruptible];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),

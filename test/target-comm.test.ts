@@ -56,3 +56,60 @@ test("a comm message's data is not kept once handled", async (t) => {
   const grew = (await heap()) - before;
   assert.ok(grew < 4 * 2 ** 20, `heap grew by ${(grew / 2 ** 20).toFixed(1)} MiB`);
 });
+
+// A comm message on a kernel subshell (#417) can be written while a cell
+// waits in prompt(): the prompt's reader keeps it for the dispatch.
+test("a comm message written while a prompt waits is dispatched after it", async (t) => {
+  let target: Target | null = null;
+  let dispatched: ReturnType<Target["dispatchComm"]> | null = null;
+  target = await Target.launch("node", {
+    ...events,
+    message: (msg) => {
+      if (msg.kind !== "input_request" || target === null) return;
+      dispatched = target.dispatchComm("comm_msg", { comm_id: "c3", data: { during: "prompt" } }, {}, []);
+      target.replyInput("typed");
+    },
+  });
+  t.after(() => target?.kill());
+  const run = async (code: string) => {
+    const res = await target!.evaluate(target!.transform(code, {}));
+    assert.equal(res.exceptionDetails, undefined, JSON.stringify(res.exceptionDetails));
+    return res.result.value;
+  };
+  await run(`globalThis.got = []; jupyter.comm.registerTarget("t", (comm) => comm.onMsg((m) => got.push(m.data)));`);
+  await target.dispatchComm("comm_open", { comm_id: "c3", target_name: "t", data: {} }, {}, []);
+  assert.equal(await run(`prompt("q")`), "typed");
+  assert.ok(dispatched !== null, "no input_request");
+  assert.deepEqual(await dispatched, { handled: true });
+  assert.equal(await run("JSON.stringify(got)"), '[{"during":"prompt"}]');
+});
+
+// An interrupt that terminates a prompt's read skips its finally: comm
+// dispatches after it still run (#417).
+test("comm messages still dispatch after a prompt's read is interrupted", async (t) => {
+  let target: Target | null = null;
+  target = await Target.launch("node", {
+    ...events,
+    message: (msg) => {
+      if (msg.kind !== "input_request" || target === null) return;
+      const t = target;
+      void t.interrupt().catch(() => {});
+      setTimeout(() => t.replyInput("late"), 200);
+    },
+  });
+  t.after(() => target?.kill());
+  const run = async (code: string) => {
+    const res = await target!.evaluate(target!.transform(code, {}));
+    assert.equal(res.exceptionDetails, undefined, JSON.stringify(res.exceptionDetails));
+    return res.result.value;
+  };
+  await run(`globalThis.got = []; jupyter.comm.registerTarget("t", (comm) => comm.onMsg((m) => got.push(m.data)));`);
+  await target.dispatchComm("comm_open", { comm_id: "c4", target_name: "t", data: {} }, {}, []);
+  await assert.rejects(target.evaluate(target.transform(`prompt("q")`, {})));
+  // Before the read's bytes arrive, then after.
+  const during = target.dispatchComm("comm_msg", { comm_id: "c4", data: { n: 1 } }, {}, []);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.deepEqual(await during, { handled: true });
+  assert.deepEqual(await target.dispatchComm("comm_msg", { comm_id: "c4", data: { n: 2 } }, {}, []), { handled: true });
+  assert.equal(await run("JSON.stringify(got)"), '[{"n":1},{"n":2}]');
+});

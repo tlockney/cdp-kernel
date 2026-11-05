@@ -236,8 +236,23 @@ globalThis.__cdpk = {
   // each message's data would stay in memory (#287). Read before the first
   // await, so messages are taken in the order the host wrote them.
   commDispatchFromStdin() {
-    const { msgType, content, metadata, buffers } = readCommRecord();
-    return globalThis.__cdpk.commDispatch(msgType, content, metadata, buffers);
+    const dispatch = () => {
+      const { msgType, content, metadata, buffers } = readCommRecord();
+      return globalThis.__cdpk.commDispatch(msgType, content, metadata, buffers);
+    };
+    // Node's inspector can run this call in the middle of a blocking stdin
+    // read, e.g. a prompt's, when the message came on a kernel subshell
+    // (#417): reading then would take bytes from the middle of that read.
+    if (stdinReading) {
+      const resumed = new Promise((resolve) => afterStdinRead.push(resolve));
+      // A read is synchronous, so by the next task it has ended. If the flag
+      // is still set, an interrupt terminated the read before its finally.
+      yieldTask().then(() => {
+        if (stdinReading) endStdinRead();
+      });
+      return resumed.then(dispatch);
+    }
+    return dispatch();
   },
   describeError(value) {
     if (value instanceof Error) {
@@ -445,18 +460,55 @@ function readLine() {
   }
 }
 
-/** The next prompt reply's line, past any comm record left unread. */
+/**
+ * Comm records read while waiting for a prompt's reply. A comm message on
+ * a kernel subshell (#417) can be written while a cell waits in input();
+ * its dispatch runs after, and takes it from here.
+ */
+const commRecords = [];
+
+/** Whether a read from stdin is in progress, and what waits for it to end. */
+let stdinReading = false;
+const afterStdinRead = [];
+
+function readingStdin(read) {
+  stdinReading = true;
+  try {
+    return read();
+  } finally {
+    endStdinRead();
+  }
+}
+
+function endStdinRead() {
+  stdinReading = false;
+  // In order, so comm records are taken as the host wrote them.
+  for (const resume of afterStdinRead.splice(0)) resume();
+}
+
+/** The next prompt reply's line; comm records before it are kept. */
 function readInputReply() {
+  return readingStdin(readInputReplyNow);
+}
+
+function readInputReplyNow() {
   for (;;) {
     const line = readLine();
     const comm = line === null ? null : COMM_HEADER.exec(line);
     if (comm === null) return line;
-    readExactly(Number(comm[1]));
+    const body = readExactly(Number(comm[1]));
+    if (body !== null) commRecords.push(body);
   }
 }
 
 /** The next comm message, past any prompt reply left unread. */
 function readCommRecord() {
+  return readingStdin(readCommRecordNow);
+}
+
+function readCommRecordNow() {
+  const kept = commRecords.shift();
+  if (kept !== undefined) return JSON.parse(new TextDecoder().decode(kept));
   for (;;) {
     const line = readLine();
     if (line === null) throw new Error("stdin closed before a comm message arrived");

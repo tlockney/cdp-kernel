@@ -6,6 +6,15 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The kernel supports kernel subshells (JEP 91): `kernel_info_reply`
+  lists `kernel subshells`, the control channel answers
+  `create_subshell_request`, `delete_subshell_request` and
+  `list_subshell_request`, and shell messages with a `subshell_id` run
+  on their subshell's queue. JupyterLab sends comm messages on a
+  subshell, so a comm handler runs while a cell awaits its message, and
+  a cell can wait for a frontend's reply over a comm. Cells sent on a
+  subshell still run in turn on the main shell. The protocol version is
+  5.5 ([#417](https://github.com/tlockney/cdp-kernel/issues/417)).
 - The kernel answers `usage_request` on the control channel with
   ipykernel's `usage_reply` fields. On Node, Deno, Bun and workerd,
   `kernel_memory` and `kernel_cpu` include the target process, where

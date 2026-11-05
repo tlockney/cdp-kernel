@@ -441,7 +441,8 @@ export class WorkerdTarget implements KernelTarget {
   /** Requests that interrupt() abandons when the driver can still answer. */
   readonly #interruptible = new Set<number>();
   #nextId = 0;
-  #interrupted = false;
+  /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
+  #interrupts = 0;
   #stopNote: string | undefined;
   #exitedOnce = false;
   readonly #startedAt = Date.now();
@@ -566,11 +567,11 @@ export class WorkerdTarget implements KernelTarget {
   }
 
   async #interruptibly(op: string, params: CdpParams, what: string): Promise<CdpParams> {
-    this.#interrupted = false;
+    const interrupts = this.#interrupts;
     try {
       return await this.#request(op, params, true);
     } catch (err) {
-      if (err instanceof Abandoned || this.#interrupted) throw new Interrupted(`${what} interrupted`);
+      if (err instanceof Abandoned || this.#interrupts !== interrupts) throw new Interrupted(`${what} interrupted`);
       throw err;
     }
   }
@@ -596,7 +597,7 @@ export class WorkerdTarget implements KernelTarget {
    * stopped and restarts on the next cell.
    */
   async interrupt(): Promise<void> {
-    this.#interrupted = true;
+    this.#interrupts++;
     const running = [...this.#interruptible];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),

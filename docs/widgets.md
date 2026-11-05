@@ -196,8 +196,11 @@ A kernel listener gets the new value and the previous one:
 use `on("change", (changes) => ...)`, which gets an object of the keys that
 changed.
 
-Listeners run like cells, one at a time and in between cell executions.
-While a cell is running, a slider move waits until the cell finishes.
+Listeners run like cells. A slider move that the frontend sends on the
+main shell waits until a running cell finishes. JupyterLab sends it on a
+kernel subshell instead (see [Comms](#comms)), so the listener runs while
+a cell awaits, and listeners of different widgets can interleave at each
+`await`: guard state they share.
 `console.log` output from a listener isn't shown under any cell (JupyterLab
 puts it in its log console), so show results through the widget's state,
 as here.
@@ -553,6 +556,25 @@ jupyter.comm.registerTarget("echo", (comm) => comm.onMsg((m) => comm.send(m.data
 
 Comm handlers run like cells. Their output goes to the notebook as replies
 to the message that triggered them, an exception is shown on stderr, and
-interrupt stops a stuck handler. Messages are processed one at a time with
-cell executions, as in ipykernel, so a widget event that arrives during a
-long cell waits for the cell to finish.
+interrupt stops a stuck handler.
+
+Comm messages on the main shell are processed one at a time with cell
+executions, as in ipykernel, so a widget event that arrives during a long
+cell waits for the cell to finish. The kernel also supports **kernel
+subshells** ([JEP 91](https://github.com/jupyter/enhancement-proposals/blob/master/91-kernel-subshells/kernel-subshells.md)),
+and JupyterLab sends comm messages on a subshell for each comm target when
+the kernel does. A comm message on a subshell runs its handler while a
+cell awaits, so a cell can wait for the frontend's answer:
+
+```ts
+const ask = jupyter.comm.open("my.app", { question: "ready?" });
+const answer = await new Promise((resolve) => ask.onMsg((m) => resolve(m.data)));
+```
+
+Handlers still share the cell's JavaScript thread: a cell that never
+awaits holds them until it ends. While a cell runs, a handler's output
+(and a `prompt()` in it) is shown under that cell. An interrupt stops the
+handlers too. Each subshell message gets its own `busy` and `idle` status,
+so a client that reads the kernel's state from every status message,
+rather than from those of its own requests, can show idle while a cell
+runs.
