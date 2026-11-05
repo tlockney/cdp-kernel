@@ -243,7 +243,15 @@ globalThis.__cdpk = {
     // Node's inspector can run this call in the middle of a blocking stdin
     // read, e.g. a prompt's, when the message came on a kernel subshell
     // (#417): reading then would take bytes from the middle of that read.
-    if (stdinReading) return new Promise((resolve) => afterStdinRead.push(resolve)).then(dispatch);
+    if (stdinReading) {
+      const resumed = new Promise((resolve) => afterStdinRead.push(resolve));
+      // A read is synchronous, so by the next task it has ended. If the flag
+      // is still set, an interrupt terminated the read before its finally.
+      yieldTask().then(() => {
+        if (stdinReading) endStdinRead();
+      });
+      return resumed.then(dispatch);
+    }
     return dispatch();
   },
   describeError(value) {
@@ -468,10 +476,14 @@ function readingStdin(read) {
   try {
     return read();
   } finally {
-    stdinReading = false;
-    // In order, so comm records are taken as the host wrote them.
-    for (const resume of afterStdinRead.splice(0)) resume();
+    endStdinRead();
   }
+}
+
+function endStdinRead() {
+  stdinReading = false;
+  // In order, so comm records are taken as the host wrote them.
+  for (const resume of afterStdinRead.splice(0)) resume();
 }
 
 /** The next prompt reply's line; comm records before it are kept. */
