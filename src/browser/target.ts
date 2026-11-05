@@ -206,7 +206,8 @@ export class BrowserTarget implements KernelTarget {
    * A cell that's waiting on something leaves the Worker free: it answers a
    * ping, and the cell is abandoned with its state intact; host requests
    * in flight are cancelled on the page, and reject in the Worker with an
-   * AbortError (#388). A busy cell can't be reached, so the Worker is
+   * AbortError (#388), and jupyter.signal is aborted (#418). A busy cell
+   * can't be reached, so the Worker is
    * terminated, and a new one starts on the next cell.
    */
   async interrupt(): Promise<void> {
@@ -223,6 +224,10 @@ export class BrowserTarget implements KernelTarget {
         this.#interruptible.delete(id);
       }
       this.#cancelHostCalls();
+      // After the cell is abandoned, so its reply can't end it first
+      // (#418). Not awaited: requests are answered in order, and an abort
+      // listener that never returns mustn't hold up the interrupt.
+      void this.#request("abort").catch(() => {});
       return;
     }
     this.#stopNote = RESTART_NOTE;

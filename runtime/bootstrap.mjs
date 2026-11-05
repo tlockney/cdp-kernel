@@ -97,7 +97,9 @@ const jupyter = createJupyter({
     const reply = JSON.parse(line);
     if (reply.interrupted === true) {
       // Interrupted while waiting for the answer: unwind the cell, as
-      // KeyboardInterrupt does in Python's input() (#121).
+      // KeyboardInterrupt does in Python's input() (#121). The host
+      // doesn't interrupt the target then, so abort jupyter.signal here.
+      jupyter.abortSignal();
       const err = new Error("Execution interrupted");
       err.name = "Interrupted";
       throw err;
@@ -217,6 +219,10 @@ globalThis.__cdpk = {
   broadcastResult: jupyter.broadcastResult,
   // execute_request's user_expressions (#340).
   formatJson: async (value) => JSON.stringify(await jupyter.namespace.format(value)),
+  // jupyter.signal (#418): the host aborts it on interrupt and renews it as
+  // the next cell starts.
+  abortSignal: jupyter.abortSignal,
+  renewSignal: jupyter.renewSignal,
   // The debugger's rich variable viewer (#18), synchronously: it runs while
   // the target is paused. A value whose $display is async shows as text.
   richBundle(value) {

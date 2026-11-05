@@ -370,6 +370,8 @@ export class Target implements KernelTarget {
   #undelivered = 0;
   /** Counts interrupt() calls: a call that saw one start during it was interrupted (#417). */
   #interrupts = 0;
+  /** jupyter.signal was aborted: the next cell renews it first (#418). */
+  #signalAborted = false;
   #paused = false;
   /** What the debugger asked to pause on (#307), and how many kernel calls hold it off. */
   #pauseOnExceptions = "none";
@@ -724,6 +726,10 @@ export class Target implements KernelTarget {
   /** Runs transformed cell code. Rejects with Interrupted after interrupt(). */
   async evaluate(script: string): Promise<EvaluateResult> {
     const interrupts = this.#interrupts;
+    if (this.#signalAborted) {
+      this.#signalAborted = false;
+      await this.#evaluateSync(`${SHIM}.renewSignal()`).catch(interrupted("Execution"));
+    }
     try {
       return await this.#evaluateRaw(script);
     } catch (err) {
@@ -762,7 +768,8 @@ export class Target implements KernelTarget {
    * CDP equivalent is Runtime.terminateExecution, sent on a second session
    * because the shell session is the one blocked on the running evaluate.
    * Terminated code never settles the awaited promise, so the pending
-   * evaluate is abandoned here and the session stays usable.
+   * evaluate is abandoned here and the session stays usable; jupyter.signal
+   * tells code still waiting on such a promise to stop (#418).
    */
   async interrupt(): Promise<void> {
     this.#interrupts++;
@@ -770,6 +777,22 @@ export class Target implements KernelTarget {
     if (this.#paused) await this.#shell.send("Debugger.resume").catch(() => {});
     await this.#control.send("Runtime.terminateExecution");
     this.#shell.abandonPending();
+    await this.#abortSignal();
+  }
+
+  /**
+   * Aborts jupyter.signal (#418), once the cell is terminated: cell code
+   * waiting on a promise that only it can settle, such as a comm reply,
+   * can then stop. A termination still pending would end the first call,
+   * so it gets a second.
+   */
+  async #abortSignal(): Promise<void> {
+    this.#signalAborted = true;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await this.callFunctionOn(`function () { globalThis.${SHIM}.abortSignal(); return true; }`, [])
+        .catch((): CdpParams => ({}));
+      if ((res.result as RemoteObject | undefined)?.value === true) return;
+    }
   }
 
   /**
@@ -941,6 +964,8 @@ export class Target implements KernelTarget {
   }
 
   replyInput(value: string | null, interrupted = false): void {
+    // The prompt aborts jupyter.signal as it throws (#418).
+    if (interrupted) this.#signalAborted = true;
     this.#child.stdin.write(JSON.stringify({ value, interrupted }) + "\n");
   }
 

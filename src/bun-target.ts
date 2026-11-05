@@ -209,7 +209,8 @@ export class BunTarget implements KernelTarget {
    * There's no terminateExecution, but a cell that's waiting on a promise
    * leaves the event loop free: the target answers a ping, and the cell is
    * abandoned with the session intact, like terminateExecution on an idle
-   * isolate (its pending work still runs). A busy cell can't be reached, so
+   * isolate (its pending work still runs, and jupyter.signal tells it to
+   * stop: #418). A busy cell can't be reached, so
    * the process is stopped and restarts on the next cell, losing its state.
    */
   async interrupt(): Promise<void> {
@@ -227,6 +228,10 @@ export class BunTarget implements KernelTarget {
         this.#pending.delete(id);
         this.#interruptibleIds.delete(id);
       }
+      // After the cell is abandoned, so its reply can't end it first
+      // (#418). Not awaited: requests are answered in order, and an abort
+      // listener that never returns mustn't hold up the interrupt.
+      void this.#request("abort").catch(() => {});
       return;
     }
     this.#stopNote = RESTART_NOTE;

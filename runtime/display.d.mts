@@ -42,6 +42,12 @@ export interface JupyterNamespace {
   comm: CommApi;
   /** An anywidget-compatible widget; display the result to show it. */
   widget(options: WidgetOptions): Widget;
+  /**
+   * Aborted when the kernel is interrupted. It stays aborted until the next
+   * cell starts, which gets a new signal; until an interrupt, every cell
+   * gets the same one.
+   */
+  readonly signal: AbortSignal;
 }
 
 export interface Jupyter {
@@ -53,6 +59,10 @@ export interface Jupyter {
   prompt(message?: string, defaultValue?: string, options?: { password?: boolean }): string | null;
   /** Routes a frontend comm message into the kernel's comms. */
   commDispatch: Comms["dispatch"];
+  /** Aborts jupyter.signal: the kernel was interrupted. */
+  abortSignal(): void;
+  /** A new jupyter.signal if the current one is aborted: a cell is starting. */
+  renewSignal(): void;
 }
 
 export function escapeHTML(str: string): string;

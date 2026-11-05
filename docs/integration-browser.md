@@ -131,7 +131,9 @@ const kernel = startBrowserKernel({
   option): `npm:date-fns@4` becomes `https://esm.sh/date-fns@4`, and
   `jsr:@std/path` becomes `https://esm.sh/jsr/@std/path`.
 - Interrupt. A cell waiting on a promise is abandoned and the Worker keeps
-  its state, as on workerd. A busy cell can't be stopped in place, so the
+  its state, as on workerd, and
+  [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal)
+  is aborted. A busy cell can't be stopped in place, so the
   Worker is terminated and a new one starts on the next cell, without the
   earlier cells' state.
 

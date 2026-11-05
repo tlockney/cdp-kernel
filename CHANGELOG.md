@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Cell code can see an interrupt: `jupyter.signal` is an `AbortSignal`
+  that an interrupt aborts, and the next cell gets a new one. A cell
+  awaiting a comm reply, or other work only it can end, can pass it on
+  and stop on interrupt, on every runtime
+  ([#418](https://github.com/tlockney/cdp-kernel/issues/418)).
 - The kernel supports kernel subshells (JEP 91): `kernel_info_reply`
   lists `kernel subshells`, the control channel answers
   `create_subshell_request`, `delete_subshell_request` and

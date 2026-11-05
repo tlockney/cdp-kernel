@@ -71,6 +71,7 @@ The requests mirror the CDP calls the kernel makes of the other targets:
 | `inspect` | Text for Shift+Tab | `callFunctionOn(__cdpk.describeForInspect)` |
 | `barrier` | Writes a barrier marker, returns its number | `Runtime.evaluate(__cdpk.barrier())` |
 | `ping` | Answers at once | none; used by interrupts |
+| `abort` | Aborts `jupyter.signal` | `callFunctionOn(__cdpk.abortSignal)` |
 
 Bun writes to fd 3 synchronously (`fs.writeSync`, retrying on `EAGAIN`),
 as Node and Deno write their records. That keeps a message's position relative to the
@@ -192,7 +193,10 @@ host tells the two cases apart with a `ping` request:
   loop is free, so the ping is answered at once. The host rejects the
   cell's pending `eval` with `Interrupted`, and the cell's output ends
   there. Bun and every global stay as they are. Whatever the cell started
-  keeps running, so its later output can still appear.
+  keeps running, so its later output can still appear. The host then
+  sends `abort`, which aborts
+  [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal),
+  so code that watches it can stop.
 - **The cell is busy** (`while (true) {}`). The ping isn't answered within
   500 ms, so the host kills Bun with `SIGKILL`. The cell's output says:
 

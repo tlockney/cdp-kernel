@@ -134,7 +134,10 @@ For Workers and celld projects, see [Choosing a runtime](runtimes.md#workers-pro
 
 **Kernel › Interrupt** (the ■ button) stops the running cell and keeps
 your variables, except for a busy cell on Bun, workerd or celld, which
-restarts the runtime (see [Choosing a runtime](runtimes.md)).
+restarts the runtime (see [Choosing a runtime](runtimes.md)). Code that
+waits on something the interrupt can't reach, such as a comm reply, can
+watch [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal)
+to stop.
 
 ## Errors
 

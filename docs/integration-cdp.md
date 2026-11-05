@@ -194,6 +194,12 @@ call and ignores any late reply. The session stays usable, the target
 keeps running, and every earlier cell's state survives, whether the cell
 was busy or waiting.
 
+Then it calls `__cdpk.abortSignal()`, which aborts
+[`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal), so
+code waiting on a promise only it can settle can stop. If the termination
+is still pending and ends that call, the host calls it once more. Before
+the next cell, the host calls `__cdpk.renewSignal()` for a new signal.
+
 ## Errors outside a cell
 
 An exception thrown later by a timer or an unhandled promise rejection

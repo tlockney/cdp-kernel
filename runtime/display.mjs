@@ -441,8 +441,23 @@ export function createJupyter(host) {
 
   const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
 
+  // jupyter.signal (#418): aborted when the kernel is interrupted, so cell
+  // code can stop waiting on what the interrupt can't reach, such as a comm
+  // reply. It stays aborted until the next cell starts, so code the
+  // interrupt abandoned sees it aborted; that cell gets a new one.
+  let controller = new AbortController();
+  function abortSignal() {
+    controller.abort(new DOMException("Execution interrupted", "AbortError"));
+  }
+  function renewSignal() {
+    if (controller.signal.aborted) controller = new AbortController();
+  }
+
   return {
     namespace: {
+      get signal() {
+        return controller.signal;
+      },
       broadcast,
       display,
       format,
@@ -459,5 +474,7 @@ export function createJupyter(host) {
     confirm,
     prompt,
     commDispatch: comms.dispatch,
+    abortSignal,
+    renewSignal,
   };
 }

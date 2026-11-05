@@ -593,7 +593,8 @@ export class WorkerdTarget implements KernelTarget {
   /**
    * A cell that's waiting on something leaves the driver free: it answers a
    * ping, and the cell is abandoned with the session intact (its pending
-   * work still runs, as on Bun). A busy cell can't be reached, so workerd is
+   * work still runs, as on Bun, and jupyter.signal tells it to stop). A busy
+   * cell can't be reached, so workerd is
    * stopped and restarts on the next cell.
    */
   async interrupt(): Promise<void> {
@@ -609,6 +610,10 @@ export class WorkerdTarget implements KernelTarget {
         this.#pending.delete(id);
         this.#interruptible.delete(id);
       }
+      // After the cell is abandoned, so its reply can't end it first
+      // (#418). Not awaited: requests are answered in order, and an abort
+      // listener that never returns mustn't hold up the interrupt.
+      void this.#request("abort").catch(() => {});
       return;
     }
     this.#stopNote = restartNote(this.runtime);

@@ -8,6 +8,10 @@ export interface EvaluatorShim {
   inspectPath(path: string, detail: number): string | null;
   /** Resolves a dotted path without running getters; see introspect.mjs. */
   resolvePath?(path: string): import("./introspect.mjs").Resolved;
+  /** Aborts jupyter.signal, after an interrupt (#418). */
+  abortSignal?(): void;
+  /** Replaces an aborted jupyter.signal, as a cell starts. */
+  renewSignal?(): void;
 }
 
 /** A request from the host: an `op` plus its parameters. */
