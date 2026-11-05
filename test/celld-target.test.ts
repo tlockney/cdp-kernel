@@ -20,9 +20,30 @@ const CELLD = process.env.CELLD ?? findCelld();
 const skip = spawnSync(CELLD, ["--version"], { stdio: "ignore" }).status !== 0;
 const RUNTIME = fileURLToPath(new URL("../runtime/", import.meta.url));
 
-function scratch(t: { after(fn: () => void): void }): string {
+type Hooks = { after(fn: () => unknown): void };
+const cleanups = new WeakMap<Hooks, (() => unknown)[]>();
+/**
+ * Runs `fn` when the test ends, last registered first. node:test runs
+ * `after` hooks first registered first, so a scratch directory went before
+ * the celld launched into it had stopped, and removing it raced celld's
+ * own writes there (ENOTEMPTY, #412).
+ */
+function cleanup(t: Hooks, fn: () => unknown): void {
+  let list = cleanups.get(t);
+  if (!list) {
+    const fns: (() => unknown)[] = [];
+    list = fns;
+    cleanups.set(t, fns);
+    t.after(async () => {
+      for (const f of fns.toReversed()) await f();
+    });
+  }
+  list.push(fn);
+}
+
+function scratch(t: Hooks): string {
   const dir = mkdtempSync(join(tmpdir(), "cdpk-celld-test-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cleanup(t, () => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
@@ -96,7 +117,7 @@ test("bundleDriver makes one module: the driver, and a project's exports", async
 
 type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string };
 
-async function launch(t: { after(fn: () => void): void }, cwd: string, executable = CELLD) {
+async function launch(t: Hooks, cwd: string, executable = CELLD) {
   const events: Event[] = [];
   const handlers: TargetEvents = {
     stream: (stream, text) => void events.push({ stream, text }),
@@ -108,7 +129,7 @@ async function launch(t: { after(fn: () => void): void }, cwd: string, executabl
   const own = celldPids().filter((pid) => !before.has(pid));
   // Wait out celld's graceful stop, which can take seconds, so this launch's
   // processes don't outlive the test into the next one's check (#93).
-  t.after(async () => {
+  cleanup(t, async () => {
     target.kill();
     assert.deepEqual(await celldGone(own), [], "celld exits after kill()");
   });
@@ -277,7 +298,7 @@ test("celld dev, its server and its directory go when the kernel is SIGKILLed", 
       `console.log("ready");\n`,
   );
   const child = spawn(process.execPath, [host], { stdio: ["ignore", "pipe", "ignore"] });
-  t.after(() => child.kill("SIGKILL"));
+  cleanup(t, () => child.kill("SIGKILL"));
   await new Promise<void>((resolve, reject) => {
     child.stdout.on("data", (chunk: Buffer) => chunk.toString().includes("ready") && resolve());
     child.once("exit", (code) => reject(new Error(`host exited (${code})`)));
@@ -301,7 +322,7 @@ test("celld dev, its server and its directory go when the kernel is SIGKILLed", 
       return false;
     }
   };
-  t.after(() => {
+  cleanup(t, () => {
     for (const pid of [dev, server]) if (alive(pid)) process.kill(pid, "SIGKILL");
   });
   child.kill("SIGKILL");
