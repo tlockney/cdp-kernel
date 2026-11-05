@@ -154,19 +154,38 @@ function uninstall(names: string[], all: boolean): void {
   if (failed) process.exit(1);
 }
 
-const { positionals, values } = parseArgs({
-  allowPositionals: true,
-  options: {
-    runtime: { type: "string", default: "node" },
-    conn: { type: "string" },
-    name: { type: "string" },
-    display: { type: "string" },
-    all: { type: "boolean", default: false },
-    "deno-compat": { type: "boolean", default: false },
-    "type-strip": { type: "string", default: "esbuild" },
-    "no-language-service": { type: "boolean", default: false },
-  },
-});
+const USAGE =
+  "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version";
+
+/** The command line, or exit 2 with the usage when it doesn't parse (an unknown option, a missing value). */
+function parseCommandLine() {
+  try {
+    return parseArgs({
+      allowPositionals: true,
+      options: {
+        runtime: { type: "string", default: "node" },
+        conn: { type: "string" },
+        name: { type: "string" },
+        display: { type: "string" },
+        all: { type: "boolean", default: false },
+        "deno-compat": { type: "boolean", default: false },
+        "type-strip": { type: "string", default: "esbuild" },
+        "no-language-service": { type: "boolean", default: false },
+        help: { type: "boolean", short: "h", default: false },
+      },
+    });
+  } catch (err) {
+    console.error(`cdp-kernel: ${err instanceof Error ? err.message.split(". ")[0] : String(err)}`);
+    console.error(USAGE);
+    process.exit(2);
+  }
+}
+
+const { positionals, values } = parseCommandLine();
+if (values.help || positionals[0] === "help") {
+  console.log(USAGE);
+  process.exit(0);
+}
 
 const runtime = values.runtime;
 if (!isRuntime(runtime)) {
@@ -217,8 +236,6 @@ switch (positionals[0]) {
     console.log(VERSION);
     break;
   default:
-    console.error(
-      "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version",
-    );
+    console.error(USAGE);
     process.exit(2);
 }
