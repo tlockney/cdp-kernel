@@ -87,6 +87,11 @@ export interface KernelHost {
   /** Path or URL prefixes of the kernel's own runtime files, whose frames a traceback marks as library code. */
   readonly kernelFiles?: readonly string[];
   log(text: string): void;
+  /**
+   * A fault in the kernel's own code, caught where it would otherwise only
+   * be logged: for opt-in crash reports (#422). Never a cell's error.
+   */
+  fault?(err: unknown, where: string): void;
   /** After shutdown_reply has gone out. */
   exit(): void;
 }
@@ -404,7 +409,11 @@ export class KernelCore {
   #targetEvents(): TargetEvents {
     return {
       stream: (name, text) => this.#publish("stream", { name, text }),
-      message: (msg) => void this.#onTargetMessage(msg).catch((err) => this.#log(`error handling target message: ${err}`)),
+      message: (msg) =>
+        void this.#onTargetMessage(msg).catch((err) => {
+          this.#log(`error handling target message: ${err}`);
+          this.#host.fault?.(err, "target message");
+        }),
       exit: (code, note) => {
         this.#target = null;
         // What its cells declared died with it.
@@ -501,6 +510,7 @@ export class KernelCore {
         await handle(received.msg, received.peer);
       } catch (err) {
         this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
+        this.#host.fault?.(err, `${channel} handler`);
       }
     }
   }
@@ -563,6 +573,7 @@ export class KernelCore {
         await this.#handleShell(msg, peer);
       } catch (err) {
         this.#log(`error handling message: ${err instanceof Error ? err.stack : err}`);
+        this.#host.fault?.(err, "shell handler");
       } finally {
         if (main) this.#handling = null;
       }

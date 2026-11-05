@@ -21,6 +21,7 @@ import { watchParent } from "./parent.ts";
 import { KernelCore } from "./kernel-core.ts";
 import { ZmqChannels } from "./zmq-channels.ts";
 import { UsageMeter } from "./usage.ts";
+import { crashReporter, reportUncaught } from "./crash-reports.ts";
 
 export interface ConnectionInfo {
   ip: string;
@@ -174,6 +175,10 @@ export class Kernel {
     }
     const denoCompat = options.denoCompat ?? false;
     const usage = new UsageMeter();
+    // Opt-in reports of the kernel's own faults (#422): null, and nothing
+    // installed, unless CDP_KERNEL_CRASH_REPORTS=1.
+    const reporter = crashReporter({ target: runtime });
+    if (reporter) reportUncaught(reporter);
     this.#core = new KernelCore({
       runtime,
       version: VERSION,
@@ -198,6 +203,7 @@ export class Kernel {
       readSource,
       kernelFiles: kernelFiles(),
       log,
+      fault: reporter ? (err, where) => void reporter.report(err, where) : undefined,
       exit: () => process.exit(0),
     });
   }
