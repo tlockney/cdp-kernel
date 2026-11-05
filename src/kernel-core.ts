@@ -224,6 +224,8 @@ export class KernelCore {
   #allowStdin = false;
   /** Cells and comm handlers running in the target. */
   #running = 0;
+  /** A cell is running: its parent header and allow_stdin hold until it ends (#417). */
+  #cellRunning = false;
   /** stop_on_error (#123): the message being handled was queued behind a failed cell. */
   #aborting = false;
   /** Messages without a subshell_id, in the order they came. */
@@ -323,7 +325,7 @@ export class KernelCore {
     // Kernel messages the handlers send are replies to this message, unless
     // it came on a subshell while a cell runs (#417): the target's output
     // doesn't say which it came from, so it stays the cell's.
-    if (this.#running === 0) {
+    if (!this.#cellRunning) {
       this.#parent = msg.header;
       this.#allowStdin = false;
     }
@@ -997,6 +999,7 @@ export class KernelCore {
     // nteract's structured traceback, sent as the error message's metadata (#322).
     let structured: JsonObject | null = null;
     this.#running++;
+    this.#cellRunning = true;
     try {
       const target = await this.#targetForCell();
       if (target.notice !== undefined && this.#noticeShownFor !== target) {
@@ -1042,6 +1045,7 @@ export class KernelCore {
       }
     } finally {
       this.#running--;
+      this.#cellRunning = false;
     }
     // The result and error are shown: nothing refers to them any more (#286).
     await this.#target?.releaseResults?.();

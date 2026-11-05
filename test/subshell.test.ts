@@ -150,6 +150,47 @@ test("requests for a missing or deleted subshell are answered", async () => {
   }
 });
 
+test("a comm handler after a cell ends doesn't run under that cell, though one from during it still runs", async () => {
+  let events!: TargetEvents;
+  let held!: () => void;
+  let heldAt!: () => void;
+  const reached = new Promise<void>((r) => (heldAt = r));
+  let calls = 0;
+  const target = {
+    runtime: "node",
+    versions: { runtime: "0", engine: "0" },
+    transform: (code: string) => code,
+    // The cell ends once the first handler has started.
+    evaluate: async () => (await reached, { result: { type: "undefined" } }),
+    dispatchComm: async () => {
+      if (++calls === 1) {
+        heldAt();
+        await new Promise<void>((r) => (held = r));
+      } else {
+        events.stream("stdout", "from the later handler\n");
+      }
+      return { handled: true };
+    },
+    flush: async () => {},
+    interrupt: async () => {},
+    kill: () => {},
+  } as unknown as KernelTarget;
+  const { channels, stop } = kernel(async (e) => ((events = e), target));
+  try {
+    const subshell = await createSubshell(channels);
+    const cell = channels.push("shell", "execute_request", { code: "1", allow_stdin: true });
+    channels.push("shell", "comm_msg", { comm_id: "c", data: {} }, { subshell_id: subshell });
+    await channels.replyOf("execute_reply", cell);
+    const later = channels.push("shell", "comm_msg", { comm_id: "c", data: {} });
+    while (!channels.published.some((m) => m.header.msg_type === "stream")) await new Promise((r) => setTimeout(r, 5));
+    const stream = channels.published.find((m) => m.header.msg_type === "stream");
+    assert.equal(stream?.parentHeader.msg_id, later);
+    held();
+  } finally {
+    stop();
+  }
+});
+
 // The cell announces a comm and waits for the frontend's answer on it.
 const AWAIT_REPLY = `
 const comm = jupyter.comm.open("ask", {});
