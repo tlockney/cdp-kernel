@@ -11,7 +11,7 @@ export interface EvaluatorShim {
   /** A new jupyter.signal, as a cell starts (#421). */
   startCell?(): void;
   /** Aborts the running cell's and comm handlers' jupyter.signal, after an interrupt (#418). */
-  abortSignal?(): void;
+  abortSignal?(cellRunning?: boolean): void;
 }
 
 /** A request from the host: an `op` plus its parameters. */

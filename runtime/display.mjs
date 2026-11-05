@@ -446,27 +446,34 @@ export function createJupyter(host) {
   // reply. Each cell gets its own, as does a comm handler that starts while
   // no cell runs; a handler during a cell shares the cell's. An interrupt
   // aborts only those of the cell and handlers running (#421).
-  let current = new AbortController();
-  /** The controllers of comm handlers running with their own signal. */
-  const handlers = new Set();
+  /** The last cell's controller. */
+  let cell = new AbortController();
+  /** What jupyter.signal returns: that of whatever started last. */
+  let current = cell;
+  /** Controllers of running comm handlers, with how many handlers use each. */
+  const handlers = new Map();
   function startCell() {
-    current = new AbortController();
+    current = cell = new AbortController();
   }
-  function abortSignal() {
+  /** `cellRunning`: the host has a cell in flight, so the last cell's signal is aborted too. */
+  function abortSignal(cellRunning = true) {
     const reason = new DOMException("Execution interrupted", "AbortError");
-    current.abort(reason);
-    for (const controller of handlers) controller.abort(reason);
+    if (cellRunning) cell.abort(reason);
+    for (const controller of handlers.keys()) controller.abort(reason);
     handlers.clear();
   }
   async function commDispatch(msgType, content, metadata, buffers, ownSignal = false) {
-    if (!ownSignal) return await comms.dispatch(msgType, content, metadata, buffers);
-    const controller = new AbortController();
-    current = controller;
-    handlers.add(controller);
+    // A handler during a cell shares the cell's signal, and is tracked
+    // apart from it: it can outlive the cell.
+    const controller = ownSignal ? new AbortController() : cell;
+    if (ownSignal) current = controller;
+    handlers.set(controller, (handlers.get(controller) ?? 0) + 1);
     try {
       return await comms.dispatch(msgType, content, metadata, buffers);
     } finally {
-      handlers.delete(controller);
+      const left = (handlers.get(controller) ?? 0) - 1;
+      if (left > 0) handlers.set(controller, left);
+      else handlers.delete(controller);
     }
   }
 

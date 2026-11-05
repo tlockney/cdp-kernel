@@ -772,11 +772,13 @@ export class Target implements KernelTarget {
    */
   async interrupt(): Promise<void> {
     this.#interrupts++;
+    // Before abandoning the evaluate, which ends the count.
+    const cellRunning = this.#cells > 0;
     // A paused isolate runs nothing to terminate: let it go first (#18).
     if (this.#paused) await this.#shell.send("Debugger.resume").catch(() => {});
     await this.#control.send("Runtime.terminateExecution");
     this.#shell.abandonPending();
-    await this.#abortSignal();
+    await this.#abortSignal(cellRunning);
   }
 
   /**
@@ -785,9 +787,11 @@ export class Target implements KernelTarget {
    * can then stop. A termination still pending would end the first call,
    * so it gets a second.
    */
-  async #abortSignal(): Promise<void> {
+  async #abortSignal(cellRunning: boolean): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.callFunctionOn(`function () { globalThis.${SHIM}.abortSignal(); return true; }`, [])
+      const res = await this.callFunctionOn(`function (cell) { globalThis.${SHIM}.abortSignal(cell); return true; }`, [
+        { value: cellRunning },
+      ])
         .catch((): CdpParams => ({}));
       if ((res.result as RemoteObject | undefined)?.value === true) return;
     }
@@ -963,7 +967,8 @@ export class Target implements KernelTarget {
   }
 
   replyInput(value: string | null, interrupted = false): void {
-    this.#child.stdin.write(JSON.stringify({ value, interrupted }) + "\n");
+    // `cell`: an interrupted prompt aborts a cell's jupyter.signal only if one runs (#421).
+    this.#child.stdin.write(JSON.stringify({ value, interrupted, cell: this.#cells > 0 }) + "\n");
   }
 
   kill(): void {

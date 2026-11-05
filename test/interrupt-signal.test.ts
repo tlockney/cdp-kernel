@@ -71,18 +71,54 @@ test("a comm handler with no cell running gets its own signal; one during a cell
   await shared;
 });
 
+// A handler on a subshell can span a cell boundary (#421 review).
+test("an interrupt aborts the signals of running work only, across cell boundaries", async () => {
+  const j = jupyter();
+  const seen: AbortSignal[] = [];
+  const release: (() => void)[] = [];
+  j.namespace.comm.registerTarget("t", async () => {
+    seen.push(j.namespace.signal);
+    await new Promise<void>((resolve) => release.push(resolve));
+  });
+  // A handler between cells, then a cell that starts and finishes while it waits.
+  const own = j.commDispatch("comm_open", { comm_id: "a", target_name: "t" }, {}, [], true);
+  await Promise.resolve();
+  j.startCell();
+  const finished = j.namespace.signal;
+  j.abortSignal(false);
+  assert.ok(seen[0].aborted, "the running handler's");
+  assert.ok(!finished.aborted, "the finished cell's");
+  release.shift()!();
+  await own;
+
+  // A handler that starts during cell A and outlives it, then cell B is interrupted.
+  j.startCell();
+  const a = j.namespace.signal;
+  const shared = j.commDispatch("comm_open", { comm_id: "b", target_name: "t" }, {}, [], false);
+  await Promise.resolve();
+  assert.equal(seen[1], a);
+  j.startCell();
+  const b = j.namespace.signal;
+  j.abortSignal(true);
+  assert.ok(b.aborted, "the running cell's");
+  assert.ok(a.aborted, "the outliving handler's, shared with cell A");
+  release.shift()!();
+  await shared;
+});
+
 test("the evaluator starts a cell on eval, passes ownSignal to comms and aborts on request", async () => {
   const calls: unknown[] = [];
   const shim = {
     startCell: () => calls.push("startCell"),
-    abortSignal: () => calls.push("abort"),
+    abortSignal: (cell: boolean) => calls.push(["abort", cell]),
     commDispatch: (...args: unknown[]) => (calls.push(["comm", args[4]]), Promise.resolve(true)),
   } as unknown as EvaluatorShim;
   const handle = createHandler(shim, () => Promise.resolve([1]));
   await handle({ op: "eval", code: "" });
   await handle({ op: "comm", msgType: "comm_msg", content: {}, metadata: {}, buffers: [], ownSignal: true });
+  await handle({ op: "abort", cell: false });
   await handle({ op: "abort" });
-  assert.deepEqual(calls, ["startCell", ["comm", true], "abort"]);
+  assert.deepEqual(calls, ["startCell", ["comm", true], ["abort", false], ["abort", true]]);
 });
 
 // The cell announces a comm and waits for the frontend's answer on it,

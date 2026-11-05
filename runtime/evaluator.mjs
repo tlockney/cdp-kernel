@@ -95,7 +95,7 @@ export function createHandler(shim, evaluate = (code) => (0, eval)(code)) {
         return { value: shim.barrier() };
       case "abort":
         // After an interrupt: jupyter.signal (#418).
-        shim.abortSignal?.();
+        shim.abortSignal?.(request.cell !== false);
         return {};
       default:
         throw new Error(`unknown request ${JSON.stringify(request.op)}`);

@@ -99,7 +99,7 @@ const jupyter = createJupyter({
       // Interrupted while waiting for the answer: unwind the cell, as
       // KeyboardInterrupt does in Python's input() (#121). The host
       // doesn't interrupt the target then, so abort jupyter.signal here.
-      jupyter.abortSignal();
+      jupyter.abortSignal(reply.cell !== false);
       const err = new Error("Execution interrupted");
       err.name = "Interrupted";
       throw err;

@@ -222,6 +222,8 @@ export class BunTarget implements KernelTarget {
    */
   async interrupt(): Promise<void> {
     this.#interrupts++;
+    // Before abandoning the cell's request, which ends the count.
+    const cellRunning = this.#cells > 0;
     const running = [...this.#interruptibleIds];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),
@@ -238,7 +240,7 @@ export class BunTarget implements KernelTarget {
       // After the cell is abandoned, so its reply can't end it first
       // (#418). Not awaited: requests are answered in order, and an abort
       // listener that never returns mustn't hold up the interrupt.
-      void this.#request("abort").catch(() => {});
+      void this.#request("abort", { cell: cellRunning }).catch(() => {});
       return;
     }
     this.#stopNote = RESTART_NOTE;
@@ -305,7 +307,8 @@ export class BunTarget implements KernelTarget {
   }
 
   replyInput(value: string | null, interrupted = false): void {
-    this.#child.stdin?.write(JSON.stringify({ value, interrupted }) + "\n");
+    // `cell`: an interrupted prompt aborts a cell's jupyter.signal only if one runs (#421).
+    this.#child.stdin?.write(JSON.stringify({ value, interrupted, cell: this.#cells > 0 }) + "\n");
   }
 
   /** The bun process's resident memory and CPU time, from the OS (#410). */

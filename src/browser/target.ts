@@ -219,6 +219,8 @@ export class BrowserTarget implements KernelTarget {
    */
   async interrupt(): Promise<void> {
     this.#interrupts++;
+    // Before abandoning the cell's request, which ends the count.
+    const cellRunning = this.#cells > 0;
     const running = [...this.#interruptible];
     const answered = await Promise.race([
       this.#request("ping").then(() => true, () => false),
@@ -234,7 +236,7 @@ export class BrowserTarget implements KernelTarget {
       // After the cell is abandoned, so its reply can't end it first
       // (#418). Not awaited: requests are answered in order, and an abort
       // listener that never returns mustn't hold up the interrupt.
-      void this.#request("abort").catch(() => {});
+      void this.#request("abort", { cell: cellRunning }).catch(() => {});
       return;
     }
     this.#stopNote = RESTART_NOTE;

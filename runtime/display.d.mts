@@ -70,8 +70,11 @@ export interface Jupyter {
   ): Promise<boolean>;
   /** A new jupyter.signal: a cell is starting (#421). */
   startCell(): void;
-  /** Aborts the running cell's and comm handlers' jupyter.signal: the kernel was interrupted. */
-  abortSignal(): void;
+  /**
+   * Aborts the running comm handlers' jupyter.signal, and the last cell's
+   * unless `cellRunning` is false: the kernel was interrupted.
+   */
+  abortSignal(cellRunning?: boolean): void;
 }
 
 export function escapeHTML(str: string): string;
