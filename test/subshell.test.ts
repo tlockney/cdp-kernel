@@ -68,6 +68,88 @@ test("kernel_info lists kernel subshells; create, list and delete follow JEP 91"
   }
 });
 
+/** A target whose steps the test releases, to hold the kernel at a chosen point. */
+function gatedTarget() {
+  const gate = () => {
+    let open!: () => void;
+    let reached!: () => void;
+    const at = new Promise<void>((r) => (reached = r));
+    const released = new Promise<void>((r) => (open = r));
+    return { at, open, wait: () => (reached(), released) };
+  };
+  const release = gate();
+  const comm = gate();
+  const target = {
+    runtime: "node",
+    versions: { runtime: "0", engine: "0" },
+    transform: (code: string) => code,
+    evaluate: async () => ({
+      result: { type: "undefined" },
+      exceptionDetails: { exceptionId: 1, text: "Uncaught boom", lineNumber: 0, columnNumber: 0 },
+    }),
+    releaseResults: () => release.wait(),
+    dispatchComm: async () => (await comm.wait(), { handled: true }),
+    flush: async () => {},
+    interrupt: async () => {},
+    kill: () => {},
+  } as unknown as KernelTarget;
+  return { target, release, comm };
+}
+
+test("a failed cell's error keeps its parent when a subshell comm runs before it is sent", async () => {
+  const { target, release, comm } = gatedTarget();
+  const { channels, stop } = kernel(async () => target);
+  try {
+    const subshell = await createSubshell(channels);
+    const cell = channels.push("shell", "execute_request", { code: "boom()", silent: false });
+    await release.at;
+    // The cell has ended; its error isn't sent yet.
+    channels.push("shell", "comm_msg", { comm_id: "c", data: {} }, { subshell_id: subshell });
+    await comm.at;
+    release.open();
+    comm.open();
+    assert.equal((await channels.replyOf("execute_reply", cell)).content.status, "error");
+    const error = channels.published.find((m) => m.header.msg_type === "error");
+    assert.equal(error?.parentHeader.msg_id, cell);
+  } finally {
+    stop();
+  }
+});
+
+test("requests for a missing or deleted subshell are answered", async () => {
+  const { target, release, comm } = gatedTarget();
+  release.open();
+  const { channels, stop } = kernel(async () => target);
+  try {
+    const idleFor = async (id: string) => {
+      while (!channels.published.some((m) => m.header.msg_type === "status" && m.parentHeader.msg_id === id && m.content.execution_state === "idle")) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    };
+    // A cell on an unknown subshell is refused, not run.
+    const cell = channels.push("shell", "execute_request", { code: "1" }, { subshell_id: "nope" });
+    assert.equal((await channels.replyOf("execute_reply", cell)).content.ename, "SubshellNotFound");
+    await idleFor(cell);
+    // A comm_open on one is closed, as for an unknown target.
+    const open = channels.push("shell", "comm_open", { comm_id: "lost", target_name: "t", data: {} }, { subshell_id: "nope" });
+    await idleFor(open);
+    assert.ok(channels.published.some((m) => m.header.msg_type === "comm_close" && m.parentHeader.msg_id === open));
+
+    // Requests queued on a subshell when it is deleted get an error.
+    const subshell = await createSubshell(channels);
+    channels.push("shell", "comm_msg", { comm_id: "c", data: {} }, { subshell_id: subshell });
+    await comm.at;
+    const queued = channels.push("shell", "kernel_info_request", {}, { subshell_id: subshell });
+    const del = channels.push("control", "delete_subshell_request", { subshell_id: subshell });
+    assert.equal((await channels.replyOf("delete_subshell_reply", del)).content.status, "ok");
+    assert.equal((await channels.replyOf("kernel_info_reply", queued)).content.status, "error");
+    await idleFor(queued);
+    comm.open();
+  } finally {
+    stop();
+  }
+});
+
 // The cell announces a comm and waits for the frontend's answer on it.
 const AWAIT_REPLY = `
 const comm = jupyter.comm.open("ask", {});

@@ -196,9 +196,11 @@ A kernel listener gets the new value and the previous one:
 use `on("change", (changes) => ...)`, which gets an object of the keys that
 changed.
 
-Listeners run like cells, one at a time and in between cell executions.
-While a cell is running, a slider move waits until the cell finishes,
-unless the frontend sends it on a kernel subshell (see [Comms](#comms)).
+Listeners run like cells. A slider move that the frontend sends on the
+main shell waits until a running cell finishes. JupyterLab sends it on a
+kernel subshell instead (see [Comms](#comms)), so the listener runs while
+a cell awaits, and listeners of different widgets can interleave at each
+`await`: guard state they share.
 `console.log` output from a listener isn't shown under any cell (JupyterLab
 puts it in its log console), so show results through the widget's state,
 as here.
@@ -570,5 +572,9 @@ const answer = await new Promise((resolve) => ask.onMsg((m) => resolve(m.data)))
 ```
 
 Handlers still share the cell's JavaScript thread: a cell that never
-awaits holds them until it ends. While a cell runs, a handler's output is
-shown under that cell. An interrupt stops the handlers too.
+awaits holds them until it ends. While a cell runs, a handler's output
+(and a `prompt()` in it) is shown under that cell. An interrupt stops the
+handlers too. Each subshell message gets its own `busy` and `idle` status,
+so a client that reads the kernel's state from every status message,
+rather than from those of its own requests, can show idle while a cell
+runs.

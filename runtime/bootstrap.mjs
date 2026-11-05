@@ -236,8 +236,15 @@ globalThis.__cdpk = {
   // each message's data would stay in memory (#287). Read before the first
   // await, so messages are taken in the order the host wrote them.
   commDispatchFromStdin() {
-    const { msgType, content, metadata, buffers } = readCommRecord();
-    return globalThis.__cdpk.commDispatch(msgType, content, metadata, buffers);
+    const dispatch = () => {
+      const { msgType, content, metadata, buffers } = readCommRecord();
+      return globalThis.__cdpk.commDispatch(msgType, content, metadata, buffers);
+    };
+    // Node's inspector can run this call in the middle of a blocking stdin
+    // read, e.g. a prompt's, when the message came on a kernel subshell
+    // (#417): reading then would take bytes from the middle of that read.
+    if (stdinReading) return new Promise((resolve) => afterStdinRead.push(resolve)).then(dispatch);
+    return dispatch();
   },
   describeError(value) {
     if (value instanceof Error) {
@@ -452,8 +459,27 @@ function readLine() {
  */
 const commRecords = [];
 
+/** Whether a read from stdin is in progress, and what waits for it to end. */
+let stdinReading = false;
+const afterStdinRead = [];
+
+function readingStdin(read) {
+  stdinReading = true;
+  try {
+    return read();
+  } finally {
+    stdinReading = false;
+    // In order, so comm records are taken as the host wrote them.
+    for (const resume of afterStdinRead.splice(0)) resume();
+  }
+}
+
 /** The next prompt reply's line; comm records before it are kept. */
 function readInputReply() {
+  return readingStdin(readInputReplyNow);
+}
+
+function readInputReplyNow() {
   for (;;) {
     const line = readLine();
     const comm = line === null ? null : COMM_HEADER.exec(line);
@@ -465,6 +491,10 @@ function readInputReply() {
 
 /** The next comm message, past any prompt reply left unread. */
 function readCommRecord() {
+  return readingStdin(readCommRecordNow);
+}
+
+function readCommRecordNow() {
   const kept = commRecords.shift();
   if (kept !== undefined) return JSON.parse(new TextDecoder().decode(kept));
   for (;;) {

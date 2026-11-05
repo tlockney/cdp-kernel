@@ -147,11 +147,12 @@ class ShellQueue {
     }
   }
 
-  /** What's still queued is dropped. */
-  close(): void {
+  /** Stops taking messages; returns those still queued. */
+  close(): Queued[] {
     this.#closed = true;
-    this.items.length = 0;
+    const dropped = this.items.splice(0);
     this.#wake?.();
+    return dropped;
   }
 }
 
@@ -508,25 +509,37 @@ export class KernelCore {
       // Malformed, or on ZeroMQ unsigned or forged: dropped, as in Deno.
       if (received === null) continue;
       const subshellId = received.msg.header.subshell_id;
-      // Cells share one target and one parent header, so a cell sent on a
-      // subshell waits its turn on the main shell.
-      if (typeof subshellId !== "string" || received.msg.header.msg_type === "execute_request") {
+      if (typeof subshellId !== "string") {
         this.#mainShell.push({ ...received, abort: false });
         continue;
       }
       const queue = this.#subshells.get(subshellId);
-      if (queue !== undefined) {
+      if (queue === undefined) {
+        this.#refuseShell(received, `No subshell with id ${subshellId}`);
+      } else if (received.msg.header.msg_type === "execute_request") {
+        // Cells share one target and one parent header, so a cell sent on
+        // a subshell waits its turn on the main shell.
+        this.#mainShell.push({ ...received, abort: false });
+      } else {
         queue.push({ ...received, abort: false });
-        continue;
       }
-      // Answered, so the frontend doesn't wait on it.
-      const replyType = SHELL_REPLIES[received.msg.header.msg_type];
-      if (replyType !== undefined) {
-        const error: ErrorContent = { ename: "SubshellNotFound", evalue: `No subshell with id ${subshellId}`, traceback: [] };
-        this.#reply("shell", received.peer, received.msg, replyType, { status: "error", ...error });
-      }
-      this.#log(`dropping ${received.msg.header.msg_type} for unknown subshell ${subshellId}`);
     }
+  }
+
+  /**
+   * Answers a shell message for a subshell that doesn't exist, or was
+   * deleted with the message queued, so the frontend doesn't wait on it.
+   */
+  #refuseShell({ peer, msg }: Received, evalue: string): void {
+    const type = msg.header.msg_type;
+    this.#log(`refusing ${type}: ${evalue}`);
+    this.#status("busy", msg.header);
+    const error: ErrorContent = { ename: "SubshellNotFound", evalue, traceback: [`SubshellNotFound: ${evalue}`] };
+    const replyType = type === "execute_request" ? "execute_reply" : SHELL_REPLIES[type];
+    if (replyType !== undefined) this.#reply("shell", peer, msg, replyType, { status: "error", ...error });
+    // As for an unknown target: the frontend shouldn't wait on the comm.
+    if (type === "comm_open") this.#publish("comm_close", { comm_id: String(msg.content.comm_id ?? ""), data: {} }, { parent: msg.header });
+    this.#status("idle", msg.header);
   }
 
   /** Handles one queue's messages in turn. */
@@ -640,9 +653,9 @@ export class KernelCore {
           });
           break;
         }
-        // A message it is handling finishes; what's queued is dropped.
+        // A message it is handling finishes; what's queued is refused.
         this.#subshells.delete(subshellId);
-        queue.close();
+        for (const dropped of queue.close()) this.#refuseShell(dropped, `Subshell ${subshellId} was deleted`);
         this.#reply(channel, peer, msg, "delete_subshell_reply", { status: "ok" });
         break;
       }
@@ -1042,7 +1055,9 @@ export class KernelCore {
         await new Promise((r) => setTimeout(r, 0));
         for (const queued of this.#mainShell.items) queued.abort = true;
       }
-      this.#publish("error", error, structured ? { metadata: { [TRACEBACK_MIME]: structured } } : {});
+      // With its parent: a subshell's comm handler may have taken #parent
+      // since the cell ended (#417).
+      this.#publish("error", error, { parent, ...(structured ? { metadata: { [TRACEBACK_MIME]: structured } } : {}) });
       this.#reply("shell", peer, msg, "execute_reply", { status: "error", execution_count: count, ...error });
     } else {
       this.#reply("shell", peer, msg, "execute_reply", {
