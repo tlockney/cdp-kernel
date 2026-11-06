@@ -4,6 +4,13 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- The browser target is covered by the [support policy](https://cdp-kernel.org/docs/support):
+  CI tests it in Chromium, WebKit and Firefox, and it is no longer
+  labelled experimental. Nothing in it changed
+  ([#429](https://github.com/tlockney/cdp-kernel/issues/429)).
+
 ## 0.8.0 (2026-11-06)
 
 - Cell code can see an interrupt: `jupyter.signal` is an `AbortSignal`

@@ -1,8 +1,11 @@
-# The browser (experimental)
+# The browser
 
 The kernel can run inside a web page, with cells in a Web Worker and no
-server or Jupyter install. It is a proof of concept: it has an npm export but no kernelspec, and it
-isn't covered by the [support policy](support.md).
+server or Jupyter install. It is an npm export, not a kernelspec: a page
+starts it and supplies the frontend. The
+[Ganymede](https://ganymede-server.com) apps for Mac, iPad and iPhone run
+their in-app kernel this way. The [support policy](support.md#runtimes)
+says which browser engines CI covers.
 
 ## How it fits
 
