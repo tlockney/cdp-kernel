@@ -11,7 +11,7 @@ detail:
 - [Bun](integration-bun.md): a private pipe and an in-process evaluator.
 - [workerd and celld](integration-workers.md): a driver Worker and one
   WebSocket session.
-- [The browser](integration-browser.md) (experimental): the whole kernel
+- [The browser](integration-browser.md): the whole kernel
   in a web page, with cells in a module Worker and no Jupyter install at
   all.
 

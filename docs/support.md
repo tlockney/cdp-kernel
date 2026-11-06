@@ -20,6 +20,7 @@ Linux and macOS, for every pull request.
 | Target: Bun | The latest Bun minor release | 1.4 |
 | Target: workerd | The version CI pins | 2026-10-15 |
 | Target: celld | The version CI pins | 0.6.2 |
+| Target: browser | Chromium, WebKit and Firefox, as the Playwright version CI pins ships them | Playwright 1.64.1 |
 
 How support follows the runtimes' own releases:
 
@@ -31,6 +32,10 @@ How support follows the runtimes' own releases:
   that release raises `engines` in `package.json`.
 - **Deno and Bun** have one supported minor at a time: the newest. When a
   new one is added, the previous one is dropped from CI.
+- **The browser target** ([The browser](integration-browser.md)) is
+  tested in the three engines Playwright ships, headless, on Linux. Safari
+  itself and WebKit in an app's WKWebView, where the Ganymede apps run
+  it, aren't tested in CI. A bug found there is still a cdp-kernel bug.
 - **workerd and celld** are pinned in CI, because each new release can
   change the behaviour the kernel relies on. The pin moves forward when
   someone tests a newer release; the version in the table is the one
@@ -89,7 +94,10 @@ From least to most likely to change:
    the release notes ask you to re-run `install`.
 4. **The library API**: what `@tlockney/cdp-kernel` exports for embedding
    the kernel in another program (`Kernel`, `parseConnectionInfo`, the
-   type-stripper and transform options). This is the least settled part.
+   type-stripper and transform options), and what
+   `@tlockney/cdp-kernel/browser` exports for a page (`startBrowserKernel`
+   and its `preload`, `host` and `capabilities` options). This is the
+   least settled part.
 
 Anything else, such as files under `runtime/`, cache locations, the
 kernel's log messages, and how a value is formatted as output, is internal

@@ -16,7 +16,7 @@ page covers what differs.
 | `cdp-bun` | Bun | Bun's APIs and its fast package installs. |
 | `cdp-workerd` | workerd | Trying Cloudflare Workers code and a Workers project's bindings. |
 | `cdp-celld` | celld | Workers and Durable Objects on celld, with a project's bindings. |
-| none: an npm export | A browser (experimental) | Running cells in a page, with no server or Jupyter install ([The browser](integration-browser.md)). |
+| none: an npm export | A browser | Running cells in a page, with no server or Jupyter install ([The browser](integration-browser.md)). |
 
 | | Node, Deno | Bun | workerd, celld |
 |---|---|---|---|
@@ -208,5 +208,5 @@ internals pages ([Node and Deno](integration-cdp.md),
 each runtime, with diagrams: [Node and Deno](integration-cdp.md) over the
 Chrome DevTools Protocol, [Bun](integration-bun.md) over a private pipe,
 [workerd and celld](integration-workers.md) through a driver Worker, and
-[the browser](integration-browser.md) (experimental) through a module
+[the browser](integration-browser.md) through a module
 Worker in the page.

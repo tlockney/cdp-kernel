@@ -7,7 +7,7 @@ runtime: Node or Deno over the Chrome DevTools Protocol, or Bun, workerd and
 celld, which evaluate cells in-process. In principle, anything else whose
 inspector speaks CDP works too. The kernel can also run inside a web page,
 with cells in a Web Worker and no server
-([The browser](https://cdp-kernel.org/docs/integration-browser), experimental).
+([The browser](https://cdp-kernel.org/docs/integration-browser)).
 
 **Website:** <https://cdp-kernel.org/> ·
 **Docs:** [cdp-kernel.org/docs](https://cdp-kernel.org/docs/)
