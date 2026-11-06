@@ -50,7 +50,9 @@ have. Windows isn't supported yet.
   same PR. Docs changes should build with `npm run docs:build`, which fails
   on dead links.
 - **Keep CI green.** Every PR runs the type check, unit tests and e2e
-  suite on each supported runtime, and the JupyterLab widget test. A PR is
+  suite on each supported runtime, and the JupyterLab widget test, unless
+  it changes only docs, the site or Markdown (other than CHANGELOG.md):
+  then `scripts/ci-changes.sh` skips them and the checks pass. A PR is
   merged once CI passes and it has been reviewed by a Claude session
   that didn't write it ([CLAUDE.md](CLAUDE.md#independent-review) has the
   rules, including those for `spike` PRs).
