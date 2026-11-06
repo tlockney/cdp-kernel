@@ -149,6 +149,8 @@ const kernel = startBrowserKernel({
 - `Deno.*` and Node's builtins, beyond what esm.sh polyfills for `node:`
   imports.
 - Files: `jupyter.image(path)` has no file system to read.
-- A frontend. The kernel speaks the message protocol; a page still needs
-  something to show it, such as a JupyterLite kernel wrapper or
-  [Ganymede](https://ganymede-server.com/)'s engine in the page.
+- A frontend of its own. The kernel speaks the message protocol; a page
+  still needs something to show it.
+  [ganymede-ui](https://github.com/tlockney/ganymede-ui) is one: it wraps
+  the kernel for JupyterLite's in-page server, in a browser and in the
+  Ganymede Mac and iPad apps.
