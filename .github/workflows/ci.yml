@@ -5,12 +5,34 @@ on:
   pull_request:
   workflow_call: # reused by publish.yml before anything is released
 jobs:
+  # Whether a pull request needs the jobs below: scripts/ci-changes.sh says
+  # no when it changes only docs, the site or Markdown (#431). The jobs
+  # then report success under their required names without running: the
+  # others are skipped by their `if`, and each test cell runs on Linux with
+  # every step skipped, since a matrix job skipped whole wouldn't report
+  # per-cell checks. If this job fails, its output is empty and everything
+  # runs. Pushes to main and publish.yml's call run everything.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit and its first parent, the base.
+          fetch-depth: 2
+      - id: changes
+        run: scripts/ci-changes.sh | tee -a "$GITHUB_OUTPUT"
+
   # Several behaviours the kernel relies on were found by probing rather
   # than documented (#15): interrupt over a second CDP session, Node
   # rejecting import() in inspector code, module.registerHooks, Deno's
   # configurable `Deno` global. So every supported runtime version runs the
   # whole suite, on Linux and macOS.
   test:
+    needs: changes
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,23 +50,31 @@ jobs:
             deno: v2.x
             shipped: true
     name: test (${{ matrix.os }}, node ${{ matrix.node }}, deno ${{ matrix.deno }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ needs.changes.outputs.code == 'false' && 'ubuntu-latest' || matrix.os }}
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - if: needs.changes.outputs.code == 'false'
+        run: echo "Only docs, the site or Markdown changed, so nothing to test (#431)."
+      - if: needs.changes.outputs.code != 'false'
+        uses: actions/checkout@v4
+      - if: needs.changes.outputs.code != 'false'
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - uses: denoland/setup-deno@v2
+      - if: needs.changes.outputs.code != 'false'
+        uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ matrix.deno }}
-      - uses: astral-sh/setup-uv@v6
-      - uses: oven-sh/setup-bun@v2
+      - if: needs.changes.outputs.code != 'false'
+        uses: astral-sh/setup-uv@v6
+      - if: needs.changes.outputs.code != 'false'
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.x # docs/install.md names the tested Bun
       # celld isn't on npm; its installer puts it in ~/.local/bin, where the
       # kernel looks first (#25).
-      - name: celld
+      - if: needs.changes.outputs.code != 'false'
+        name: celld
         run: |
           case "$RUNNER_OS" in
             Linux) asset=celld-x86_64-unknown-linux-gnu.gz ;;
@@ -55,18 +85,22 @@ jobs:
           chmod +x "$HOME/.local/bin/celld"
           "$HOME/.local/bin/celld" --version
 
-      - run: npm ci
-      - run: npm run check
+      - if: needs.changes.outputs.code != 'false'
+        run: npm ci
+      - if: needs.changes.outputs.code != 'false'
+        run: npm run check
       # Each takes a few minutes at most. A hang should fail the job, not hold
       # a runner until the job's own timeout (#52).
-      - run: npm test
+      - if: needs.changes.outputs.code != 'false'
+        run: npm test
         timeout-minutes: 10
-      - run: npm run e2e
+      - if: needs.changes.outputs.code != 'false'
+        run: npm run e2e
         timeout-minutes: 10
-      - if: matrix.shipped
+      - if: needs.changes.outputs.code != 'false' && (matrix.shipped)
         run: deno publish --dry-run
       - name: e2e (npm package)
-        if: matrix.shipped
+        if: needs.changes.outputs.code != 'false' && (matrix.shipped)
         timeout-minutes: 10
         run: |
           npm pack --pack-destination "$RUNNER_TEMP"
@@ -76,13 +110,15 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           CDPK_E2E_CLI="$RUNNER_TEMP/pkg/node_modules/.bin/cdp-kernel" npm run e2e
       - name: e2e (Deno host)
-        if: matrix.shipped
+        if: needs.changes.outputs.code != 'false' && (matrix.shipped)
         timeout-minutes: 10
         run: CDPK_E2E_CLI="deno run -A src/main.ts" npm run e2e
 
   # The container image (container/Dockerfile, #267), built from the
   # checkout, with a cell run on every kernelspec inside it.
   image:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -95,6 +131,8 @@ jobs:
   # Playwright's engines. The test is skipped without the playwright
   # package, which isn't a dependency, so no other job runs it (#319).
   browser:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -119,6 +157,8 @@ jobs:
   # Widgets against the real frontend: JupyterLab with the anywidget
   # extension, driven by headless Chromium (test/lab_widgets.py).
   lab:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
