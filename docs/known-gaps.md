@@ -32,9 +32,7 @@
   with Ganymede's own
   [known gaps](https://github.com/tlockney/ganymede/blob/main/docs/known-gaps.md).
   The ones a cdp-kernel user meets:
-  - A kernel that crashes is reported and removed, not restarted
-    automatically.
-  - No terminals, and no export to HTML or PDF.
+  - No export to HTML or PDF.
   - Ganymede ships a Windows binary, but cdp-kernel doesn't support
     Windows yet ([#32](https://github.com/tlockney/cdp-kernel/issues/32)),
     so this setup is Linux and macOS only.
