@@ -4,7 +4,7 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.8.0 (2026-11-06)
 
 - Cell code can see an interrupt: `jupyter.signal` is an `AbortSignal`
   that an interrupt aborts. A cell awaiting a comm reply, or other work
