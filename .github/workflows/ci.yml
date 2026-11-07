@@ -11,8 +11,8 @@ jobs:
   # others are skipped by their `if`, and each test cell runs on Linux with
   # every step skipped, since a matrix job skipped whole wouldn't report
   # per-cell checks. If this job fails, its output is empty and everything
-  # runs. A push to main is checked the same way (#433); the schedule and
-  # publish.yml's call run everything.
+  # runs. A push to main is checked the same way (#433); publish.yml's
+  # call runs everything.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
