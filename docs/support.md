@@ -9,7 +9,9 @@ what has to be true before it's called 1.0.
 The kernel has two halves (see [Choosing a runtime](runtimes.md)): the
 **host**, which talks to Jupyter, and the **target**, which runs your
 cells. A version is supported when CI runs the whole test suite on it, on
-Linux and macOS, for every pull request.
+Linux, for every pull request. On macOS every pull request runs it on
+the newest Node line (26 today), and Deno; the older Node lines are
+tested on Linux only.
 
 | | Supported | Tested today |
 | --- | --- | --- |

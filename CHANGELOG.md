@@ -6,6 +6,10 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The [support policy](https://cdp-kernel.org/docs/support) now tests
+  every supported Node line on Linux and the newest one on macOS; Node 22
+  and 24 are no longer run on macOS for each pull request
+  ([#434](https://github.com/tlockney/cdp-kernel/issues/434)).
 - The browser target is covered by the [support policy](https://cdp-kernel.org/docs/support):
   CI tests it in Chromium, WebKit and Firefox, and it is no longer
   labelled experimental. Nothing in it changed
