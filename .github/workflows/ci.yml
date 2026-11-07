@@ -11,8 +11,8 @@ jobs:
   # others are skipped by their `if`, and each test cell runs on Linux with
   # every step skipped, since a matrix job skipped whole wouldn't report
   # per-cell checks. If this job fails, its output is empty and everything
-  # runs. A push to main is checked the same way (#433); the schedule and
-  # publish.yml's call run everything.
+  # runs. A push to main is checked the same way (#433); publish.yml's
+  # call runs everything.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -42,6 +42,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         node: [22, 24, 26]
+        # macOS runners are shared with the other Ganymede repos and were
+        # what PRs queued for, so macOS runs the newest Node only (#434);
+        # Linux runs every supported line.
+        exclude:
+          - os: macos-latest
+            node: 22
+          - os: macos-latest
+            node: 24
         # One Deno: v2.x and the 2.9.x LTS line resolve to the same release
         # while Deno stays on 2.9 (denoland/deno#37030), so a second value
         # would only repeat every cell (#146). Add one back when they diverge.
