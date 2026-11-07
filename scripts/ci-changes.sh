@@ -6,17 +6,34 @@
 # HEAD^1 is the base and `git diff HEAD^1 HEAD` is what the PR changes.
 # Docs and Markdown can't change what the jobs test (pages.yml builds the
 # docs); CHANGELOG.md can (test/package.test.ts reads it), and anything
-# not listed counts as code. Any other event (a push to main,
-# publish.yml's call) runs everything.
+# not listed counts as code. A push to main diffs against the commit
+# main was at before it (BASE_SHA, github.event.before; HEAD^1 without
+# it) with the same rules (#433). Any other event (the schedule,
+# publish.yml's call), and a push whose base can't be found or diffed,
+# runs everything.
 set -eu
 
-if [ "${GITHUB_EVENT_NAME:-}" != pull_request ]; then
+everything() {
   echo code=true
   exit 0
-fi
+}
+
+case ${GITHUB_EVENT_NAME:-} in
+  pull_request) base=HEAD^1 ;;
+  push)
+    # Only a push to main is diffed; a tag push runs everything.
+    [ "${GITHUB_REF:-}" = refs/heads/main ] || everything
+    base=${BASE_SHA:-HEAD^1}
+    case $base in *[!0]*) ;; *) everything ;; esac
+    if ! git cat-file -e "$base^{commit}" 2> /dev/null; then
+      git fetch -q --no-tags --depth=1 origin "$base" 2> /dev/null || everything
+    fi
+    ;;
+  *) everything ;;
+esac
 
 code=false
-files=$(git diff --name-only HEAD^1 HEAD)
+files=$(git diff --name-only "$base" HEAD) || everything
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case $f in

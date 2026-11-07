@@ -52,7 +52,8 @@ have. Windows isn't supported yet.
 - **Keep CI green.** Every PR runs the type check, unit tests and e2e
   suite on each supported runtime, and the JupyterLab widget test, unless
   it changes only docs, the site or Markdown (other than CHANGELOG.md):
-  then `scripts/ci-changes.sh` skips them and the checks pass. A PR is
+  then `scripts/ci-changes.sh` skips them and the checks pass (and skips
+  them on the push to `main` that merges such a PR). A PR is
   merged once CI passes and it has been reviewed by a Claude session
   that didn't write it ([CLAUDE.md](CLAUDE.md#independent-review) has the
   rules, including those for `spike` PRs).
