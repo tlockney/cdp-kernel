@@ -272,6 +272,9 @@ export class KernelCore {
     this.#ensureTarget().catch((err) => this.#log(`target failed to start: ${err}`));
     // Transforms are synchronous, so the stripper loads before any cell.
     if (typeof this.#typeStrip === "string") await loadTypeStripper(this.#typeStrip);
+    // No shell or control reply until every port is bound: a client that
+    // has kernel_info_reply goes on to the heartbeat port (#438).
+    await this.#channels.ready;
     await Promise.all([this.#readShell(), this.#runShell(this.#mainShell),
       this.#loop("control", (m, p) => this.#handleControl(m, p)),
       this.#loop("stdin", (m) => this.#handleStdin(m))]);
