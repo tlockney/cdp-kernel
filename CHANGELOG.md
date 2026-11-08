@@ -6,6 +6,10 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The kernel answers on shell and control only once all five ports in
+  the connection file are bound. Before, a client could get
+  `kernel_info_reply` while the heartbeat port was still unbound
+  ([#438](https://github.com/tlockney/cdp-kernel/issues/438)).
 - The [support policy](https://cdp-kernel.org/docs/support) now tests
   every supported Node line on Linux and the newest one on macOS; Node 22
   and 24 are no longer run on macOS for each pull request
