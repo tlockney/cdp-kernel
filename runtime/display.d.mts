@@ -3,8 +3,18 @@ import type { Widget, WidgetOptions } from "./widget.d.mts";
 
 export type { CommApi, Widget, WidgetOptions };
 
+/**
+ * The symbol a class implements to choose how its instances appear. At
+ * runtime it is `Symbol.for("Jupyter.display")`, so a library can use that
+ * form without the `jupyter` global.
+ */
 export const $display: unique symbol;
 
+/**
+ * A Jupyter MIME bundle: media type to content, such as
+ * `{ "text/plain": "42", "text/html": "<b>42</b>" }`. Binary images are
+ * base64 strings; JSON types (`application/json`, Vega-Lite) are objects.
+ */
 export type MediaBundle = { [mediaType: string]: unknown };
 
 export interface DisplayHost {
@@ -15,37 +25,256 @@ export interface DisplayHost {
   input: (prompt: string, password: boolean) => string | null;
 }
 
+/** Options for `jupyter.display`. */
 export interface DisplayOptions {
+  /**
+   * Send a plain object as the MIME bundle itself instead of formatting
+   * it. Default `false`.
+   */
   raw?: boolean;
+  /**
+   * Replace every earlier output that has the same `display_id`, including
+   * one shown by an earlier cell, instead of adding an output. Needs
+   * `display_id`. Default `false`.
+   */
   update?: boolean;
+  /** An id that a later display with `update: true` can replace. */
   display_id?: string;
 }
 
+/** A value that renders as rich output: it has a `[jupyter.$display]` method. */
 export interface Displayable {
   [$display]: () => MediaBundle | Promise<MediaBundle>;
 }
 
+/**
+ * The `jupyter` global: how values appear in the notebook. The same object
+ * as `Deno.jupyter` in `deno jupyter`.
+ */
 export interface JupyterNamespace {
+  /**
+   * Send a raw Jupyter message on the kernel's output channel (IOPub), as a
+   * reply to the running cell. The other helpers are built on it. It does
+   * not check the message: a wrong field is ignored or mishandled by the
+   * frontend.
+   *
+   * @param msgType An IOPub message type, such as `"clear_output"` or
+   *   `"display_data"`.
+   * @param content The message content, as the messaging spec defines it
+   *   for `msgType`.
+   * @param options `metadata` for the message, and binary `buffers`.
+   * @example
+   * ```ts
+   * // Count down in place: clear_output with wait avoids a flicker.
+   * for (const n of [3, 2, 1]) {
+   *   jupyter.broadcast("clear_output", { wait: true });
+   *   await jupyter.display(jupyter.md`Launching in **${n}**…`);
+   *   await new Promise((resolve) => setTimeout(resolve, 1000));
+   * }
+   * ```
+   * @see jupyter-api.md#raw-messages-with-broadcast
+   */
   broadcast(
     msgType: string,
     content: object,
     options?: { metadata?: object; buffers?: Uint8Array[] },
   ): void;
+  /**
+   * Show a value now, in the middle of a cell, or replace one shown
+   * earlier. The value can be anything a cell could end with: a template
+   * from `md`, `html` or `svg`, an image, a widget, an object with a
+   * `[jupyter.$display]` method, or a plain value, shown as text.
+   *
+   * @param obj The value to show.
+   * @param options `display_id` and `update` to replace an earlier output;
+   *   `raw` to send a plain object as the MIME bundle itself.
+   * @returns Resolves once the output is sent. Without `await` the output
+   *   still appears, but later output in the cell can appear before it.
+   * @example
+   * ```ts
+   * const bar = (pct: number) => jupyter.html`<progress value="${pct}" max="100"></progress>`;
+   * await jupyter.display(bar(0), { display_id: "download" });
+   * for (let pct = 25; pct <= 100; pct += 25) {
+   *   await new Promise((resolve) => setTimeout(resolve, 500));
+   *   await jupyter.display(bar(pct), { display_id: "download", update: true });
+   * }
+   * ```
+   * @example
+   * ```ts
+   * // A MIME bundle sent as is: JupyterLab renders it as a JSON tree.
+   * const user = { name: "Ada", active: true };
+   * await jupyter.display(
+   *   { "application/json": user, "text/plain": JSON.stringify(user) },
+   *   { raw: true },
+   * );
+   * ```
+   * @see jupyter-api.md#showing-output-with-display
+   */
   display(obj: unknown, options?: DisplayOptions): Promise<void>;
+  /**
+   * The MIME bundle that displaying a value would send, without showing
+   * anything. For plain values `text/plain` holds terminal color codes,
+   * as the notebook shows them.
+   *
+   * @param obj The value to format.
+   * @returns The bundle, for example `{ "text/plain": "\x1b[33m42\x1b[39m" }`
+   *   for `42`.
+   * @example
+   * ```ts
+   * const bundle = await jupyter.format(jupyter.md`# Weekly report`);
+   * bundle["text/markdown"]; // "# Weekly report"
+   * ```
+   * @see jupyter-api.md#getting-a-bundle-with-format
+   */
   format(obj: unknown): Promise<MediaBundle>;
+  /**
+   * A tagged template that renders as Markdown. Interpolated values are
+   * inserted as is, without escaping.
+   *
+   * @returns A value that shows as `text/markdown` as a cell's result or
+   *   through `display`.
+   * @example
+   * ```ts
+   * const scores = { Ada: 92, Grace: 88 };
+   * const rows = Object.entries(scores).map(([n, s]) => `| ${n} | ${s} |`).join("\n");
+   * jupyter.md`| Name | Score |
+   * | --- | --- |
+   * ${rows}`;
+   * ```
+   * @see jupyter-api.md#markdown
+   */
   md(strings: TemplateStringsArray, ...values: unknown[]): Displayable;
+  /**
+   * A tagged template that renders as HTML. Interpolated values are
+   * inserted as is, without escaping: escape text from users, files or
+   * the network yourself.
+   *
+   * @returns A value that shows as `text/html`.
+   * @example
+   * ```ts
+   * const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+   * const comment = "<script>alert(1)</script>";
+   * jupyter.html`<p>${escape(comment)}</p>`;
+   * ```
+   * @see jupyter-api.md#html
+   */
   html(strings: TemplateStringsArray, ...values: unknown[]): Displayable;
+  /**
+   * A tagged template that renders as SVG. Include the `xmlns` attribute.
+   * Interpolated values are inserted as is, without escaping.
+   *
+   * @returns A value that shows as `image/svg+xml`.
+   * @example
+   * ```ts
+   * const data = [4, 8, 15, 16];
+   * const bars = data.map((v, i) => `<rect x="${i * 20}" y="${40 - v * 2}" width="16" height="${v * 2}"/>`).join("");
+   * jupyter.svg`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40">${bars}</svg>`;
+   * ```
+   * @see jupyter-api.md#svg
+   */
   svg(strings: TemplateStringsArray, ...values: unknown[]): Displayable;
+  /**
+   * Show a PNG or JPEG. The format is read from the bytes, not the file
+   * name.
+   *
+   * @param obj A file path, relative to the notebook's directory, or the
+   *   image's bytes.
+   * @returns A value that shows as `image/png` or `image/jpeg`.
+   * @throws {TypeError} The bytes are not PNG or JPEG, or the path can't
+   *   be read.
+   * @availability Paths need a file system: on workerd and celld pass
+   *   bytes.
+   * @example
+   * ```ts
+   * jupyter.image("./chart.png");
+   * ```
+   * @example
+   * ```ts
+   * const response = await fetch("https://www.python.org/static/img/python-logo.png");
+   * jupyter.image(new Uint8Array(await response.arrayBuffer()));
+   * ```
+   * @see jupyter-api.md#images
+   */
   image(obj: string | Uint8Array): Displayable;
+  /**
+   * The symbol a class implements to choose how its instances appear. The
+   * method returns a MIME bundle, or a promise of one. It is used for a
+   * cell's result, `display` and `format`, but not for objects nested in
+   * other values. At runtime it is `Symbol.for("Jupyter.display")`.
+   *
+   * @example
+   * ```ts
+   * class Temperature {
+   *   celsius: number;
+   *   constructor(celsius: number) {
+   *     this.celsius = celsius;
+   *   }
+   *   [jupyter.$display]() {
+   *     return { "text/plain": `${this.celsius}°C`, "text/html": `<b>${this.celsius}°C</b>` };
+   *   }
+   * }
+   * new Temperature(21);
+   * ```
+   * @see jupyter-api.md#custom-display-for-your-own-classes
+   */
   $display: typeof $display;
-  /** Jupyter comms: bidirectional channels to the frontend. */
+  /**
+   * Jupyter comms: message channels to the frontend outside cell
+   * execution. Its methods are in the widgets and comms reference.
+   *
+   * @see widgets.md#comms
+   */
   comm: CommApi;
-  /** An anywidget-compatible widget; display the result to show it. */
+  /**
+   * Create an anywidget-compatible widget model. Display it (or end the
+   * cell with it) to show a view.
+   *
+   * @param options The view module, its CSS, and the initial state.
+   * @returns The model, synced with every view of it.
+   * @throws {TypeError} `options.esm` is not a string.
+   * @availability The frontend needs the anywidget extension.
+   * @example
+   * ```ts
+   * const counter = jupyter.widget({
+   *   esm: `export default {
+   *     render({ model, el }) {
+   *       const button = document.createElement("button");
+   *       const show = () => (button.textContent = \`Clicked \${model.get("count")} times\`);
+   *       button.onclick = () => { model.set("count", model.get("count") + 1); model.save_changes(); };
+   *       model.on("change:count", show);
+   *       show();
+   *       el.append(button);
+   *     },
+   *   };`,
+   *   state: { count: 0 },
+   * });
+   * counter.on("change:count", (value) => console.log("count is", value));
+   * counter;
+   * ```
+   * @see widgets.md#a-first-widget-a-counter
+   */
   widget(options: WidgetOptions): Widget;
   /**
-   * Aborted when the kernel interrupts this cell. Each cell gets its own,
-   * as does a comm handler that starts while no cell runs. Read it when
-   * the work starts: a later read gets the signal of whatever started last.
+   * An `AbortSignal` that an interrupt aborts, so code waiting on something
+   * only it can end can stop and clean up. Each cell gets its own, as does
+   * a comm handler that starts while no cell runs. Read it once when the
+   * work starts: a later read gets the signal of whatever started last.
+   * The abort reason is a `DOMException` named `AbortError`.
+   *
+   * @example
+   * ```ts
+   * const response = await fetch("https://example.com/large.csv", { signal: jupyter.signal });
+   * ```
+   * @example
+   * ```ts
+   * const signal = jupyter.signal;
+   * const ask = jupyter.comm.open("my.app", { question: "ready?" });
+   * const answer = await new Promise((resolve, reject) => {
+   *   ask.onMsg((m) => resolve(m.data));
+   *   signal.addEventListener("abort", () => { ask.close(); reject(signal.reason); }, { once: true });
+   * });
+   * ```
+   * @see jupyter-api.md#stopping-on-interrupt-jupyter-signal
    */
   readonly signal: AbortSignal;
 }
