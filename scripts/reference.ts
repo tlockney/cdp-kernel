@@ -200,10 +200,20 @@ function seeLink(see: string, where: string, r: Result): string {
   } catch {
     r.problems.push(`${where}: @see ${page} doesn't exist`);
   }
-  const headings = [...text.matchAll(/^#{1,6} (.+)$/gm)].map((m) => m[1]);
-  const ids = new Set([...headings.map(slugify), ...[...text.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1])]);
+  // Headings outside fenced code; VitePress adds -1, -2 to repeated slugs,
+  // and `{#id}` sets one.
+  const prose = text.replace(/^(```|~~~)[\s\S]*?^\1/gm, "");
+  const headings = [...prose.matchAll(/^#{1,6} (.+?)(?: \{#([^}]+)\})?$/gm)];
+  const ids = new Set([...prose.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1]));
+  const seen = new Map<string, number>();
+  for (const [, title, custom] of headings) {
+    const slug = custom ?? slugify(title);
+    const n = seen.get(slug) ?? 0;
+    seen.set(slug, n + 1);
+    ids.add(n === 0 ? slug : `${slug}-${n}`);
+  }
   if (text && hash && !ids.has(hash)) r.problems.push(`${where}: @see ${see}: ${page} has no heading #${hash}`);
-  return `Guide: [${headings[0] ?? page}](${see})`;
+  return `Guide: [${headings[0]?.[1] ?? page}](${see})`;
 }
 
 function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] | undefined, where: string, r: Result) {
@@ -229,7 +239,8 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
       out.push("");
     }
     const type = sigs[0].type?.getText();
-    if (type && type !== "void") out.push(`**Returns** \`${cell(type)}\`${doc.returns ? `: ${doc.returns}` : ""}`, "");
+    // Not cell(): outside a table, a `\|` in a code span shows the backslash.
+    if (type && type !== "void") out.push(`**Returns** \`${oneLine(type)}\`${doc.returns ? `: ${doc.returns}` : ""}`, "");
   }
   for (const t of doc.throws) out.push(`**Throws** \`${t.type}\`: ${t.text}`, "");
   if (doc.availability) out.push(`**Availability**: ${doc.availability}`, "");
@@ -278,6 +289,8 @@ function renderSection(out: string[], index: string[], section: Section, sf: ts.
   for (const m of decl.members) {
     const name = memberName(m);
     if (name) byName.set(name, [...(byName.get(name) ?? []), m]);
+    // A symbol-keyed member has no heading, but still needs a doc comment.
+    else if (!readDoc(m)?.summary) r.problems.push(`${section.iface}.${m.name?.getText(sf)}: no doc comment`);
   }
   // Plain properties without examples go in one table; the rest get headings.
   const props: string[] = [];
