@@ -6,6 +6,16 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- A cell can redeclare a name an earlier cell declared another way:
+  `import { x }` after `const x`, or `let df` after `const df`. Before,
+  it failed with "Identifier has already been declared" until a restart,
+  since the inspector's REPL mode only allows the same kind of
+  declaration again. Top-level `const` and import bindings now run as
+  `let` on the CDP targets, so reassigning a top-level `const` from a
+  later cell no longer throws. One case goes the other way: a name an
+  earlier cell declared with `var` or `function` can't be imported by a
+  later cell any more (restart the kernel, or rename)
+  ([#444](https://github.com/tlockney/cdp-kernel/issues/444)).
 - Reference pages for [`jupyter`](https://cdp-kernel.org/docs/jupyter-reference)
   and [widgets and comms](https://cdp-kernel.org/docs/widgets-reference):
   each member's arguments, return value, errors and an example. They are

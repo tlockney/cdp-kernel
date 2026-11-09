@@ -45,7 +45,7 @@ test("rewritten imports keep the lines after them in place", () => {
   const js = 'import {\n  a,\n  b,\n} from "m";\nconst c = a + b;';
   const out = rewriteModuleSyntax(js);
   assert.equal(out.split("\n").length, js.split("\n").length);
-  assert.equal(out.split("\n")[4], "const c = a + b;");
+  assert.equal(out.split("\n")[4], "let   c = a + b;");
 });
 
 test("transformCellWithLines maps each statement of a TypeScript cell both ways", () => {
