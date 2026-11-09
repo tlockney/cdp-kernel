@@ -189,6 +189,26 @@ function cell(s: string): string {
 }
 
 /**
+ * A Markdown page's first heading and the ids VitePress gives its
+ * headings: slugs, with -1, -2 on repeats, or a `{#id}`, plus `<a id>`
+ * anchors. Headings inside fenced code don't count, including indented
+ * fences (in a list item) and fences of four or more backticks.
+ */
+export function anchors(markdown: string): { title?: string; ids: Set<string> } {
+  const prose = markdown.replace(/^ *(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ *\1[`~]*[ \t]*$/gm, "");
+  const headings = [...prose.matchAll(/^#{1,6} (.+?)(?: \{#([^}]+)\})?$/gm)];
+  const ids = new Set([...prose.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1]));
+  const seen = new Map<string, number>();
+  for (const [, title, custom] of headings) {
+    const slug = custom ?? slugify(title);
+    const n = seen.get(slug) ?? 0;
+    seen.set(slug, n + 1);
+    ids.add(n === 0 ? slug : `${slug}-${n}`);
+  }
+  return { title: headings[0]?.[1], ids };
+}
+
+/**
  * "Guide: [its title](page#anchor)", taking the title from the guide's
  * first heading. A problem if the page or the anchor doesn't exist.
  */
@@ -200,20 +220,9 @@ function seeLink(see: string, where: string, r: Result): string {
   } catch {
     r.problems.push(`${where}: @see ${page} doesn't exist`);
   }
-  // Headings outside fenced code; VitePress adds -1, -2 to repeated slugs,
-  // and `{#id}` sets one.
-  const prose = text.replace(/^(```|~~~)[\s\S]*?^\1/gm, "");
-  const headings = [...prose.matchAll(/^#{1,6} (.+?)(?: \{#([^}]+)\})?$/gm)];
-  const ids = new Set([...prose.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1]));
-  const seen = new Map<string, number>();
-  for (const [, title, custom] of headings) {
-    const slug = custom ?? slugify(title);
-    const n = seen.get(slug) ?? 0;
-    seen.set(slug, n + 1);
-    ids.add(n === 0 ? slug : `${slug}-${n}`);
-  }
+  const { title, ids } = anchors(text);
   if (text && hash && !ids.has(hash)) r.problems.push(`${where}: @see ${see}: ${page} has no heading #${hash}`);
-  return `Guide: [${headings[0]?.[1] ?? page}](${see})`;
+  return `Guide: [${title ?? page}](${see})`;
 }
 
 function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] | undefined, where: string, r: Result) {
@@ -290,7 +299,7 @@ function renderSection(out: string[], index: string[], section: Section, sf: ts.
     const name = memberName(m);
     if (name) byName.set(name, [...(byName.get(name) ?? []), m]);
     // A symbol-keyed member has no heading, but still needs a doc comment.
-    else if (!readDoc(m)?.summary) r.problems.push(`${section.iface}.${m.name?.getText(sf)}: no doc comment`);
+    else if (!readDoc(m)?.summary) r.problems.push(`${section.iface}.${m.name?.getText(sf) ?? "(a signature)"}: no doc comment`);
   }
   // Plain properties without examples go in one table; the rest get headings.
   const props: string[] = [];
