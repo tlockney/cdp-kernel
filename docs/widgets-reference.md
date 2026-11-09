@@ -9,20 +9,20 @@ walk-through, including the view module.
 
 | Member | What it does |
 | --- | --- |
-| [`widget.get(key)`](#widget-get) | The current value of a state key. |
-| [`widget.set(key, value)`](#widget-set) | Change one state key, or several at once, and sync the change to every view. |
-| [`widget.on(event, listener)`](#widget-on) | Listen for state changes or custom messages from the views. |
-| [`widget.off(event, listener)`](#widget-off) | Remove a listener added with `on`. |
-| [`widget.send(content, buffers?)`](#widget-send) | Send a custom message to every view's `model.on("msg:custom", ...)`. |
+| [`widget.get(key)`](#widget-get-key) | The current value of a state key. |
+| [`widget.set(key, value)`](#widget-set-key-value) | Change one state key, or several at once, and sync the change to every view. |
+| [`widget.on(event, listener)`](#widget-on-event-listener) | Listen for state changes or custom messages from the views. |
+| [`widget.off(event, listener)`](#widget-off-event-listener) | Remove a listener added with `on`. |
+| [`widget.send(content, buffers?)`](#widget-send-content-buffers) | Send a custom message to every view's `model.on("msg:custom", ...)`. |
 | [`widget.close()`](#widget-close) | Close the model. |
 | [`widget.fullState()`](#widget-fullstate) | The full state, as the frontend sees it: anywidget's model keys (`_model_name`, `_view_name` and the rest) and the widget's own. |
-| [`jupyter.comm.open(targetName, data?, options?)`](#jupyter-comm-open) | Open a comm to a target the frontend registered. |
-| [`jupyter.comm.registerTarget(targetName, handler)`](#jupyter-comm-registertarget) | Accept comms the frontend opens on `targetName`. |
-| [`jupyter.comm.unregisterTarget(targetName)`](#jupyter-comm-unregistertarget) | Stop accepting new comms on `targetName`. |
-| [`comm.send(data?, options?)`](#comm-send) | Send a message to the frontend's end. |
-| [`comm.close(data?, options?)`](#comm-close) | Close the comm and tell the frontend. |
-| [`comm.onMsg(handler)`](#comm-onmsg) | Handle messages from the frontend's end. |
-| [`comm.onClose(handler)`](#comm-onclose) | Handle the comm closing, from either end. |
+| [`jupyter.comm.open(targetName, data?, options?)`](#jupyter-comm-open-targetname-data-options) | Open a comm to a target the frontend registered. |
+| [`jupyter.comm.registerTarget(targetName, handler)`](#jupyter-comm-registertarget-targetname-handler) | Accept comms the frontend opens on `targetName`. |
+| [`jupyter.comm.unregisterTarget(targetName)`](#jupyter-comm-unregistertarget-targetname) | Stop accepting new comms on `targetName`. |
+| [`comm.send(data?, options?)`](#comm-send-data-options) | Send a message to the frontend's end. |
+| [`comm.close(data?, options?)`](#comm-close-data-options) | Close the comm and tell the frontend. |
+| [`comm.onMsg(handler)`](#comm-onmsg-handler) | Handle messages from the frontend's end. |
+| [`comm.onClose(handler)`](#comm-onclose-handler) | Handle the comm closing, from either end. |
 
 ## Widget model
 
@@ -30,9 +30,7 @@ An anywidget model, from `jupyter.widget`, synced with its frontend
 views. Display it to show a view; display it again for a second view of
 the same model.
 
-`jupyter.widget(options)` returns it; see the [`jupyter` reference](jupyter-reference.md#jupyter-widget).
-
-<a id="widget-get"></a>
+`jupyter.widget(options)` returns it; see the [`jupyter` reference](jupyter-reference.md#jupyter-widget-options).
 
 ### `widget.get(key)`
 
@@ -52,8 +50,6 @@ The current value of a state key.
 const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
 w.get("count"); // 0
 ```
-
-<a id="widget-set"></a>
 
 ### `widget.set(key, value)`
 
@@ -116,8 +112,6 @@ progress.set({ message: "Done", value: 1 });
 
 ![A progress bar three fifths full, labelled "Processing april.csv (60%)", captured while the cell was still running.](images/widgets/progress.png)
 
-<a id="widget-on"></a>
-
 ### `widget.on(event, listener)`
 
 ```ts
@@ -176,8 +170,6 @@ temperature;
 
 ![A range slider moved to 30, labelled "30 °C is 86 °F".](images/widgets/temperature.png)
 
-<a id="widget-off"></a>
-
 ### `widget.off(event, listener)`
 
 ```ts
@@ -197,8 +189,6 @@ const log = (value: unknown) => console.log(value);
 w.on("change:count", log);
 w.off("change:count", log);
 ```
-
-<a id="widget-send"></a>
 
 ### `widget.send(content, buffers?)`
 
@@ -290,8 +280,6 @@ w.fullState(); // { _model_name: "AnyModel", _model_module: "anywidget", ..., co
 
 `jupyter.comm`: open comms, and accept comms the frontend opens.
 
-<a id="jupyter-comm-open"></a>
-
 ### `jupyter.comm.open(targetName, data?, options?)`
 
 ```ts
@@ -313,8 +301,6 @@ const comm = jupyter.comm.open("my.target", { hello: 1 });
 comm.onMsg((m) => console.log(m.data));
 ```
 
-<a id="jupyter-comm-registertarget"></a>
-
 ### `jupyter.comm.registerTarget(targetName, handler)`
 
 ```ts
@@ -332,8 +318,6 @@ name again replaces the handler.
 ```ts
 jupyter.comm.registerTarget("echo", (comm) => comm.onMsg((m) => comm.send(m.data)));
 ```
-
-<a id="jupyter-comm-unregistertarget"></a>
 
 ### `jupyter.comm.unregisterTarget(targetName)`
 
@@ -355,8 +339,6 @@ jupyter.comm.unregisterTarget("echo");
 
 One end of a Jupyter comm channel, from `jupyter.comm.open` or a target handler.
 
-<a id="comm-send"></a>
-
 ### `comm.send(data?, options?)`
 
 ```ts
@@ -374,8 +356,6 @@ Send a message to the frontend's end. Does nothing once closed.
 const comm = jupyter.comm.open("my.target");
 comm.send({ ping: true }, { buffers: [new Uint8Array([1, 2, 3])] });
 ```
-
-<a id="comm-close"></a>
 
 ### `comm.close(data?, options?)`
 
@@ -396,8 +376,6 @@ const comm = jupyter.comm.open("my.target");
 comm.close({ reason: "done" });
 ```
 
-<a id="comm-onmsg"></a>
-
 ### `comm.onMsg(handler)`
 
 ```ts
@@ -415,8 +393,6 @@ its output goes to the notebook, and an exception shows on stderr.
 const comm = jupyter.comm.open("my.target");
 comm.onMsg(({ data, buffers }) => console.log(data, buffers.length));
 ```
-
-<a id="comm-onclose"></a>
 
 ### `comm.onClose(handler)`
 

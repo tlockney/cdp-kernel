@@ -10,26 +10,24 @@ reference](widgets-reference.md).
 
 | Member | What it does |
 | --- | --- |
-| [`jupyter.broadcast(msgType, content, options?)`](#jupyter-broadcast) | Send a raw Jupyter message on the kernel's output channel (IOPub), as a reply to the running cell. |
-| [`jupyter.display(obj, options?)`](#jupyter-display) | Show a value now, in the middle of a cell, or replace one shown earlier. |
-| [`jupyter.format(obj)`](#jupyter-format) | The MIME bundle that displaying a value would send, without showing anything. |
+| [`jupyter.broadcast(msgType, content, options?)`](#jupyter-broadcast-msgtype-content-options) | Send a raw Jupyter message on the kernel's output channel (IOPub), as a reply to the running cell. |
+| [`jupyter.display(obj, options?)`](#jupyter-display-obj-options) | Show a value now, in the middle of a cell, or replace one shown earlier. |
+| [`jupyter.format(obj)`](#jupyter-format-obj) | The MIME bundle that displaying a value would send, without showing anything. |
 | [`` jupyter.md`…` ``](#jupyter-md) | A tagged template that renders as Markdown. |
 | [`` jupyter.html`…` ``](#jupyter-html) | A tagged template that renders as HTML. |
 | [`` jupyter.svg`…` ``](#jupyter-svg) | A tagged template that renders as SVG. |
-| [`jupyter.image(obj)`](#jupyter-image) | Show a PNG or JPEG. |
-| [`jupyter.$display`](#jupyter-display-symbol) | The symbol a class implements to choose how its instances appear. |
+| [`jupyter.image(obj)`](#jupyter-image-obj) | Show a PNG or JPEG. |
+| [`jupyter.$display`](#jupyter-display) | The symbol a class implements to choose how its instances appear. |
 | [`jupyter.comm`](#jupyter-comm) | Jupyter comms: message channels to the frontend outside cell execution. |
-| [`jupyter.widget(options)`](#jupyter-widget) | Create an anywidget-compatible widget model. |
+| [`jupyter.widget(options)`](#jupyter-widget-options) | Create an anywidget-compatible widget model. |
 | [`jupyter.signal`](#jupyter-signal) | An `AbortSignal` that an interrupt aborts, so code waiting on something only it can end can stop and clean up. |
-| [`prompt(message?, defaultValue?, options?)`](#prompt) | Ask for a line of input in the notebook: the frontend shows an input box under the cell, and the cell waits for the answer. |
-| [`confirm(message?)`](#confirm) | Ask a yes/no question in the notebook. |
+| [`prompt(message?, defaultValue?, options?)`](#prompt-message-defaultvalue-options) | Ask for a line of input in the notebook: the frontend shows an input box under the cell, and the cell waits for the answer. |
+| [`confirm(message?)`](#confirm-message) | Ask a yes/no question in the notebook. |
 
 ## `jupyter`
 
 The `jupyter` global: how values appear in the notebook. The same object
 as `Deno.jupyter` in `deno jupyter`.
-
-<a id="jupyter-broadcast"></a>
 
 ### `jupyter.broadcast(msgType, content, options?)`
 
@@ -62,8 +60,6 @@ for (const n of [3, 2, 1]) {
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#raw-messages-with-broadcast)
-
-<a id="jupyter-display"></a>
 
 ### `jupyter.display(obj, options?)`
 
@@ -102,8 +98,6 @@ await jupyter.display(
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#showing-output-with-display)
-
-<a id="jupyter-format"></a>
 
 ### `jupyter.format(obj)`
 
@@ -188,8 +182,6 @@ jupyter.svg`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40">${bar
 
 Guide: [The `jupyter` namespace](jupyter-api.md#svg)
 
-<a id="jupyter-image"></a>
-
 ### `jupyter.image(obj)`
 
 ```ts
@@ -219,8 +211,6 @@ jupyter.image(new Uint8Array(await response.arrayBuffer()));
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#images)
-
-<a id="jupyter-display-symbol"></a>
 
 ### `jupyter.$display`
 
@@ -258,8 +248,6 @@ Jupyter comms: message channels to the frontend outside cell
 execution. Its methods are in the widgets and comms reference.
 
 Guide: [Widgets and comms](widgets.md#comms)
-
-<a id="jupyter-widget"></a>
 
 ### `jupyter.widget(options)`
 
@@ -335,8 +323,6 @@ Guide: [The `jupyter` namespace](jupyter-api.md#stopping-on-interrupt-jupyter-si
 
 ## Globals
 
-<a id="prompt"></a>
-
 ### `prompt(message?, defaultValue?, options?)`
 
 ```ts
@@ -366,8 +352,6 @@ const apiKey = prompt("API key", "", { password: true });
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#asking-for-input-prompt-and-confirm)
-
-<a id="confirm"></a>
 
 ### `confirm(message?)`
 
