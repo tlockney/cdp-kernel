@@ -37,6 +37,8 @@ while IFS= read -r f; do
   [ -n "$f" ] || continue
   case $f in
     CHANGELOG.md) code=true ;;
+    # Generated from the doc comments; test/reference.test.ts checks them.
+    docs/*-reference.md) code=true ;;
     *.md | docs/* | site/* | LICENSE) ;;
     *) code=true ;;
   esac

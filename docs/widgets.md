@@ -517,6 +517,9 @@ model has:
 | `close()` | Closes the model. Its views stop syncing. |
 | `id`, `closed` | The model id, and whether it has been closed. |
 
+The [widgets and comms reference](widgets-reference.md) has each
+member's arguments and an example, and the comm API's.
+
 A model stays alive while the kernel runs. JupyterLab restores widget views
 after a page reload by asking the kernel for every model's state; after a
 kernel restart, re-run the cells that create them.

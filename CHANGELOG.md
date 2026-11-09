@@ -6,6 +6,12 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- Reference pages for [`jupyter`](https://cdp-kernel.org/docs/jupyter-reference)
+  and [widgets and comms](https://cdp-kernel.org/docs/widgets-reference):
+  each member's arguments, return value, errors and an example. They are
+  generated from the doc comments on the globals' types, so editors that
+  load `@tlockney/cdp-kernel/globals` show the same text on hover
+  ([#440](https://github.com/tlockney/cdp-kernel/issues/440)).
 - The kernel answers on shell and control only once all five ports in
   the connection file are bound. Before, a client could get
   `kernel_info_reply` while the heartbeat port was still unbound

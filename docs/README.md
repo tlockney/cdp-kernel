@@ -34,6 +34,10 @@ Guides for day-to-day use, once you've run a first notebook.
 
 Reference pages to look things up in:
 
+- [`jupyter` reference](jupyter-reference.md): every member of `jupyter`,
+  and `prompt` and `confirm`, with arguments, return values and examples.
+- [Widgets and comms reference](widgets-reference.md): the widget model
+  and `jupyter.comm`, the same way.
 - [Editor types](editor-types.md): stop your editor flagging `jupyter`,
   `prompt` and `confirm` as unknown names, and get completion for them.
 - [Known gaps](known-gaps.md): what doesn't work yet, per runtime.

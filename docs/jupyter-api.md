@@ -25,7 +25,9 @@ at the end.
 | [`jupyter.signal`](#stopping-on-interrupt-jupyter-signal) | An `AbortSignal` that an interrupt aborts, so a waiting cell can stop. Not in Deno. |
 
 `prompt()` and `confirm()` are globals rather than members, and are covered
-[below](#asking-for-input-prompt-and-confirm).
+[below](#asking-for-input-prompt-and-confirm). The [`jupyter`
+reference](jupyter-reference.md) lists every member's arguments and
+return value.
 
 ## How cell output works
 

@@ -87,7 +87,9 @@ New to Jupyter? Start with
   [Choosing a runtime](https://cdp-kernel.org/docs/runtimes),
   [Widgets and comms](https://cdp-kernel.org/docs/widgets),
   [Debugger](https://cdp-kernel.org/docs/debugger)
-- Reference: [Editor types](https://cdp-kernel.org/docs/editor-types),
+- Reference: [`jupyter` reference](https://cdp-kernel.org/docs/jupyter-reference),
+  [Widgets and comms reference](https://cdp-kernel.org/docs/widgets-reference),
+  [Editor types](https://cdp-kernel.org/docs/editor-types),
   [Known gaps](https://cdp-kernel.org/docs/known-gaps),
   [Support policy](https://cdp-kernel.org/docs/support)
 - Internals: [Architecture](https://cdp-kernel.org/docs/architecture),

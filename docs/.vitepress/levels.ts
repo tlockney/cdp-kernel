@@ -62,6 +62,8 @@ export function groups(site: string): Group[] {
       text: "Reference",
       level: "reference",
       items: [
+        { text: "jupyter reference", link: "/jupyter-reference" },
+        { text: "Widgets and comms reference", link: "/widgets-reference" },
         { text: "Editor types", link: "/editor-types" },
         { text: "Known gaps", link: "/known-gaps" },
         { text: "Troubleshooting", link: "/troubleshooting" },
