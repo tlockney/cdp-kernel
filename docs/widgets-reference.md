@@ -15,7 +15,7 @@ walk-through, including the view module.
 | [`widget.off(event, listener)`](#widget-off) | Remove a listener added with `on`. |
 | [`widget.send(content, buffers?)`](#widget-send) | Send a custom message to every view's `model.on("msg:custom", ...)`. |
 | [`widget.close()`](#widget-close) | Close the model. |
-| [`widget.fullState()`](#widget-fullstate) | The full state, as the frontend sees it. |
+| [`widget.fullState()`](#widget-fullstate) | The full state, as the frontend sees it: anywidget's model keys (`_model_name`, `_view_name` and the rest) and the widget's own. |
 | [`jupyter.comm.open(targetName, data?, options?)`](#jupyter-comm-open) | Open a comm to a target the frontend registered. |
 | [`jupyter.comm.registerTarget(targetName, handler)`](#jupyter-comm-registertarget) | Accept comms the frontend opens on `targetName`. |
 | [`jupyter.comm.unregisterTarget(targetName)`](#jupyter-comm-unregistertarget) | Stop accepting new comms on `targetName`. |
@@ -23,8 +23,6 @@ walk-through, including the view module.
 | [`comm.close(data?, options?)`](#comm-close) | Close the comm and tell the frontend. |
 | [`comm.onMsg(handler)`](#comm-onmsg) | Handle messages from the frontend's end. |
 | [`comm.onClose(handler)`](#comm-onclose) | Handle the comm closing, from either end. |
-
-<a id="widget-model"></a>
 
 ## Widget model
 
@@ -134,8 +132,8 @@ changed keys; `msg:custom` gets a view's `model.send` content.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `event` | ``change:${string}`` | yes | `change:<key>`, `change` or `msg:custom`. |
-| `listener` | `(value: unknown, previous: unknown) => void \| Promise<void>` | yes | Called for each event; may be async. |
+| `event` | depends on the overload: see the signatures | yes | `change:<key>`, `change` or `msg:custom`. |
+| `listener` | depends on the overload: see the signatures | yes | Called for each event; may be async. |
 
 ```ts
 const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
@@ -252,8 +250,6 @@ dice;
 
 ![A "Roll 3 dice" button next to three die faces and their total, the kernel's answer to a click.](images/widgets/dice.png)
 
-<a id="widget-close"></a>
-
 ### `widget.close()`
 
 ```ts
@@ -267,21 +263,20 @@ const w = jupyter.widget({ esm: "export default {}" });
 w.close();
 ```
 
-<a id="widget-fullstate"></a>
-
 ### `widget.fullState()`
 
 ```ts
 fullState(): WidgetState;
 ```
 
-The full state, as the frontend sees it.
+The full state, as the frontend sees it: anywidget's model keys
+(`_model_name`, `_view_name` and the rest) and the widget's own.
 
 **Returns** `WidgetState`: Every state key and its value.
 
 ```ts
 const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
-w.fullState(); // { count: 0 }
+w.fullState(); // { _model_name: "AnyModel", _model_module: "anywidget", ..., count: 0 }
 ```
 
 ### Properties
@@ -290,8 +285,6 @@ w.fullState(); // { count: 0 }
 | --- | --- | --- |
 | `id` | `string` | The model id (the comm id). |
 | `closed` | `boolean` | Whether the model has been closed. |
-
-<a id="jupyter-comm"></a>
 
 ## `jupyter.comm`
 
@@ -357,8 +350,6 @@ Stop accepting new comms on `targetName`. Comms already open stay open.
 ```ts
 jupyter.comm.unregisterTarget("echo");
 ```
-
-<a id="comm"></a>
 
 ## `Comm`
 
@@ -454,8 +445,6 @@ comm.onClose(() => console.log("closed"));
 
 ## Types
 
-<a id="widgetoptions"></a>
-
 ### `WidgetOptions`
 
 Options for `jupyter.widget`.
@@ -466,8 +455,6 @@ Options for `jupyter.widget`.
 | `css` | `string` | no | CSS for the view. |
 | `state` | `WidgetState` | no | The initial synced state. `Uint8Array` and `ArrayBuffer` values travel as binary buffers. Default `{}`. |
 
-<a id="commmessage"></a>
-
 ### `CommMessage`
 
 A comm message as a handler receives it.
@@ -477,8 +464,6 @@ A comm message as a handler receives it.
 | `data` | `{ [key: string]: unknown }` | yes | The message's JSON data. |
 | `metadata` | `{ [key: string]: unknown }` | yes | The message's metadata. |
 | `buffers` | `Uint8Array[]` | yes | Binary buffers sent with the message. |
-
-<a id="commsendoptions"></a>
 
 ### `CommSendOptions`
 

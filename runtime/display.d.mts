@@ -44,6 +44,7 @@ export interface DisplayOptions {
 
 /** A value that renders as rich output: it has a `[jupyter.$display]` method. */
 export interface Displayable {
+  /** Returns the value's MIME bundle, or a promise of one. */
   [$display]: () => MediaBundle | Promise<MediaBundle>;
 }
 

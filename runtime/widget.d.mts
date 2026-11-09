@@ -219,13 +219,14 @@ export interface Widget {
    */
   close(): void;
   /**
-   * The full state, as the frontend sees it.
+   * The full state, as the frontend sees it: anywidget's model keys
+   * (`_model_name`, `_view_name` and the rest) and the widget's own.
    *
    * @returns Every state key and its value.
    * @example
    * ```ts
    * const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
-   * w.fullState(); // { count: 0 }
+   * w.fullState(); // { _model_name: "AnyModel", _model_module: "anywidget", ..., count: 0 }
    * ```
    */
   fullState(): WidgetState;

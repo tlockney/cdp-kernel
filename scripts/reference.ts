@@ -162,6 +162,26 @@ function anchor(id: string): string {
   return `${id.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase()}${symbol}`;
 }
 
+/** VitePress's heading slug (vitepress/dist/node: slugify) of a heading's text. */
+export function slugify(heading: string): string {
+  return heading
+    .replace(/`/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036F]/g, "")
+    .replace(/[\u0000-\u001f]/g, "")
+    .replace(/[\s~`!@#$%^&*()\-_+=[\]{}|\\;:"'“”‘’<>,.?/]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/^(\d)/, "_$1")
+    .toLowerCase();
+}
+
+/** An explicit id before a heading, only when VitePress's slug isn't already `id`. */
+function idFor(id: string, heading: string): string[] {
+  return slugify(heading) === id ? [] : [`<a id="${id}"></a>`, ""];
+}
+
 /** Inline code, with double backticks when the text has one. */
 function code(s: string): string {
   return s.includes("`") ? `\`\` ${s} \`\`` : `\`${s}\``;
@@ -177,13 +197,22 @@ function cell(s: string): string {
   return s.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
-function seeLink(see: string): string {
-  const [page] = see.split("#");
-  const titles: Record<string, string> = {
-    "jupyter-api.md": "The `jupyter` namespace",
-    "widgets.md": "Widgets and comms",
-  };
-  return `Guide: [${titles[page] ?? page}](${see})`;
+/**
+ * "Guide: [its title](page#anchor)", taking the title from the guide's
+ * first heading. A problem if the page or the anchor doesn't exist.
+ */
+function seeLink(see: string, where: string, r: Result): string {
+  const [page, hash] = see.split("#");
+  let text = "";
+  try {
+    text = readFileSync(join(root, "docs", page), "utf8");
+  } catch {
+    r.problems.push(`${where}: @see ${page} doesn't exist`);
+  }
+  const headings = [...text.matchAll(/^#{1,6} (.+)$/gm)].map((m) => m[1]);
+  const ids = new Set([...headings.map(slugify), ...[...text.matchAll(/<a id="([^"]+)">/g)].map((m) => m[1])]);
+  if (text && hash && !ids.has(hash)) r.problems.push(`${where}: @see ${see}: ${page} has no heading #${hash}`);
+  return `Guide: [${headings[0] ?? page}](${see})`;
 }
 
 function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] | undefined, where: string, r: Result) {
@@ -202,7 +231,9 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
         const desc = doc.params.get(name);
         if (!desc) r.problems.push(`${where}: parameter ${name} has no @param`);
         const optional = p.questionToken !== undefined || sigs.some((s) => !s.parameters.some((q) => q.name.getText() === name));
-        out.push(`| \`${name}\` | \`${cell(p.type?.getText() ?? "unknown")}\` | ${optional ? "no" : "yes"} | ${cell(desc ?? "")} |`);
+        const types = new Set(sigs.flatMap((s) => s.parameters.filter((q) => q.name.getText() === name).map((q) => q.type?.getText() ?? "unknown")));
+        const type = types.size === 1 ? `\`${cell([...types][0])}\`` : "depends on the overload: see the signatures";
+        out.push(`| \`${name}\` | ${type} | ${optional ? "no" : "yes"} | ${cell(desc ?? "")} |`);
       }
       out.push("");
     }
@@ -236,7 +267,7 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
       out.push(`![${alt}](${file})`, "");
     }
   }
-  if (doc.see) out.push(seeLink(doc.see), "");
+  if (doc.see) out.push(seeLink(doc.see, where, r), "");
 }
 
 function renderSection(out: string[], index: string[], section: Section, sf: ts.SourceFile, r: Result) {
@@ -246,7 +277,7 @@ function renderSection(out: string[], index: string[], section: Section, sf: ts.
     return;
   }
   const heading = section.heading.includes(" ") ? section.heading : code(section.heading);
-  out.push(`<a id="${anchor(section.heading)}"></a>`, "", `## ${heading}`, "");
+  out.push(...idFor(anchor(section.heading), heading), `## ${heading}`, "");
   const ifaceDoc = readDoc(decl);
   if (ifaceDoc?.summary) out.push(ifaceDoc.summary, "");
   if (section.intro) out.push(section.intro, "");
@@ -277,7 +308,7 @@ function renderSection(out: string[], index: string[], section: Section, sf: ts.
     const title = sigs.length === 0 ? full : isTemplateTag(sigs[0]) ? `${full}\`…\`` : `${full}(${callShape(sigs[0])})`;
     const id = anchor(full);
     index.push(`| [${code(title)}](#${id}) | ${cell(oneLine(doc.summary.split(/(?<=\.)\s/)[0]))} |`);
-    out.push(`<a id="${id}"></a>`, "", `### ${code(title)}`, "");
+    out.push(...idFor(id, code(title)), `### ${code(title)}`, "");
     out.push("```ts", ...members.map((m) => source(m, sf)), "```", "");
     if (sigs.length > 0 && doc.examples.length === 0) r.problems.push(`${where}: no @example`);
     renderDoc(out, doc, sigs.length > 0 ? sigs : undefined, where, r);
@@ -300,7 +331,7 @@ function renderGlobal(out: string[], index: string[], name: string, sf: ts.Sourc
   }
   const title = `${name}(${callShape(fn)})`;
   index.push(`| [\`${title}\`](#${name}) | ${cell(oneLine(doc.summary.split(/(?<=\.)\s/)[0]))} |`);
-  out.push(`<a id="${name}"></a>`, "", `### \`${title}\``, "");
+  out.push(...idFor(name, `\`${title}\``), `### \`${title}\``, "");
   out.push("```ts", `function ${fn.getText(sf).replace(/^function\s+/, "")}`, "```", "");
   if (doc.examples.length === 0) r.problems.push(`${name}: no @example`);
   renderDoc(out, doc, [fn], name, r);
@@ -316,7 +347,7 @@ function renderType(out: string[], name: string, sf: ts.SourceFile, r: Result) {
     r.problems.push(`type ${name} is missing or undocumented`);
     return;
   }
-  out.push(`<a id="${anchor(name)}"></a>`, "", `### \`${name}\``, "", doc.summary, "");
+  out.push(...idFor(anchor(name), `\`${name}\``), `### \`${name}\``, "", doc.summary, "");
   if (ts.isTypeAliasDeclaration(decl)) {
     out.push("```ts", decl.getText(sf), "```", "");
     return;
@@ -324,11 +355,12 @@ function renderType(out: string[], name: string, sf: ts.SourceFile, r: Result) {
   out.push("| Property | Type | Required | Description |", "| --- | --- | --- | --- |");
   for (const m of decl.members) {
     const p = m as ts.PropertySignature;
-    const key = m.name && ts.isComputedPropertyName(m.name) ? `[jupyter${m.name.expression.getText(sf)}]` : m.name?.getText(sf);
+    // A computed key is the `$display` symbol, which cells reach as `jupyter.$display`.
+    const key = m.name?.getText(sf).replace(/^\[\$display\]$/, "[jupyter.$display]");
     const desc = readDoc(m)?.summary;
-    if (!desc && !(m.name && ts.isComputedPropertyName(m.name))) r.problems.push(`${name}.${key}: no doc comment`);
+    if (!desc) r.problems.push(`${name}.${key}: no doc comment`);
     const type = ts.isMethodSignature(m) ? `() => ${m.type?.getText(sf)}` : (p.type?.getText(sf) ?? "");
-    out.push(`| \`${key}\` | \`${cell(type)}\` | ${p.questionToken ? "no" : "yes"} | ${cell(oneLine(desc ?? doc.summary))} |`);
+    out.push(`| \`${key}\` | \`${cell(type)}\` | ${p.questionToken ? "no" : "yes"} | ${cell(oneLine(desc ?? ""))} |`);
   }
   out.push("");
 }
@@ -389,8 +421,9 @@ if (import.meta.main) {
   if (process.argv.includes("--write")) {
     for (const [file, content] of r.files) writeFileSync(join(root, file), content);
   } else {
-    for (const file of stale(r)) console.error(`${file} is out of date: run node scripts/reference.ts --write`);
-    if (stale(r).length > 0) process.exitCode = 1;
+    const files = stale(r);
+    for (const file of files) console.error(`${file} is out of date: run node scripts/reference.ts --write`);
+    if (files.length > 0) process.exitCode = 1;
   }
   if (r.problems.length > 0) process.exitCode = 1;
 }

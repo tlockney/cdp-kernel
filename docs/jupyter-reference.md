@@ -24,8 +24,6 @@ reference](widgets-reference.md).
 | [`prompt(message?, defaultValue?, options?)`](#prompt) | Ask for a line of input in the notebook: the frontend shows an input box under the cell, and the cell waits for the answer. |
 | [`confirm(message?)`](#confirm) | Ask a yes/no question in the notebook. |
 
-<a id="jupyter"></a>
-
 ## `jupyter`
 
 The `jupyter` global: how values appear in the notebook. The same object
@@ -130,8 +128,6 @@ bundle["text/markdown"]; // "# Weekly report"
 
 Guide: [The `jupyter` namespace](jupyter-api.md#getting-a-bundle-with-format)
 
-<a id="jupyter-md"></a>
-
 ### `` jupyter.md`…` ``
 
 ```ts
@@ -153,8 +149,6 @@ ${rows}`;
 
 Guide: [The `jupyter` namespace](jupyter-api.md#markdown)
 
-<a id="jupyter-html"></a>
-
 ### `` jupyter.html`…` ``
 
 ```ts
@@ -174,8 +168,6 @@ jupyter.html`<p>${escape(comment)}</p>`;
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#html)
-
-<a id="jupyter-svg"></a>
 
 ### `` jupyter.svg`…` ``
 
@@ -256,8 +248,6 @@ new Temperature(21);
 
 Guide: [The `jupyter` namespace](jupyter-api.md#custom-display-for-your-own-classes)
 
-<a id="jupyter-comm"></a>
-
 ### `jupyter.comm`
 
 ```ts
@@ -315,8 +305,6 @@ counter; // the cell's result: displays the widget
 ![A JupyterLab cell that creates a counter widget with jupyter.widget. Below the code, the output is a button reading "count is 3" after three clicks.](images/widgets/counter.png)
 
 Guide: [Widgets and comms](widgets.md#a-first-widget-a-counter)
-
-<a id="jupyter-signal"></a>
 
 ### `jupyter.signal`
 
@@ -405,8 +393,6 @@ Guide: [The `jupyter` namespace](jupyter-api.md#asking-for-input-prompt-and-conf
 
 ## Types
 
-<a id="displayoptions"></a>
-
 ### `DisplayOptions`
 
 Options for `jupyter.display`.
@@ -417,8 +403,6 @@ Options for `jupyter.display`.
 | `update` | `boolean` | no | Replace every earlier output that has the same `display_id`, including one shown by an earlier cell, instead of adding an output. Needs `display_id`. Default `false`. |
 | `display_id` | `string` | no | An id that a later display with `update: true` can replace. |
 
-<a id="promptoptions"></a>
-
 ### `PromptOptions`
 
 Options for the notebook's `prompt()`.
@@ -426,8 +410,6 @@ Options for the notebook's `prompt()`.
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
 | `password` | `boolean` | no | Ask the frontend to hide what is typed, for secrets. Default `false`. |
-
-<a id="mediabundle"></a>
 
 ### `MediaBundle`
 
@@ -439,12 +421,10 @@ base64 strings; JSON types (`application/json`, Vega-Lite) are objects.
 export type MediaBundle = { [mediaType: string]: unknown };
 ```
 
-<a id="displayable"></a>
-
 ### `Displayable`
 
 A value that renders as rich output: it has a `[jupyter.$display]` method.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `[jupyter$display]` | `() => MediaBundle \| Promise<MediaBundle>` | yes | A value that renders as rich output: it has a `[jupyter.$display]` method. |
+| `[jupyter.$display]` | `() => MediaBundle \| Promise<MediaBundle>` | yes | Returns the value's MIME bundle, or a promise of one. |
