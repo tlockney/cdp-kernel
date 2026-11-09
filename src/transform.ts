@@ -184,7 +184,9 @@ function rewriteImport(code: string, node: ImportDeclarationNode, index: number)
     if (spec.type === "ImportNamespaceSpecifier") return `${local} = ${ns}`;
     return `${local} = ${ns}[${JSON.stringify(importedName(spec))}]`;
   });
-  return `var ${ns} = ${load}; var ${bindings.join(", ")};`;
+  // `let`, like top-level `const` (see toLet): replMode lets a later
+  // cell redeclare a name only with the same kind of declaration.
+  return `var ${ns} = ${load}; let ${bindings.join(", ")};`;
 }
 
 function parseCell(js: string): Program {
@@ -200,11 +202,27 @@ function parseCell(js: string): Program {
   }
 }
 
-/** Rewrites module-only syntax in plain JavaScript into script syntax. */
+/**
+ * Rewrites module-only syntax in plain JavaScript into script syntax.
+ *
+ * Top-level `const` becomes `let`, as do import bindings (#444). Under
+ * replMode a later evaluation may redeclare a top-level name only with the
+ * same kind of declaration: `const a` then `let a`, or `const a` then
+ * `import { a }`, fails with "already been declared" until a restart. With
+ * one kind, cells can be re-run and edited freely; the cost is that
+ * assigning to a top-level `const` from another cell doesn't throw.
+ */
 export function rewriteModuleSyntax(js: string): string {
   const program = parseCell(js);
 
   const edits: Edit[] = [];
+  for (const statement of program.body) {
+    const decl = statement.type === "ExportNamedDeclaration" ? (statement as ExportNamedNode).declaration : statement;
+    if (decl?.type === "VariableDeclaration" && (decl as VariableDeclaration).kind === "const") {
+      // Padded to `const`'s length, so columns stay where the debugger expects them.
+      edits.push({ start: decl.start, end: decl.start + "const".length, text: "let  " });
+    }
+  }
   let importIndex = 0;
   full(program, (node) => {
     switch (node.type) {

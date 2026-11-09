@@ -20,8 +20,10 @@ along with `prompt()`, `confirm()` and running notebooks written for Deno.
 
 ## Language and imports
 
-Cells accept TypeScript, TSX, enums, top-level `await`, and `const`
-redeclaration across cells. Import specifiers can be `./local.ts`, bare
+Cells accept TypeScript, TSX, enums and top-level `await`. A later cell
+can declare a name again with `const`, `let` or `import`, whichever an
+earlier cell used: top-level `const` and imports run as `let`, so a
+top-level `const` can be reassigned from another cell. Import specifiers can be `./local.ts`, bare
 packages from the notebook's `node_modules`, `node:` builtins, and
 `npm:pkg@range` or `jsr:@scope/pkg@range`.
 

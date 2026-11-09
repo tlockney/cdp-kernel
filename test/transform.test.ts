@@ -90,7 +90,7 @@ test("import.meta becomes __cdpk.meta", async () => {
 });
 
 test("export declarations are stripped to plain declarations", () => {
-  assert.equal(rewriteModuleSyntax("export const a = 1;"), "const a = 1;");
+  assert.equal(rewriteModuleSyntax("export const a = 1;"), "let   a = 1;");
   assert.equal(rewriteModuleSyntax("export function f() {}"), "function f() {}");
   assert.equal(rewriteModuleSyntax("export class K {}"), "class K {}");
 });
@@ -114,7 +114,7 @@ test("export default keeps just the expression", () => {
 
 test("export { a } is removed", () => {
   const out = rewriteModuleSyntax("const a = 1; export { a };");
-  assert.equal(out, "const a = 1; ");
+  assert.equal(out, "let   a = 1; ");
 });
 
 test("re-exports throw CellSyntaxError", () => {
@@ -131,7 +131,7 @@ test("re-exports throw CellSyntaxError", () => {
 test("TypeScript-only syntax is erased", () => {
   const out = body("interface Foo { a: number }\ntype T = string;\nconst x: number = 1;\nfunction f(a: string): void {}");
   assert.doesNotMatch(out, /interface|type T|: number|: string|: void/);
-  assert.match(out, /const x = 1/);
+  assert.match(out, /let +x = 1/);
   assert.match(out, /function f\(a\)/);
 });
 
@@ -144,7 +144,7 @@ test("enums are kept as runtime code", async () => {
 test("angle-bracket assertions fall back to the TS loader", () => {
   const out = body("const s = <string>someValue;");
   assert.doesNotMatch(out, /<string>/);
-  assert.match(out, /const s = someValue/);
+  assert.match(out, /let +s = someValue/);
 });
 
 test("syntax errors throw CellSyntaxError named SyntaxError", () => {
@@ -191,4 +191,53 @@ test("transformCell honours experimentalDecorators from the project config", () 
   const cell = "function log(t: unknown) {}\nclass A { @log m() {} }";
   // TS legacy decorators compile to a __decorateClass helper call.
   assert.match(transformCell(cell, { experimentalDecorators: true }), /__decorateClass/);
+});
+
+// Cells under the inspector's replMode, as the CDP targets run them: each
+// in turn, in this process's global scope (#444).
+async function replSession(modules: Record<string, unknown>) {
+  const { Session } = await import("node:inspector/promises");
+  const session = new Session();
+  session.connect();
+  (globalThis as Record<string, unknown>).__cdpk = {
+    import: (specifier: string) => Promise.resolve(modules[specifier]),
+    meta: { url: "file:///cell" },
+    tick: () => new Promise((resolve) => setTimeout(resolve, 0)),
+    startCell: () => {},
+  };
+  return {
+    async cell(code: string): Promise<unknown> {
+      const { result, exceptionDetails } = (await session.post("Runtime.evaluate", {
+        expression: transformCell(code),
+        replMode: true,
+        awaitPromise: true,
+        returnByValue: true,
+      })) as unknown as { result: { value: unknown }; exceptionDetails?: { text: string; exception?: { description?: string } } };
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
+      return result.value;
+    },
+    close: () => session.disconnect(),
+  };
+}
+
+test("const, let and import can redeclare one another's names in later cells (#444)", async () => {
+  const s = await replSession({ "./data.ts": { hourly: "H", daily: "D" } });
+  try {
+    await s.cell("const { hourly } = await import('./data.ts')");
+    assert.equal(await s.cell('import { hourly } from "./data.ts";\nhourly'), "H");
+    await s.cell("const daily = 1");
+    assert.equal(await s.cell("let daily = 2; daily"), 2);
+    assert.equal(await s.cell('import { daily } from "./data.ts";\ndaily'), "D");
+    assert.equal(await s.cell("export const hourly = 3; hourly"), 3);
+    assert.equal(await s.cell("const hourly = 4; hourly"), 4);
+  } finally {
+    s.close();
+  }
+});
+
+test("only top-level const becomes let", () => {
+  assert.match(body("const a = 1;"), /^let +a = 1;/);
+  assert.match(body("export const b = 2;"), /^let +b = 2;/);
+  assert.match(body("{ const c = 3; }"), /const c = 3/);
+  assert.match(body("for (const d of []) {}"), /for \(const d of/);
 });
