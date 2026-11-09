@@ -37,8 +37,8 @@ export interface Comm {
    */
   send(data?: { [key: string]: unknown }, options?: CommSendOptions): void;
   /**
-   * Close the comm and tell the frontend. Its `onClose` handlers run
-   * afterwards, without being awaited. Does nothing once closed.
+   * Close the comm and tell the frontend. Its `onClose` handlers start
+   * right away, without being awaited. Does nothing once closed.
    *
    * @param data Data sent with the close message. Default `{}`.
    * @param options Metadata and binary buffers.

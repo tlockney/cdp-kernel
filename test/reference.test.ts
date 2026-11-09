@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import ts from "typescript";
-import { generate, root, stale } from "../scripts/reference.ts";
+import { anchors, generate, root, stale } from "../scripts/reference.ts";
 
 // The reference pages are generated from the doc comments on the notebook
 // globals' types (ganymede#596): they must be current, cover every member,
@@ -53,4 +53,29 @@ test("every example type-checks against the notebook globals", () => {
     return `${where}: ${ts.flattenDiagnosticMessageText(d.messageText, "\n")}`;
   });
   assert.deepEqual(errors, []);
+});
+
+test("@see anchors: fenced headings don't count, repeats and {#id} do", () => {
+  const page = [
+    "# Guide",
+    "## Setup",
+    "## Setup",
+    "## Custom {#mine}",
+    '<a id="raw"></a>',
+    "````md",
+    "```",
+    "# four-backtick",
+    "```",
+    "````",
+    "- a list item:",
+    "  ```ts",
+    "  # indented",
+    "  ```",
+    "~~~",
+    "# tilde",
+    "~~~",
+  ].join("\n");
+  const { title, ids } = anchors(page);
+  assert.equal(title, "Guide");
+  assert.deepEqual([...ids].sort(), ["guide", "mine", "raw", "setup", "setup-1"]);
 });

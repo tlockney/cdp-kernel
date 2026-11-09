@@ -363,8 +363,8 @@ comm.send({ ping: true }, { buffers: [new Uint8Array([1, 2, 3])] });
 close(data?: { [key: string]: unknown }, options?: CommSendOptions): void;
 ```
 
-Close the comm and tell the frontend. Its `onClose` handlers run
-afterwards, without being awaited. Does nothing once closed.
+Close the comm and tell the frontend. Its `onClose` handlers start
+right away, without being awaited. Does nothing once closed.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

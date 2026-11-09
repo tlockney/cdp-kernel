@@ -338,7 +338,7 @@ box under the cell, and the cell waits for the answer.
 | `defaultValue` | `string` | no | Returned when the answer is empty. Default `""`. |
 | `options` | `PromptOptions` | no | `password: true` hides what is typed. |
 
-**Returns** `string \| null`: The typed text, `defaultValue` for an empty answer, or `null` when nothing can answer (the frontend allows no input, as in `nbconvert --execute`).
+**Returns** `string | null`: The typed text, `defaultValue` for an empty answer, or `null` when nothing can answer (the frontend allows no input, as in `nbconvert --execute`).
 
 **Availability**: On workerd and celld it always returns `null`.
 
