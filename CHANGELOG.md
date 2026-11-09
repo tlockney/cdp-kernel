@@ -4,7 +4,7 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.9.0 (2026-11-09)
 
 - A cell can redeclare a name an earlier cell declared another way:
   `import { x }` after `const x`, or `let df` after `const df`. Before,
