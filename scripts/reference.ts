@@ -6,10 +6,12 @@
 //
 // Tags read: the summary, @param, @returns, @throws {Type}, @availability
 // (where it doesn't work everywhere), @example (a ```ts block; CI
-// type-checks each one), and @see <guide page>#<anchor>.
+// type-checks each one; it may be followed by screenshots of its output,
+// as ![alt](https://cdp-kernel.org/images/...) of a file in docs/images/),
+// and @see <guide page>#<anchor>.
 
 import ts from "typescript";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,6 +37,9 @@ interface Page {
   /** Option and value types, as property tables. */
   types: { name: string; file: string }[];
 }
+
+/** Where the site publishes docs/images/ (pages.yml), for images in doc comments. */
+const IMAGES = "https://cdp-kernel.org/images/";
 
 const DISPLAY = "runtime/display.d.mts";
 const COMM = "runtime/comm.d.mts";
@@ -207,12 +212,29 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
   for (const t of doc.throws) out.push(`**Throws** \`${t.type}\`: ${t.text}`, "");
   if (doc.availability) out.push(`**Availability**: ${doc.availability}`, "");
   for (const example of doc.examples) {
-    if (!/^```ts\n[\s\S]*\n```$/.test(example)) {
-      r.problems.push(`${where}: an @example is not one \`\`\`ts block`);
+    // A ```ts block, then optionally screenshots of its output.
+    const m = /^```ts\n([\s\S]*?)\n```((?:\n!\[[^\]]+\]\([^)]+\))*)$/.exec(example);
+    if (!m) {
+      r.problems.push(`${where}: an @example is not a \`\`\`ts block, optionally followed by images`);
       continue;
     }
-    r.examples.push({ where, code: example.slice("```ts\n".length, -"\n```".length) });
-    out.push(example, "");
+    r.examples.push({ where, code: m[1] });
+    out.push("```ts", m[1], "```", "");
+    for (const [, alt, url] of m[2].matchAll(/!\[([^\]]+)\]\(([^)]+)\)/g)) {
+      // Hovers need an absolute URL; the pages use the copy in docs/images/.
+      if (!url.startsWith(IMAGES)) {
+        r.problems.push(`${where}: image ${url} is not under ${IMAGES}`);
+        continue;
+      }
+      const file = `images/${url.slice(IMAGES.length)}`;
+      if (!existsSync(join(root, "docs", file))) r.problems.push(`${where}: docs/${file} doesn't exist`);
+      // The guide's examples are what `npm run docs:widgets` screenshots,
+      // so an example shown with one must be the guide's code, verbatim.
+      if (file.startsWith("images/widgets/") && !readFileSync(join(root, "docs", "widgets.md"), "utf8").includes(`\`\`\`ts\n${m[1]}\n\`\`\``)) {
+        r.problems.push(`${where}: the example shown with ${file} is not one of widgets.md's examples`);
+      }
+      out.push(`![${alt}](${file})`, "");
+    }
   }
   if (doc.see) out.push(seeLink(doc.see), "");
 }

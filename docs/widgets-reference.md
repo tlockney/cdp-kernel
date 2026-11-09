@@ -80,6 +80,44 @@ w.set("count", 1);
 w.set({ count: 2, label: "two" });
 ```
 
+```ts
+const progress = jupyter.widget({
+  esm: `export default {
+    render({ model, el }) {
+      el.innerHTML =
+        '<div class="progress-track"><div class="progress-fill"></div></div>' +
+        '<div class="progress-label"></div>';
+      const fill = el.querySelector(".progress-fill");
+      const label = el.querySelector(".progress-label");
+      const update = () => {
+        const percent = Math.round(model.get("value") * 100);
+        fill.style.width = percent + "%";
+        label.textContent = model.get("message") + " (" + percent + "%)";
+      };
+      model.on("change:value", update);
+      model.on("change:message", update);
+      update();
+    },
+  };`,
+  css: `
+    .progress-track { width: 320px; height: 10px; border-radius: 5px; background: #e5e7eb; overflow: hidden; }
+    .progress-fill { height: 100%; background: #2e6e64; transition: width 0.2s; }
+    .progress-label { margin-top: 6px; font: 13px system-ui, sans-serif; color: #444; }
+  `,
+  state: { value: 0, message: "Starting" },
+});
+await jupyter.display(progress);
+
+const files = ["january.csv", "february.csv", "march.csv", "april.csv", "may.csv"];
+for (const [i, file] of files.entries()) {
+  progress.set({ message: "Processing " + file, value: i / files.length });
+  await new Promise((resolve) => setTimeout(resolve, 600)); // stand-in for real work
+}
+progress.set({ message: "Done", value: 1 });
+```
+
+![A progress bar three fifths full, labelled "Processing april.csv (60%)", captured while the cell was still running.](images/widgets/progress.png)
+
 <a id="widget-on"></a>
 
 ### `widget.on(event, listener)`
@@ -104,6 +142,41 @@ const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
 w.on("change:count", (value, previous) => console.log(previous, "->", value));
 w.on("msg:custom", (content) => console.log("view sent", content));
 ```
+
+```ts
+const temperature = jupyter.widget({
+  esm: `export default {
+    render({ model, el }) {
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = "-20";
+      slider.max = "40";
+      const label = document.createElement("span");
+      const update = () => {
+        slider.value = String(model.get("celsius"));
+        label.textContent = " " + model.get("celsius") + " °C is " + model.get("fahrenheit") + " °F";
+      };
+      slider.oninput = () => {
+        model.set("celsius", slider.valueAsNumber);
+        model.save_changes();
+      };
+      model.on("change:celsius", update);
+      model.on("change:fahrenheit", update);
+      update();
+      el.append(slider, label);
+    },
+  };`,
+  state: { celsius: 20, fahrenheit: 68 },
+});
+
+temperature.on("change:celsius", (celsius) => {
+  temperature.set("fahrenheit", Math.round((Number(celsius) * 9) / 5 + 32));
+});
+
+temperature;
+```
+
+![A range slider moved to 30, labelled "30 °C is 86 °F".](images/widgets/temperature.png)
 
 <a id="widget-off"></a>
 
@@ -146,6 +219,38 @@ Send a custom message to every view's `model.on("msg:custom", ...)`.
 const w = jupyter.widget({ esm: "export default {}" });
 w.send({ type: "reset" });
 ```
+
+```ts
+const dice = jupyter.widget({
+  esm: `export default {
+    render({ model, el }) {
+      const button = document.createElement("button");
+      button.textContent = "Roll 3 dice";
+      button.onclick = () => model.send({ count: 3 });
+      const result = document.createElement("span");
+      result.style.marginLeft = "12px";
+      result.style.fontSize = "24px";
+      model.on("msg:custom", (message) => {
+        result.textContent = message.faces + "  (total " + message.total + ")";
+      });
+      el.append(button, result);
+    },
+  };`,
+});
+
+dice.on("msg:custom", (content) => {
+  const { count } = content as { count: number };
+  const rolls = Array.from({ length: count }, () => 1 + Math.floor(Math.random() * 6));
+  dice.send({
+    faces: rolls.map((n) => "⚀⚁⚂⚃⚄⚅"[n - 1]).join(" "),
+    total: rolls.reduce((a, b) => a + b, 0),
+  });
+});
+
+dice;
+```
+
+![A "Roll 3 dice" button next to three die faces and their total, the kernel's answer to a click.](images/widgets/dice.png)
 
 <a id="widget-close"></a>
 

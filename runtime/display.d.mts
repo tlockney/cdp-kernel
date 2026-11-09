@@ -239,18 +239,23 @@ export interface JupyterNamespace {
    *   esm: `export default {
    *     render({ model, el }) {
    *       const button = document.createElement("button");
-   *       const show = () => (button.textContent = \`Clicked \${model.get("count")} times\`);
-   *       button.onclick = () => { model.set("count", model.get("count") + 1); model.save_changes(); };
-   *       model.on("change:count", show);
-   *       show();
+   *       const update = () => {
+   *         button.textContent = "count is " + model.get("count");
+   *       };
+   *       button.onclick = () => {
+   *         model.set("count", model.get("count") + 1);
+   *         model.save_changes();
+   *       };
+   *       model.on("change:count", update);
+   *       update();
    *       el.append(button);
    *     },
    *   };`,
    *   state: { count: 0 },
    * });
-   * counter.on("change:count", (value) => console.log("count is", value));
-   * counter;
+   * counter; // the cell's result: displays the widget
    * ```
+   * ![A JupyterLab cell that creates a counter widget with jupyter.widget. Below the code, the output is a button reading "count is 3" after three clicks.](https://cdp-kernel.org/images/widgets/counter.png)
    * @see widgets.md#a-first-widget-a-counter
    */
   widget(options: WidgetOptions): Widget;
