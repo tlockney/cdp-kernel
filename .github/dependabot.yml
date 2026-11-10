@@ -1,0 +1,29 @@
+# Weekly version bumps, grouped so each ecosystem opens one pull request a
+# week at most, plus one per npm major. Security updates come as soon as
+# an advisory is published, whatever this schedule says. Actions are
+# pinned by commit SHA with the version in a comment; Dependabot updates
+# both.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # Pinned on purpose: each release can change behaviour the kernel
+      # relies on (docs/support.md). The pin moves when someone tests a
+      # newer release; the `latest runtimes` workflow tries the newest
+      # every night.
+      - dependency-name: workerd
+      - dependency-name: wrangler

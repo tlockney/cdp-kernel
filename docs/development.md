@@ -51,7 +51,8 @@ CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
 
 ### Latest runtime releases
 
-CI tests the versions `ci.yml` names. The `latest runtimes` workflow runs
+CI tests the versions `ci.yml` names (celld's is in
+`scripts/install-celld.sh`). The `latest runtimes` workflow runs
 the type check, unit tests and e2e suite each night against the newest
 release of Node, Deno, Bun, workerd, wrangler and celld, on Linux and
 macOS, so a runtime release that breaks the kernel shows up before a user
