@@ -1,14 +1,15 @@
 #!/bin/sh
-# Installs the celld release CI pins. celld isn't on npm; its own
-# installer puts it in ~/.local/bin, where the kernel looks first (#25),
-# so this does too (or in the directory given as $1). The download is
-# checked against the SHA-256 recorded here, so a changed release asset
-# fails the job instead of running.
+# Installs the celld release that CI and the container image pin. celld
+# isn't on npm; its own installer puts it in ~/.local/bin, where the
+# kernel looks first (#25), so this does too (or in the directory given
+# as $1, which container/Dockerfile uses). The download is checked
+# against the SHA-256 recorded here, so a changed release asset fails
+# the job or the build instead of running.
 #
 # To move the pin: set `version`, download each asset from
 # https://github.com/denoland/celld/releases and record
 # `shasum -a 256 <asset>`. docs/support.md and docs/install.md name the
-# version, and container/Dockerfile has its own (CELLD_VERSION).
+# version.
 set -eu
 
 version=0.6.2
@@ -16,6 +17,10 @@ case "$(uname -s)-$(uname -m)" in
   Linux-x86_64)
     asset=celld-x86_64-unknown-linux-gnu.gz
     sha256=ce0ee3552cc8d55dde3998dc3b1b0c8f547bbcb4bc803d2a94842368b047646c
+    ;;
+  Linux-aarch64)
+    asset=celld-aarch64-unknown-linux-gnu.gz
+    sha256=4eca87c6797590000a344c1b768364e9696e8817f5fbc16193f459d2edac7cd0
     ;;
   Darwin-arm64)
     asset=celld-aarch64-apple-darwin.gz
