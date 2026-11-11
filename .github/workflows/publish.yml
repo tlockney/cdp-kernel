@@ -25,6 +25,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     steps:
       - name: the commit's pull request passed CI
         env:
@@ -36,8 +37,10 @@ jobs:
             --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")][0] | "\(.number) \(.head.sha)"')
           [ -n "$pr" ] && [ "$pr" != "null null" ] || fail "${sha::12} is not the merge of a pull request into main; publish from a release PR's merge"
           number=${pr% *} head=${pr#* }
-          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&per_page=1" \
-            --jq '.workflow_runs[0].conclusion // "none"')
+          # The newest completed run: a re-run still going after the merge
+          # doesn't count against the one that gated it.
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&per_page=20" \
+            --jq '[.workflow_runs[] | select(.status == "completed")][0].conclusion // "none"')
           [ "$conclusion" = success ] || fail "CI on #$number (${head::12}) is '$conclusion', not success"
           echo "${sha::12} is #$number, whose CI passed on ${head::12}"
 
