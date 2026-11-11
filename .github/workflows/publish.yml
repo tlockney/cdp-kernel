@@ -43,8 +43,8 @@ jobs:
           done
           [ -n "$pr" ] && [ "$pr" != "null null" ] || fail "${sha::12} is not the merge of a pull request into main; publish from a release PR's merge"
           number=${pr% *} head=${pr#* }
-          # The newest completed run: a re-run still going after the merge
-          # doesn't count against the one that gated it.
+          # The newest completed run. A re-run of the gating run is in
+          # progress until it ends, so the check fails until then.
           conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&per_page=20" \
             --jq '[.workflow_runs[] | select(.status == "completed")][0].conclusion // "no completed run"')
           [ "$conclusion" = success ] || fail "CI on #$number (${head::12}) is '$conclusion', not success"
