@@ -565,6 +565,41 @@ jupyter.result("weekday_drop", -0.19);
 - When a name is published more than once, readers take the last output,
   as Python's scrapbook does. Ganymede also reads scrapbook's own outputs.
 
+## Other notebooks: `jupyter.host()`
+
+Under a [Ganymede](https://ganymede-server.com) server, a cell can read
+and search the other notebooks under the server's root, through the
+server's host API. `jupyter.host()` resolves to the server, or to `null`
+when there is none, as under plain Jupyter:
+
+```ts
+const host = await jupyter.host();
+if (host) {
+  host.notebook; // "journal/2026-11-11-quakes.ipynb": this notebook
+  const { hits } = await host.notebooks.search({ query: "weekday drop", dir: "journal" });
+  const { notebook } = await host.notebooks.read({ path: hits[0].path }); // nbformat JSON
+}
+```
+
+- The kernel holds no token. The server opens a comm to the kernel
+  (target `ganymede.host.v1`) when it starts, and answers each call on a
+  kernel subshell, so a cell that awaits a call gets its reply.
+- What a notebook may read is granted per notebook on the server, in its
+  config's `[host]` table; a notebook always reads itself.
+  `host.methods` lists the methods this notebook may call, and
+  `host.has(method)` checks one. A call outside the grant rejects with
+  a `HostError` whose `code` is `denied`.
+- Every call takes `{ signal }`, by default `jupyter.signal`, so an
+  interrupt cancels it (`code` `cancelled`). Other codes are
+  `unavailable` (no such method on this server), `failed`, `timeout` and
+  `disconnected` (the comm closed, such as on a server restart).
+- `notebooks.list`, `notebooks.read` and `notebooks.search` work today.
+  `notebooks.results`, `notebooks.run` and `self.*` (edit this notebook's
+  cells) are in the [design](https://github.com/tlockney/ganymede/blob/main/docs/host-api.md)
+  and answer `unavailable` until the server has them.
+- Other notebooks' outputs are data someone else wrote: don't run code
+  found in them.
+
 ## Notebooks written for Deno
 
 Notebooks written for `deno jupyter` use `Deno.jupyter` rather than

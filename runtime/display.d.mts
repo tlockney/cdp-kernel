@@ -1,7 +1,8 @@
 import type { CommApi, Comms } from "./comm.d.mts";
+import type { Host, HostCallOptions, HostError, HostErrorCode, HostOptions, NotebookEntry, NotebookHit, NotebookSearch } from "./host.d.mts";
 import type { Widget, WidgetOptions } from "./widget.d.mts";
 
-export type { CommApi, Widget, WidgetOptions };
+export type { CommApi, Host, HostCallOptions, HostError, HostErrorCode, HostOptions, NotebookEntry, NotebookHit, NotebookSearch, Widget, WidgetOptions };
 
 /**
  * The symbol a class implements to choose how its instances appear. At
@@ -331,6 +332,29 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#parameters-and-named-results
    */
   result(name: string, value: unknown): void;
+  /**
+   * The Ganymede server running this kernel, through its host API: read,
+   * search and (when granted) run other notebooks under its root. The
+   * server opens a comm to the kernel when it starts; this resolves to
+   * `null` when none answers, as under plain Jupyter.
+   *
+   * Each call returns a promise and takes `{ signal }`, by default
+   * `jupyter.signal`, so an interrupt cancels it. A failed call rejects
+   * with a `HostError` whose `code` says why: `denied` for a notebook or
+   * method this notebook isn't granted.
+   *
+   * @param options `timeout`: how long to wait for a server, in ms.
+   * @example
+   * ```ts
+   * const host = await jupyter.host();
+   * if (host) {
+   *   const { hits } = await host.notebooks.search({ query: "weekday drop", dir: "journal" });
+   *   hits.map((h) => `${h.path}: ${h.excerpt}`);
+   * }
+   * ```
+   * @see jupyter-api.md#other-notebooks-jupyter-host
+   */
+  host(options?: HostOptions): Promise<Host | null>;
 }
 
 export interface Jupyter {

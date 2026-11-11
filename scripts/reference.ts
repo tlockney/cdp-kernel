@@ -44,6 +44,7 @@ const IMAGES = "https://cdp-kernel.org/images/";
 const DISPLAY = "runtime/display.d.mts";
 const COMM = "runtime/comm.d.mts";
 const WIDGET = "runtime/widget.d.mts";
+const HOST = "runtime/host.d.mts";
 const GLOBALS = "src/globals.ts";
 
 export const pages: Page[] = [
@@ -55,10 +56,21 @@ globals, with their arguments, return values and an example. [The
 \`jupyter\` namespace](jupyter-api.md) explains them with longer examples
 and their output. Widgets and comms are in the [widgets
 reference](widgets-reference.md).`,
-    sections: [{ iface: "JupyterNamespace", file: DISPLAY, prefix: "jupyter.", heading: "jupyter" }],
+    sections: [
+      { iface: "JupyterNamespace", file: DISPLAY, prefix: "jupyter.", heading: "jupyter" },
+      {
+        iface: "Host",
+        file: HOST,
+        prefix: "host.",
+        heading: "Host",
+        intro: "`await jupyter.host()` returns it; see [`jupyter.host`](#jupyter-host-options).",
+      },
+    ],
     globals: ["prompt", "confirm"],
     types: [
       { name: "DisplayOptions", file: DISPLAY },
+      { name: "HostOptions", file: HOST },
+      { name: "HostCallOptions", file: HOST },
       { name: "PromptOptions", file: GLOBALS },
       { name: "MediaBundle", file: DISPLAY },
       { name: "Displayable", file: DISPLAY },

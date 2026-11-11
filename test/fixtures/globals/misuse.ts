@@ -12,6 +12,8 @@ jupyter.render("x");
 jupyter.image(42);
 // @ts-expect-error the kernel replaces jupyter.signal, not cells
 jupyter.signal = new AbortController().signal;
+// @ts-expect-error host() resolves to null without a server
+(await jupyter.host()).notebook;
 // @ts-expect-error prompt returns string | null
 const s: string = prompt("x");
 // @ts-expect-error the Deno namespace is a separate, opt-in entry

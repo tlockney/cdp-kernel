@@ -20,7 +20,12 @@ await jupyter.display(new Badge("ok"));
 const stop: AbortSignal = jupyter.signal;
 stop.throwIfAborted();
 
+const host = await jupyter.host({ timeout: 500 });
+const where: string | null | undefined = host?.notebook;
+const canRun: boolean | undefined = host?.has("notebooks.run");
+await host?.notebooks.search({ query: "drop" }, { signal: stop });
+
 const name: string | null = prompt("Name?", "anon", { password: false });
 const sure: boolean = confirm("Sure?");
 
-export { bundle, img, name, stop, sure, svg };
+export { bundle, canRun, img, name, stop, sure, svg, where };

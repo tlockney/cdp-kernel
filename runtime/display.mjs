@@ -15,6 +15,7 @@
 // Deno doesn't have; see comm.mjs and widget.mjs.
 
 import { createComms } from "./comm.mjs";
+import { createHost } from "./host.mjs";
 import { createWidgetFactory } from "./widget.mjs";
 
 export const $display = Symbol.for("Jupyter.display");
@@ -514,6 +515,11 @@ export function createJupyter(host) {
     for (const controller of handlers.keys()) controller.abort(reason);
     handlers.clear();
   }
+  // jupyter.host() (#461): Ganymede's host API. Registers its comm target
+  // now, so the comm the server opens at kernel start finds it. A call
+  // without a signal watches the jupyter.signal of whatever started it.
+  const hostApi = createHost(comms.api, () => current.signal);
+
   async function commDispatch(msgType, content, metadata, buffers, ownSignal = false) {
     // A handler during a cell shares the cell's signal, and is tracked
     // apart from it: it can outlive the cell.
@@ -547,6 +553,7 @@ export function createJupyter(host) {
       image,
       $display,
       comm: comms.api,
+      host: hostApi.host,
       widget: createWidgetFactory(comms.api, $display),
     },
     broadcastResult,
