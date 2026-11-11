@@ -23,6 +23,7 @@ at the end.
 | [`jupyter.broadcast(type, content)`](#raw-messages-with-broadcast) | Send a raw Jupyter message, for things the helpers don't cover. |
 | `jupyter.comm`, `jupyter.widget` | Comms and interactive widgets: see [Widgets and comms](widgets.md). Not in Deno. |
 | [`jupyter.signal`](#stopping-on-interrupt-jupyter-signal) | An `AbortSignal` that an interrupt aborts, so a waiting cell can stop. Not in Deno. |
+| [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
 
 `prompt()` and `confirm()` are globals rather than members, and are covered
 [below](#asking-for-input-prompt-and-confirm). The [`jupyter`
@@ -525,6 +526,86 @@ accept it as is: `fetch(url, { signal: jupyter.signal })`,
 - It behaves the same on every runtime. It matters most on Bun, workerd,
   celld and the browser target, where an interrupted cell's pending work
   keeps running.
+
+## Parameters and named results
+
+A notebook can run as a program: parameters in, named results out.
+Whoever starts the kernel passes the parameters, and reads the results
+from the run's outputs by name, without parsing them. With
+[Ganymede](https://ganymede-server.com):
+
+```sh
+ganymede execute fremont.ipynb -p counter="2nd Ave" -p days=7 --results
+```
+
+`jupyter.params` holds the parameters, a frozen object. Take defaults with
+destructuring, so the notebook still runs on its own:
+
+```ts
+const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string; days?: number };
+```
+
+`jupyter.result(name, value)` publishes a value under a name:
+
+```ts
+jupyter.result("weekday_drop", -0.19);
+```
+
+- Parameters arrive as a JSON object in the kernel's `GANYMEDE_PARAMS`
+  environment variable, so any launcher can pass them, and any kernel
+  can read them (`json.loads(os.environ.get("GANYMEDE_PARAMS", "{}"))` in
+  Python). A value that isn't a JSON object makes reading
+  `jupyter.params` throw a `TypeError`. The browser target takes them
+  from its `params` option instead.
+- A result is a `display_data` output with the MIME type
+  `application/vnd.ganymede.result+json`, holding `{ "name": ..., "value":
+  ... }`, and a `text/plain` line `name = value` that frontends show. The
+  value must be JSON: it is stored as `JSON.stringify` writes it, so a
+  `Date` becomes a string, and a function or `BigInt` throws.
+- When a name is published more than once, readers take the last output,
+  as Python's scrapbook does. Ganymede also reads scrapbook's own outputs.
+
+## Other notebooks: `jupyter.host()`
+
+Under a [Ganymede](https://ganymede-server.com) server, a cell can read
+and search the other notebooks under the server's root, through the
+server's host API. `jupyter.host()` resolves to the server, or to `null`
+when there is none, as under plain Jupyter:
+
+```ts
+const host = await jupyter.host();
+if (host) {
+  host.notebook; // "journal/2026-11-11-quakes.ipynb": this notebook
+  const { hits } = await host.notebooks.search({ query: "weekday drop", dir: "journal" });
+  const { notebook } = await host.notebooks.read({ path: hits[0].path }); // nbformat JSON
+}
+```
+
+- The kernel holds no token. The server opens a comm to the kernel
+  (target `ganymede.host.v1`) when it starts, and answers each call on a
+  kernel subshell, so a cell that awaits a call gets its reply.
+- What a notebook may read is set on the server, in its config's
+  `[host]` table; a notebook always reads itself. `host.methods` lists
+  the methods this notebook may call, and `host.has(method)` checks one.
+  A call outside what is allowed rejects with a `HostError` whose `code`
+  is `denied`. Branch on `err.code`: `HostError` isn't a global, so
+  `instanceof` isn't available in a cell.
+- Every call takes `{ signal }`, by default `jupyter.signal`, so an
+  interrupt cancels it (`code` `cancelled`). Other codes are
+  `unavailable` (no such method on this server), `failed`, `timeout` and
+  `disconnected` (the comm closed, such as on a server restart).
+- With no server, the first `jupyter.host()` waits up to its `timeout`
+  (1 s by default) and resolves `null`; later calls answer `null` at
+  once. An interrupt ends the wait.
+- The server side is new in Ganymede
+  ([#654](https://github.com/tlockney/ganymede/pull/654)) and not yet
+  in a release. It answers `notebooks.list`, `notebooks.read` and
+  `notebooks.search`.
+  `notebooks.results`, `notebooks.run` and `self.*` (edit this notebook's
+  cells) are in the [design](https://github.com/tlockney/ganymede/blob/main/docs/host-api.md)
+  and answer `unavailable` until the server has them.
+- Other notebooks' outputs are data someone else wrote: don't run code
+  found in them.
 
 ## Notebooks written for Deno
 

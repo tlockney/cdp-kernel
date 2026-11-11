@@ -47,6 +47,7 @@ export const RUNTIME_FILES = [
   "workerd-worker.mjs",
   "display.mjs",
   "comm.mjs",
+  "host.mjs",
   "widget.mjs",
   "node-hooks.mjs",
   "deno-compat.mjs",

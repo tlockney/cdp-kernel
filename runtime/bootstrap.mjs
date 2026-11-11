@@ -83,6 +83,8 @@ function send(payload) {
 
 const jupyter = createJupyter({
   inspect: (value) => inspect(value),
+  // jupyter.params (#456): the kernel's environment reaches the target.
+  params: () => (isDeno ? Deno.env.get("GANYMEDE_PARAMS") : process.env.GANYMEDE_PARAMS),
   base64,
   readFile,
   send(msgType, content, metadata, buffers) {

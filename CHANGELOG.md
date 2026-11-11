@@ -4,6 +4,28 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- esbuild, which bundles npm imports for workerd and celld cells, is now
+  0.28 (was 0.25), on npm and JSR. It needs macOS 12 or later
+  ([#457](https://github.com/tlockney/cdp-kernel/issues/457)).
+- Parameters and named results, so a notebook can run as a program:
+  `jupyter.params` holds the run's parameters, a JSON object passed in the
+  kernel's `GANYMEDE_PARAMS` environment variable (or the browser
+  target's `params` option), and `jupyter.result(name, value)` publishes a
+  value under a name as an `application/vnd.ganymede.result+json` output
+  that a caller such as `ganymede execute --results` reads by name
+  ([#456](https://github.com/tlockney/cdp-kernel/issues/456)).
+- `jupyter.host()`: under a Ganymede server, read and search other
+  notebooks from a cell through the server's host API, with no token in
+  the kernel. Resolves to `null` elsewhere. Calls take `{ signal }`
+  (default `jupyter.signal`) and reject with a `HostError` and a `code`
+  ([#461](https://github.com/tlockney/cdp-kernel/issues/461)).
+- When the runtime exits (`process.exit()` in a cell, or a crash), the
+  kernel closes the comms that died with it, so frontends don't keep
+  widgets or comms no runtime answers
+  ([#461](https://github.com/tlockney/cdp-kernel/issues/461)).
+
 ## 0.9.0 (2026-11-09)
 
 - A cell can redeclare a name an earlier cell declared another way:

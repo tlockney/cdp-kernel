@@ -42,6 +42,9 @@ test("declared jupyter namespace matches the runtime namespace", () => {
     comm: true,
     widget: true,
     signal: true,
+    params: true,
+    result: true,
+    host: true,
   } satisfies Record<keyof JupyterNamespace, true>;
   const runtime = createJupyter({
     inspect: String,

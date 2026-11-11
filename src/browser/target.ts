@@ -36,6 +36,11 @@ export interface BrowserTargetOptions {
    * called with `{ host, jupyter }` (#384).
    */
   preload?: string[];
+  /**
+   * The run's parameters, which cells read as `jupyter.params` (#456). The
+   * other targets read them from `GANYMEDE_PARAMS`.
+   */
+  params?: { [name: string]: unknown };
   /** Answers the Worker's `host.request` calls; without it they reject (#384). */
   host?: HostHandler;
 }
@@ -95,7 +100,8 @@ export class BrowserTarget implements KernelTarget {
     const target = new BrowserTarget(options.createWorker(), events, options.host);
     const base = options.base ?? globalThis.location?.href ?? "file:///";
     try {
-      const { userAgent } = await target.#request("info", { base, cdn: options.cdn, preload: options.preload ?? [] });
+      const params = options.params === undefined ? undefined : JSON.stringify(options.params);
+      const { userAgent } = await target.#request("info", { base, cdn: options.cdn, preload: options.preload ?? [], params });
       if (typeof userAgent === "string") target.versions.runtime = browserName(userAgent);
       target.versions.engine = engineName(typeof userAgent === "string" ? userAgent : "");
     } catch (err) {

@@ -13,10 +13,12 @@
     // Deno already types the same API as Deno.jupyter (which a Deno target
     // provides). The npm package ships them for Node notebooks.
   },
+  // Each npm: range here must equal package.json's (test/package.test.ts):
+  // Dependabot only edits package.json.
   "imports": {
     "acorn": "npm:acorn@^8.15.0",
     "acorn-walk": "npm:acorn-walk@^8.3.4",
-    "esbuild": "npm:esbuild@^0.25.10",
+    "esbuild": "npm:esbuild@^0.28.2",
     "sucrase": "npm:sucrase@^3.35.1",
     "typescript": "npm:typescript@^6.0.3"
   },

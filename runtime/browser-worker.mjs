@@ -65,7 +65,10 @@ const jupyter = createJupyter({
   // A synchronous prompt would need SharedArrayBuffer and Atomics.wait, so
   // a cross-origin isolated page; until then, as with no stdin.
   input: () => null,
+  // jupyter.params (#456): the target's `params` option, sent with info.
+  params: () => paramsText,
 });
+let paramsText;
 
 // --- Modules ----------------------------------------------------------------
 let cdn = DEFAULT_CDN;
@@ -150,7 +153,8 @@ async function preload(urls, base) {
 // --- The shim cells and the evaluator use -----------------------------------
 let handle = null;
 
-function install({ base, cdn: cdnBase }) {
+function install({ base, cdn: cdnBase, params }) {
+  if (typeof params === "string") paramsText = params;
   if (typeof cdnBase === "string") cdn = cdnBase.endsWith("/") ? cdnBase : cdnBase + "/";
   const url = new URL("$cdpk$repl.mjs", base).href;
   globalThis.__cdpk = {

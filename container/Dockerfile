@@ -12,7 +12,8 @@
 # what's on npm. --build-arg CDPK_SOURCE=checkout packs the checkout
 # instead (CI on pull requests, the devcontainer).
 #
-# The runtime versions are the ones CI tests (ci.yml, docs/install.md).
+# The runtime versions are the ones CI tests (ci.yml, docs/install.md);
+# celld's is in scripts/install-celld.sh.
 
 ARG CDPK_SOURCE=npm
 ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:2026-10-12
@@ -20,7 +21,6 @@ ARG NODE_VERSION=26
 ARG DENO_VERSION=2.9.7
 ARG BUN_VERSION=1.4.3
 ARG WORKERD_VERSION=1.20261015.1
-ARG CELLD_VERSION=0.6.2
 ARG ANYWIDGET_VERSION=0.11.0
 
 FROM node:${NODE_VERSION}-trixie-slim AS node
@@ -45,9 +45,7 @@ FROM package-${CDPK_SOURCE} AS package
 
 FROM ${BASE_IMAGE}
 ARG WORKERD_VERSION
-ARG CELLD_VERSION
 ARG ANYWIDGET_VERSION
-ARG TARGETARCH
 USER root
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
@@ -58,15 +56,10 @@ COPY --from=deno /deno /usr/local/bin/deno
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
 # celld isn't on npm. The kernel finds it on PATH as well as in
-# ~/.local/bin, where its installer puts it.
-RUN case "$TARGETARCH" in \
-      amd64) arch=x86_64 ;; \
-      arm64) arch=aarch64 ;; \
-      *) echo "no celld build for $TARGETARCH" >&2; exit 1 ;; \
-    esac \
- && curl -fsSL "https://github.com/denoland/celld/releases/download/v${CELLD_VERSION}/celld-${arch}-unknown-linux-gnu.gz" \
-    | gunzip > /usr/local/bin/celld \
- && chmod +x /usr/local/bin/celld
+# ~/.local/bin, where its installer puts it. The script holds the
+# version CI tests and checks the download's SHA-256.
+RUN --mount=source=scripts/install-celld.sh,target=/tmp/install-celld.sh \
+    sh /tmp/install-celld.sh /usr/local/bin
 
 # A workerd target uses the workerd on PATH when the notebook's directory
 # has no node_modules of its own. HOME is still jovyan's, so npm's cache

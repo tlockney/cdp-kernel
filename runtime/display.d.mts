@@ -1,7 +1,8 @@
 import type { CommApi, Comms } from "./comm.d.mts";
+import type { Host, HostCallOptions, HostError, HostErrorCode, HostNotebooks, HostOptions, HostSelf, NotebookEntry, NotebookHit, NotebookSearch } from "./host.d.mts";
 import type { Widget, WidgetOptions } from "./widget.d.mts";
 
-export type { CommApi, Widget, WidgetOptions };
+export type { CommApi, Host, HostCallOptions, HostError, HostErrorCode, HostNotebooks, HostOptions, HostSelf, NotebookEntry, NotebookHit, NotebookSearch, Widget, WidgetOptions };
 
 /**
  * The symbol a class implements to choose how its instances appear. At
@@ -23,7 +24,15 @@ export interface DisplayHost {
   readFile: (path: string) => Uint8Array;
   send: (msgType: string, content: object, metadata: object, buffers: Uint8Array[]) => void;
   input: (prompt: string, password: boolean) => string | null;
+  /** The run's parameters as JSON text, or `undefined` when there are none. */
+  params?: () => string | undefined;
 }
+
+/** The MIME type of a named result: `{ name, value }`. */
+export const RESULT_MIME: "application/vnd.ganymede.result+json";
+
+/** A JSON value, as `JSON.parse` returns it. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /** Options for `jupyter.display`. */
 export interface DisplayOptions {
@@ -283,6 +292,71 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#stopping-on-interrupt-jupyter-signal
    */
   readonly signal: AbortSignal;
+  /**
+   * The parameters of this run: a frozen object, empty unless whoever
+   * started the kernel passed some, such as `ganymede execute -p
+   * counter="2nd Ave"`. They arrive as a JSON object in the kernel's
+   * `GANYMEDE_PARAMS` environment variable. Take defaults with
+   * destructuring, so the notebook also runs on its own.
+   *
+   * @throws {TypeError} `GANYMEDE_PARAMS` is set but isn't a JSON object.
+   * @availability Node, Deno, Bun, workerd and celld read the kernel's
+   *   environment; the browser target takes `params` from its options.
+   * @example
+   * ```ts
+   * const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string; days?: number };
+   * `${counter}, last ${days} days`;
+   * ```
+   * @see jupyter-api.md#parameters-and-named-results
+   */
+  readonly params: { readonly [name: string]: JsonValue };
+  /**
+   * Publish a value under a name, as an output that a run's caller reads
+   * by name instead of parsing outputs: `ganymede execute --results`, or
+   * another notebook. The output has the MIME type
+   * `application/vnd.ganymede.result+json` holding `{ name, value }`, and
+   * a `text/plain` line `name = value` for frontends that don't know the
+   * type. When a name is published twice, readers take the last one.
+   *
+   * @param name The result's name.
+   * @param value Any value `JSON.stringify` accepts; it is stored as JSON,
+   *   so a `Date` becomes its ISO string.
+   * @throws {TypeError} `name` is empty, or `value` isn't JSON (a
+   *   function, `undefined`, a `BigInt` or a cycle).
+   * @example
+   * ```ts
+   * const counts = [3120, 2890, 2410];
+   * jupyter.result("weekday_drop", (counts[2] - counts[0]) / counts[0]);
+   * jupyter.result("counts", counts);
+   * ```
+   * @see jupyter-api.md#parameters-and-named-results
+   */
+  result(name: string, value: unknown): void;
+  /**
+   * The Ganymede server running this kernel, through its host API: read,
+   * search and (when granted) run other notebooks under its root. The
+   * server opens a comm to the kernel when it starts; this resolves to
+   * `null` when none answers, as under plain Jupyter.
+   *
+   * Each call returns a promise and takes `{ signal }`, by default
+   * `jupyter.signal`, so an interrupt cancels it. A failed call rejects
+   * with a `HostError` whose `code` says why: `denied` for a notebook or
+   * method this notebook isn't granted. Branch on `code`: `HostError`
+   * isn't a global, so `instanceof` isn't available.
+   *
+   * @param options `timeout`: how long to wait for a server, in ms.
+   * @throws {HostError} `cancelled` when an interrupt ends the wait.
+   * @example
+   * ```ts
+   * const host = await jupyter.host();
+   * if (host) {
+   *   const { hits } = await host.notebooks.search({ query: "weekday drop", dir: "journal" });
+   *   hits.map((h) => `${h.path}: ${h.excerpt}`);
+   * }
+   * ```
+   * @see jupyter-api.md#other-notebooks-jupyter-host
+   */
+  host(options?: HostOptions): Promise<Host | null>;
 }
 
 export interface Jupyter {
