@@ -13,6 +13,15 @@ Issue and pull request numbers refer to
   value under a name as an `application/vnd.ganymede.result+json` output
   that a caller such as `ganymede execute --results` reads by name
   ([#456](https://github.com/tlockney/cdp-kernel/issues/456)).
+- `jupyter.host()`: under a Ganymede server, read and search other
+  notebooks from a cell through the server's host API, with no token in
+  the kernel. Resolves to `null` elsewhere. Calls take `{ signal }`
+  (default `jupyter.signal`) and reject with a `HostError` and a `code`
+  ([#461](https://github.com/tlockney/cdp-kernel/issues/461)).
+- When the runtime exits (`process.exit()` in a cell, or a crash), the
+  kernel closes the comms that died with it, so frontends don't keep
+  widgets or comms no runtime answers
+  ([#461](https://github.com/tlockney/cdp-kernel/issues/461)).
 
 ## 0.9.0 (2026-11-09)
 
