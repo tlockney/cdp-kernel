@@ -37,7 +37,7 @@ jobs:
           # the merge, and tag-release starts this run at once: retry.
           for attempt in 1 2 3 4 5 6; do
             pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
-              --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")][0] | "\(.number) \(.head.sha)"')
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")][0] | "\(.number) \(.head.sha)"' || true)
             [[ -n "$pr" && "$pr" != "null null" ]] && break
             sleep 10
           done
