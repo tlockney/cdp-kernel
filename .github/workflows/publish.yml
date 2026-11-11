@@ -16,8 +16,39 @@ on:
 permissions:
   contents: read
 jobs:
+  # The commit came through a pull request into main whose last CI run
+  # passed (#466). Branch protection requires that already; this says so
+  # in seconds instead of running all of CI again on the same tree.
   verify:
-    uses: ./.github/workflows/ci.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: the commit's pull request passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          sha=$GITHUB_SHA
+          # GitHub links a merge commit to its pull request a little after
+          # the merge, and tag-release starts this run at once: retry.
+          for attempt in 1 2 3 4 5 6; do
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")][0] | "\(.number) \(.head.sha)"' || true)
+            [[ -n "$pr" && "$pr" != "null null" ]] && break
+            sleep 10
+          done
+          [ -n "$pr" ] && [ "$pr" != "null null" ] || fail "${sha::12} is not the merge of a pull request into main; publish from a release PR's merge"
+          number=${pr% *} head=${pr#* }
+          # The newest completed run. A re-run of the gating run is in
+          # progress until it ends, so the check fails until then.
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&per_page=20" \
+            --jq '[.workflow_runs[] | select(.status == "completed")][0].conclusion // "no completed run"')
+          [ "$conclusion" = success ] || fail "CI on #$number (${head::12}) is '$conclusion', not success"
+          echo "${sha::12} is #$number, whose CI passed on ${head::12}"
 
   version:
     runs-on: ubuntu-latest
@@ -57,7 +88,7 @@ jobs:
           grep -qxF "## $actual ($released)" CHANGELOG.md || fail "CHANGELOG.md has no '## $actual ($released)' heading"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  # Run with a version, tags the commit CI just passed on. A tag pushed with
+  # Run with a version, tags the commit whose PR passed CI. A tag pushed with
   # the workflow's token starts no other run. On a tag, there is nothing to do.
   tag:
     needs: [verify, version]
