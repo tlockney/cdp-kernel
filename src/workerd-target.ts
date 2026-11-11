@@ -81,7 +81,7 @@ const driver :Workerd.Worker = (
     (name = "UNSAFE", unsafeEval = void),
     (name = "TOKEN", fromEnvironment = "CDPK_TOKEN"),
     (name = "META", fromEnvironment = "CDPK_META"),
-    (name = "PARAMS", fromEnvironment = "CDPK_PARAMS"),
+    (name = "CDPK_PARAMS", fromEnvironment = "CDPK_PARAMS"),
   ],
 );
 `;

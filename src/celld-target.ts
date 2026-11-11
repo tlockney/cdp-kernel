@@ -60,8 +60,9 @@ export function celldConfig(
   const config: CdpParams = { name: "cdpk", main: "driver.mjs", no_bundle: true, compatibility_date: "2026-09-01" };
   for (const key of PROJECT_KEYS) if (project && project[key] !== undefined) config[key] = project[key];
   const vars = project && typeof project.vars === "object" && project.vars !== null ? project.vars : {};
-  // PARAMS: jupyter.params (#456), the JSON text of GANYMEDE_PARAMS.
-  config.vars = { ...vars, TOKEN: token, META: JSON.stringify(meta), PARAMS: params };
+  // CDPK_PARAMS: jupyter.params (#456), the JSON text of GANYMEDE_PARAMS;
+  // prefixed so a project's own PARAMS is kept.
+  config.vars = { ...vars, TOKEN: token, META: JSON.stringify(meta), CDPK_PARAMS: params };
   return config;
 }
 

@@ -101,7 +101,7 @@ const jupyter = createJupyter({
   // A request can't block for an answer, so prompt() and confirm() behave
   // as when the frontend has no stdin.
   input: () => null,
-  // jupyter.params (#456): the PARAMS binding, set when install() runs.
+  // jupyter.params (#456): the CDPK_PARAMS binding, set when install() runs.
   params: () => paramsText,
 });
 let paramsText;
@@ -134,7 +134,7 @@ let handle = null;
 
 function install(env) {
   const meta = JSON.parse(env.META);
-  paramsText = typeof env.PARAMS === "string" ? env.PARAMS : undefined;
+  paramsText = typeof env.CDPK_PARAMS === "string" ? env.CDPK_PARAMS : undefined;
   globalThis.__cdpk = {
     import: cellImport,
     meta: { ...meta, resolve: (specifier) => new URL(specifier, meta.url).href },
@@ -168,7 +168,7 @@ function install(env) {
   globalThis.confirm = jupyter.confirm;
   // A cell has no fetch(request, env), so the Worker's bindings (#26) are a
   // global, without the kernel's own.
-  const { UNSAFE, TOKEN, META, PARAMS, ...bindings } = env;
+  const { UNSAFE, TOKEN, META, CDPK_PARAMS, ...bindings } = env;
   globalThis.env = bindings;
   // workerd forbids eval without its UnsafeEval binding; celld (#25) allows
   // a plain global eval and has no such binding.
