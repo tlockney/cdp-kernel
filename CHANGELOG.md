@@ -18,6 +18,10 @@ Issue and pull request numbers refer to
   the kernel. Resolves to `null` elsewhere. Calls take `{ signal }`
   (default `jupyter.signal`) and reject with a `HostError` and a `code`
   ([#461](https://github.com/tlockney/cdp-kernel/issues/461)).
+- When the runtime exits (`process.exit()` in a cell, or a crash), the
+  kernel closes the comms that died with it, so frontends don't keep
+  widgets or comms no runtime answers
+  ([#461](https://github.com/tlockney/cdp-kernel/issues/461)).
 
 ## 0.9.0 (2026-11-09)
 

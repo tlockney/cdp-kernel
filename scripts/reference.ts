@@ -65,6 +65,8 @@ reference](widgets-reference.md).`,
         heading: "Host",
         intro: "`await jupyter.host()` returns it; see [`jupyter.host`](#jupyter-host-options).",
       },
+      { iface: "HostNotebooks", file: HOST, prefix: "host.notebooks.", heading: "host.notebooks" },
+      { iface: "HostSelf", file: HOST, prefix: "host.self.", heading: "host.self" },
     ],
     globals: ["prompt", "confirm"],
     types: [

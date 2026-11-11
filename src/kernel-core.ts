@@ -436,6 +436,13 @@ export class KernelCore {
         // Its prompt, if any, died with it; a late reply is dropped.
         this.#input = null;
         void this.#debugger?.attachTarget(null);
+        // Its comms died with it: tell the frontends, so a widget or a
+        // Ganymede host comm isn't left waiting on a runtime that is gone,
+        // and the next runtime can open its own (#461).
+        if (!this.#shuttingDown) {
+          for (const commId of this.#comms.keys()) this.#publish("comm_close", { comm_id: commId, data: {} });
+        }
+        this.#comms.clear();
         if (!this.#shuttingDown) {
           const text = note ?? `[cdp-kernel] ${this.#runtime} exited (${code}); restarting on next cell`;
           this.#publish("stream", { name: "stderr", text: `\n${text}\n` });

@@ -1,8 +1,8 @@
 import type { CommApi, Comms } from "./comm.d.mts";
-import type { Host, HostCallOptions, HostError, HostErrorCode, HostOptions, NotebookEntry, NotebookHit, NotebookSearch } from "./host.d.mts";
+import type { Host, HostCallOptions, HostError, HostErrorCode, HostNotebooks, HostOptions, HostSelf, NotebookEntry, NotebookHit, NotebookSearch } from "./host.d.mts";
 import type { Widget, WidgetOptions } from "./widget.d.mts";
 
-export type { CommApi, Host, HostCallOptions, HostError, HostErrorCode, HostOptions, NotebookEntry, NotebookHit, NotebookSearch, Widget, WidgetOptions };
+export type { CommApi, Host, HostCallOptions, HostError, HostErrorCode, HostNotebooks, HostOptions, HostSelf, NotebookEntry, NotebookHit, NotebookSearch, Widget, WidgetOptions };
 
 /**
  * The symbol a class implements to choose how its instances appear. At
@@ -341,9 +341,11 @@ export interface JupyterNamespace {
    * Each call returns a promise and takes `{ signal }`, by default
    * `jupyter.signal`, so an interrupt cancels it. A failed call rejects
    * with a `HostError` whose `code` says why: `denied` for a notebook or
-   * method this notebook isn't granted.
+   * method this notebook isn't granted. Branch on `code`: `HostError`
+   * isn't a global, so `instanceof` isn't available.
    *
    * @param options `timeout`: how long to wait for a server, in ms.
+   * @throws {HostError} `cancelled` when an interrupt ends the wait.
    * @example
    * ```ts
    * const host = await jupyter.host();

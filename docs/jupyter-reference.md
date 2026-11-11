@@ -26,6 +26,14 @@ reference](widgets-reference.md).
 | [`jupyter.host(options?)`](#jupyter-host-options) | The Ganymede server running this kernel, through its host API: read, search and (when granted) run other notebooks under its root. |
 | [`host.has(method)`](#host-has-method) | Whether this notebook may call `method`. |
 | [`host.call(method, params?, options?)`](#host-call-method-params-options) | Call a method by name. |
+| [`host.notebooks.list(params?, options?)`](#host-notebooks-list-params-options) | The notebooks this notebook may read, and the folders, in a folder. |
+| [`host.notebooks.read(params, options?)`](#host-notebooks-read-params-options) | A notebook as nbformat JSON (from its open document when someone has it open), and each cell's source hash by cell id. |
+| [`host.notebooks.search(params, options?)`](#host-notebooks-search-params-options) | Cells that hold every word of `query`, in the notebooks this notebook may read: in sources, and in outputs too with `outputs: true`. |
+| [`host.notebooks.results(params, options?)`](#host-notebooks-results-params-options) | A notebook's named results. |
+| [`host.notebooks.run(params, options?)`](#host-notebooks-run-params-options) | Run a notebook with parameters and return its results. |
+| [`host.self.add(params?, options?)`](#host-self-add-params-options) | Add a cell to this notebook. |
+| [`host.self.edit(params?, options?)`](#host-self-edit-params-options) | Change a cell's source, given the hash of the source it replaces. |
+| [`host.self.delete(params?, options?)`](#host-self-delete-params-options) | Delete a cell, given its source's hash. |
 | [`prompt(message?, defaultValue?, options?)`](#prompt-message-defaultvalue-options) | Ask for a line of input in the notebook: the frontend shows an input box under the cell, and the cell waits for the answer. |
 | [`confirm(message?)`](#confirm-message) | Ask a yes/no question in the notebook. |
 
@@ -391,13 +399,16 @@ server opens a comm to the kernel when it starts; this resolves to
 Each call returns a promise and takes `{ signal }`, by default
 `jupyter.signal`, so an interrupt cancels it. A failed call rejects
 with a `HostError` whose `code` says why: `denied` for a notebook or
-method this notebook isn't granted.
+method this notebook isn't granted. Branch on `code`: `HostError`
+isn't a global, so `instanceof` isn't available.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `options` | `HostOptions` | no | `timeout`: how long to wait for a server, in ms. |
 
 **Returns** `Promise<Host | null>`
+
+**Throws** `HostError`: `cancelled` when an interrupt ends the wait.
 
 ```ts
 const host = await jupyter.host();
@@ -467,8 +478,193 @@ notebook.cells.length;
 | `server` | `string` | The server's version. |
 | `notebook` | `string \| null` | This notebook's path under the server's root, or null when the kernel has none. |
 | `methods` | `readonly string[]` | The methods this notebook may call. |
-| `notebooks` | `{     /** `{ dir? }`: the notebooks and folders in `dir`, by default the root. */     readonly list: HostMethod<{ dir?: string }, NotebookEntry[]>;     /** `{ path }`: its nbformat JSON, and each cell's source hash by cell id. */     readonly read: HostMethod<{ path: string }, { notebook: any; hashes: { [cellId: string]: string } }>;     /**      * `{ query, dir?, outputs?, cell_type?, limit? }`: cells holding every      * word of `query`, in sources, and in outputs with `outputs: true`.      */     readonly search: HostMethod<       { query: string; dir?: string; outputs?: boolean; cell_type?: "code" \| "markdown" \| "raw"; limit?: number },       NotebookSearch     >;     /** `{ path }`: its named results. */     readonly results: HostMethod;     /** `{ path, params? }`: run it and return its results. */     readonly run: HostMethod;   }` | Other notebooks under the server's root, as far as this notebook's grant reaches. |
-| `self` | `{     readonly add: HostMethod;     readonly edit: HostMethod;     readonly delete: HostMethod;   }` | This notebook's own cells. |
+| `notebooks` | `HostNotebooks` | Other notebooks under the server's root, as far as this notebook's grant reaches. |
+| `self` | `HostSelf` | This notebook's own cells. Not on a server yet: they reject `unavailable`. |
+
+## `host.notebooks`
+
+`host.notebooks`: other notebooks under the server's root.
+
+### `host.notebooks.list(params?, options?)`
+
+```ts
+list(params?: { dir?: string }, options?: HostCallOptions): Promise<NotebookEntry[]>;
+```
+
+The notebooks this notebook may read, and the folders, in a folder.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `{ dir?: string }` | no | `dir`: the folder, relative to the root. Default the root. |
+| `options` | `HostCallOptions` | no | `signal` cancels the call. |
+
+**Returns** `Promise<NotebookEntry[]>`: One entry per notebook or folder.
+
+**Throws** `HostError`: `denied` when the grant doesn't reach `dir`.
+
+```ts
+const host = await jupyter.host();
+const entries = await host!.notebooks.list({ dir: "journal" });
+entries.filter((e) => e.type === "notebook").map((e) => e.title ?? e.path);
+```
+
+### `host.notebooks.read(params, options?)`
+
+```ts
+read(params: { path: string }, options?: HostCallOptions): Promise<{ notebook: any; hashes: { [cellId: string]: string } }>;
+```
+
+A notebook as nbformat JSON (from its open document when someone has
+it open), and each cell's source hash by cell id.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `{ path: string }` | yes | `path`: the notebook, relative to the root. |
+| `options` | `HostCallOptions` | no | `signal` cancels the call. |
+
+**Returns** `Promise<{ notebook: any; hashes: { [cellId: string]: string } }>`: The notebook and its hashes.
+
+**Throws** `HostError`: `denied` when the grant doesn't reach `path`.
+
+```ts
+const host = await jupyter.host();
+const { notebook } = await host!.notebooks.read({ path: "journal/a.ipynb" });
+notebook.cells.length;
+```
+
+### `host.notebooks.search(params, options?)`
+
+```ts
+search(
+  params: { query: string; dir?: string; outputs?: boolean; cell_type?: "code" | "markdown" | "raw"; limit?: number },
+  options?: HostCallOptions,
+): Promise<NotebookSearch>;
+```
+
+Cells that hold every word of `query`, in the notebooks this notebook
+may read: in sources, and in outputs too with `outputs: true`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `{ query: string; dir?: string; outputs?: boolean; cell_type?: "code" \| "markdown" \| "raw"; limit?: number }` | yes | `query`, and optionally `dir`, `outputs`, `cell_type` (`code`, `markdown` or `raw`) and `limit` (default 20, at most 200). |
+| `options` | `HostCallOptions` | no | `signal` cancels the call. |
+
+**Returns** `Promise<NotebookSearch>`: The matches, how many there are in all, and whether `limit` cut them.
+
+```ts
+const host = await jupyter.host();
+const { hits } = await host!.notebooks.search({ query: "weekday drop", dir: "journal" });
+hits.map((h) => `${h.path}: ${h.excerpt}`);
+```
+
+### `host.notebooks.results(params, options?)`
+
+```ts
+results(params: { path: string }, options?: HostCallOptions): Promise<any>;
+```
+
+A notebook's named results. Not on a server yet: rejects `unavailable`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `{ path: string }` | yes | `path`: the notebook. |
+| `options` | `HostCallOptions` | no | `signal` cancels the call. |
+
+**Returns** `Promise<any>`
+
+```ts
+const host = await jupyter.host();
+const results = await host!.notebooks.results({ path: "journal/fremont.ipynb" });
+```
+
+### `host.notebooks.run(params, options?)`
+
+```ts
+run(params: { path: string; params?: HostParams }, options?: HostCallOptions): Promise<any>;
+```
+
+Run a notebook with parameters and return its results. Not on a
+server yet: rejects `unavailable`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `{ path: string; params?: HostParams }` | yes | `path`: the notebook; `params`: its parameters. |
+| `options` | `HostCallOptions` | no | `signal` cancels the run. |
+
+**Returns** `Promise<any>`
+
+```ts
+const host = await jupyter.host();
+const run = await host!.notebooks.run({ path: "journal/fremont.ipynb", params: { counter: "2nd Ave" } });
+```
+
+## `host.self`
+
+`host.self`: this notebook's own cells. Not on a server yet: each rejects `unavailable`.
+
+### `host.self.add(params?, options?)`
+
+```ts
+add(params?: HostParams, options?: HostCallOptions): Promise<any>;
+```
+
+Add a cell to this notebook.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `HostParams` | no | The cell, as the host API's design note describes. |
+| `options` | `HostCallOptions` | no | `signal` cancels the call. |
+
+**Returns** `Promise<any>`
+
+```ts
+const host = await jupyter.host();
+await host!.self.add({ cell_type: "markdown", source: "## Index" });
+```
+
+### `host.self.edit(params?, options?)`
+
+```ts
+edit(params?: HostParams, options?: HostCallOptions): Promise<any>;
+```
+
+Change a cell's source, given the hash of the source it replaces.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `HostParams` | no | The cell id, its new source and the old source's hash. |
+| `options` | `HostCallOptions` | no | `signal` cancels the call. |
+
+**Returns** `Promise<any>`
+
+```ts
+const host = await jupyter.host();
+const { notebook, hashes } = await host!.notebooks.read({ path: host!.notebook! });
+const id = notebook.cells[0].id;
+await host!.self.edit({ id, source: "# New title", source_hash: hashes[id] });
+```
+
+### `host.self.delete(params?, options?)`
+
+```ts
+delete(params?: HostParams, options?: HostCallOptions): Promise<any>;
+```
+
+Delete a cell, given its source's hash.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `params` | `HostParams` | no | The cell id and its source's hash. |
+| `options` | `HostCallOptions` | no | `signal` cancels the call. |
+
+**Returns** `Promise<any>`
+
+```ts
+const host = await jupyter.host();
+const { notebook, hashes } = await host!.notebooks.read({ path: host!.notebook! });
+const id = notebook.cells.at(-1).id;
+await host!.self.delete({ id, source_hash: hashes[id] });
+```
 
 ## Globals
 
@@ -542,7 +738,7 @@ Options for `jupyter.host()`.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `timeout` | `number` | no | How long to wait for a server that hasn't opened the comm, in ms. Default 1000. |
+| `timeout` | `number` | no | How long to wait for a server that hasn't opened the comm, in ms. Default 1000. Once a wait goes unanswered, later calls answer `null` at once. |
 
 ### `HostCallOptions`
 

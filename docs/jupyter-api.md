@@ -584,16 +584,23 @@ if (host) {
 - The kernel holds no token. The server opens a comm to the kernel
   (target `ganymede.host.v1`) when it starts, and answers each call on a
   kernel subshell, so a cell that awaits a call gets its reply.
-- What a notebook may read is granted per notebook on the server, in its
-  config's `[host]` table; a notebook always reads itself.
-  `host.methods` lists the methods this notebook may call, and
-  `host.has(method)` checks one. A call outside the grant rejects with
-  a `HostError` whose `code` is `denied`.
+- What a notebook may read is set on the server, in its config's
+  `[host]` table; a notebook always reads itself. `host.methods` lists
+  the methods this notebook may call, and `host.has(method)` checks one.
+  A call outside what is allowed rejects with a `HostError` whose `code`
+  is `denied`. Branch on `err.code`: `HostError` isn't a global, so
+  `instanceof` isn't available in a cell.
 - Every call takes `{ signal }`, by default `jupyter.signal`, so an
   interrupt cancels it (`code` `cancelled`). Other codes are
   `unavailable` (no such method on this server), `failed`, `timeout` and
   `disconnected` (the comm closed, such as on a server restart).
-- `notebooks.list`, `notebooks.read` and `notebooks.search` work today.
+- With no server, the first `jupyter.host()` waits up to its `timeout`
+  (1 s by default) and resolves `null`; later calls answer `null` at
+  once. An interrupt ends the wait.
+- The server side is new in Ganymede
+  ([#654](https://github.com/tlockney/ganymede/pull/654)) and not yet
+  in a release. It answers `notebooks.list`, `notebooks.read` and
+  `notebooks.search`.
   `notebooks.results`, `notebooks.run` and `self.*` (edit this notebook's
   cells) are in the [design](https://github.com/tlockney/ganymede/blob/main/docs/host-api.md)
   and answer `unavailable` until the server has them.

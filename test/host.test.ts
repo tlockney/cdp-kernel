@@ -13,6 +13,8 @@ function harness(signal?: () => AbortSignal | undefined) {
   let next = 0;
   const comms = createComms(
     (msgType, content) => {
+      // As on the wire: content that isn't JSON throws.
+      JSON.stringify(content);
       sent.push({ msgType, content: content as Record<string, any> });
     },
     () => `k-${++next}`,
@@ -166,6 +168,70 @@ test("an open without a hello waits for one", async () => {
   const pending = client.host({ timeout: 5000 });
   await reply({ hello: HELLO });
   assert.equal((await pending)?.notebook, "journal/a.ipynb");
+});
+
+test("any abort reason but a timeout cancels", async () => {
+  const { client, open } = harness();
+  await open();
+  const host = (await client.host())!;
+  for (const reason of [new Error("stop"), "stop", undefined]) {
+    const controller = new AbortController();
+    const call = host.call("notebooks.read", {}, { signal: controller.signal });
+    controller.abort(reason);
+    await assert.rejects(call, { name: "HostError", code: "cancelled" });
+  }
+});
+
+test("params that can't be sent reject failed and leave nothing pending", async () => {
+  const { client, open, calls } = harness();
+  await open();
+  const host = (await client.host())!;
+  const controller = new AbortController();
+  const odd = host.call("notebooks.search", { limit: 10n }, { signal: controller.signal });
+  await assert.rejects(odd, { name: "HostError", code: "failed" });
+  // Its abort listener is gone: no cancel for a call the server never got.
+  controller.abort();
+  assert.deepEqual(calls(), []);
+});
+
+test("an interrupt ends the wait for a server", async () => {
+  const controller = new AbortController();
+  const { client } = harness(() => controller.signal);
+  const pending = client.host({ timeout: 200 });
+  controller.abort(new DOMException("Execution interrupted", "AbortError"));
+  await assert.rejects(pending, { name: "HostError", code: "cancelled" });
+  await assert.rejects(client.host(), { code: "cancelled" });
+});
+
+test("no server is remembered until one opens the comm", async () => {
+  const { client, sent, open } = harness();
+  assert.equal(await client.host({ timeout: 10 }), null);
+  const opens = sent.filter((m) => m.msgType === "comm_open").length;
+  const started = Date.now();
+  assert.equal(await client.host({ timeout: 5000 }), null);
+  assert.ok(Date.now() - started < 1000, "answered at once");
+  assert.equal(sent.filter((m) => m.msgType === "comm_open").length, opens, "no new open");
+  await open();
+  assert.equal((await client.host())?.notebook, "journal/a.ipynb");
+});
+
+test("each caller waits its own timeout", async () => {
+  const { client, sent, reply } = harness();
+  const long = client.host({ timeout: 5000 });
+  const started = Date.now();
+  assert.equal(await client.host({ timeout: 10 }), null);
+  assert.ok(Date.now() - started < 1000);
+  // The longer wait still holds the comm open, and gets the hello.
+  assert.ok(!sent.some((m) => m.msgType === "comm_close"));
+  await reply({ hello: HELLO }, "k-1");
+  assert.equal((await long)?.notebook, "journal/a.ipynb");
+});
+
+test("a server's comm without a hello is not closed on timeout", async () => {
+  const { client, open, sent } = harness();
+  await open("srv", {});
+  assert.equal(await client.host({ timeout: 10 }), null);
+  assert.ok(!sent.some((m) => m.msgType === "comm_close"));
 });
 
 test("a Node target registers the host target at start", async (t) => {
