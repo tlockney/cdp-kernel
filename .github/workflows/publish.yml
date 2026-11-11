@@ -32,9 +32,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           fail() { echo "::error::$1"; exit 1; }
-          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq .sha)
-          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
-            --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")][0] | "\(.number) \(.head.sha)"')
+          sha=$GITHUB_SHA
+          # GitHub links a merge commit to its pull request a little after
+          # the merge, and tag-release starts this run at once: retry.
+          for attempt in 1 2 3 4 5 6; do
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")][0] | "\(.number) \(.head.sha)"')
+            [[ -n "$pr" && "$pr" != "null null" ]] && break
+            sleep 10
+          done
           [ -n "$pr" ] && [ "$pr" != "null null" ] || fail "${sha::12} is not the merge of a pull request into main; publish from a release PR's merge"
           number=${pr% *} head=${pr#* }
           # The newest completed run: a re-run still going after the merge
