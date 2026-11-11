@@ -161,7 +161,7 @@ compare = notebook([
     ),
     md(
         "The results are data the other notebook wrote, so this one treats them\n"
-        "as values, never as code or HTML to render.\n"
+        "as values, never as code to run.\n"
         "\n"
         "## Compare"
     ),
