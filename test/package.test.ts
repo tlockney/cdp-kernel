@@ -25,6 +25,20 @@ test("VERSION matches package.json and deno.jsonc", () => {
   assert.equal(m?.[1], VERSION);
 });
 
+test("deno.jsonc's npm: imports use package.json's ranges", () => {
+  // Dependabot bumps package.json only; a deno.jsonc range left behind
+  // fails `deno publish` (#457).
+  const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as Record<string, Record<string, string>>;
+  const ranges = { ...pkg.dependencies, ...pkg.optionalDependencies };
+  const deno = readFileSync(new URL("deno.jsonc", root), "utf8");
+  const imports = [...deno.matchAll(/"([^"]+)":\s*"npm:((?:@[^/"]+\/)?[^@"]+)@([^"]+)"/g)];
+  assert.ok(imports.length > 0, "no npm: imports found in deno.jsonc");
+  for (const [, key, name, range] of imports) {
+    assert.equal(key, name);
+    assert.equal(range, ranges[name], `deno.jsonc has ${name}@${range}; package.json has ${ranges[name]}`);
+  }
+});
+
 test("the landing page shows VERSION and package.json's Node floor", () => {
   // site/index.html is plain HTML, so nothing fills these in (#350).
   const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { engines: { node: string } };
