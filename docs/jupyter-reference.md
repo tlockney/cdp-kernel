@@ -21,6 +21,8 @@ reference](widgets-reference.md).
 | [`jupyter.comm`](#jupyter-comm) | Jupyter comms: message channels to the frontend outside cell execution. |
 | [`jupyter.widget(options)`](#jupyter-widget-options) | Create an anywidget-compatible widget model. |
 | [`jupyter.signal`](#jupyter-signal) | An `AbortSignal` that an interrupt aborts, so code waiting on something only it can end can stop and clean up. |
+| [`jupyter.params`](#jupyter-params) | The parameters of this run: a frozen object, empty unless whoever started the kernel passed some, such as `ganymede execute -p counter="2nd Ave"`. |
+| [`jupyter.result(name, value)`](#jupyter-result-name-value) | Publish a value under a name, as an output that a run's caller reads by name instead of parsing outputs: `ganymede execute --results`, or another notebook. |
 | [`prompt(message?, defaultValue?, options?)`](#prompt-message-defaultvalue-options) | Ask for a line of input in the notebook: the frontend shows an input box under the cell, and the cell waits for the answer. |
 | [`confirm(message?)`](#confirm-message) | Ask a yes/no question in the notebook. |
 
@@ -320,6 +322,57 @@ const answer = await new Promise((resolve, reject) => {
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#stopping-on-interrupt-jupyter-signal)
+
+### `jupyter.params`
+
+```ts
+readonly params: { readonly [name: string]: JsonValue };
+```
+
+The parameters of this run: a frozen object, empty unless whoever
+started the kernel passed some, such as `ganymede execute -p
+counter="2nd Ave"`. They arrive as a JSON object in the kernel's
+`GANYMEDE_PARAMS` environment variable. Take defaults with
+destructuring, so the notebook also runs on its own.
+
+**Throws** `TypeError`: `GANYMEDE_PARAMS` is set but isn't a JSON object.
+
+**Availability**: Node, Deno, Bun, workerd and celld read the kernel's environment; the browser target takes `params` from its options.
+
+```ts
+const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string; days?: number };
+`${counter}, last ${days} days`;
+```
+
+Guide: [The `jupyter` namespace](jupyter-api.md#parameters-and-named-results)
+
+### `jupyter.result(name, value)`
+
+```ts
+result(name: string, value: unknown): void;
+```
+
+Publish a value under a name, as an output that a run's caller reads
+by name instead of parsing outputs: `ganymede execute --results`, or
+another notebook. The output has the MIME type
+`application/vnd.ganymede.result+json` holding `{ name, value }`, and
+a `text/plain` line `name = value` for frontends that don't know the
+type. When a name is published twice, readers take the last one.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | `string` | yes | The result's name. |
+| `value` | `unknown` | yes | Any value `JSON.stringify` accepts; it is stored as JSON, so a `Date` becomes its ISO string. |
+
+**Throws** `TypeError`: `name` is empty, or `value` isn't JSON (a function, `undefined`, a `BigInt` or a cycle).
+
+```ts
+const counts = [3120, 2890, 2410];
+jupyter.result("weekday_drop", (counts[2] - counts[0]) / counts[0]);
+jupyter.result("counts", counts);
+```
+
+Guide: [The `jupyter` namespace](jupyter-api.md#parameters-and-named-results)
 
 ## Globals
 

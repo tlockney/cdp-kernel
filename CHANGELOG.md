@@ -4,6 +4,16 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- Parameters and named results, so a notebook can run as a program:
+  `jupyter.params` holds the run's parameters, a JSON object passed in the
+  kernel's `GANYMEDE_PARAMS` environment variable (or the browser
+  target's `params` option), and `jupyter.result(name, value)` publishes a
+  value under a name as an `application/vnd.ganymede.result+json` output
+  that a caller such as `ganymede execute --results` reads by name
+  ([#456](https://github.com/tlockney/cdp-kernel/issues/456)).
+
 ## 0.9.0 (2026-11-09)
 
 - A cell can redeclare a name an earlier cell declared another way:
