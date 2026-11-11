@@ -9,7 +9,10 @@ interface Sent {
   buffers: Uint8Array[];
 }
 
-function setup(input: (prompt: string, password: boolean) => string | null = () => null): {
+function setup(
+  input: (prompt: string, password: boolean) => string | null = () => null,
+  params?: () => string | undefined,
+): {
   jupyter: Jupyter;
   sent: Sent[];
   prompts: { prompt: string; password: boolean }[];
@@ -26,6 +29,7 @@ function setup(input: (prompt: string, password: boolean) => string | null = () 
       prompts.push({ prompt, password });
       return input(prompt, password);
     },
+    params,
   };
   return { jupyter: createJupyter(host), sent, prompts };
 }
@@ -407,4 +411,65 @@ test("prompt returns the answer, the default for empty, and passes password", ()
   assert.deepEqual(c.prompts, [{ prompt: "Pw", password: true }]);
 
   assert.equal(setup().jupyter.prompt(), null);
+});
+
+test("jupyter.params is {} without parameters, and the parsed object with them (#456)", () => {
+  assert.deepEqual(setup().jupyter.namespace.params, {});
+  assert.deepEqual(setup(undefined, () => "").jupyter.namespace.params, {});
+  let reads = 0;
+  const { jupyter } = setup(undefined, () => (reads++, '{"counter":"2nd Ave","days":7,"opts":{"tags":["a"]}}'));
+  const params = jupyter.namespace.params as { counter: string; days: number; opts: { tags: string[] } };
+  assert.equal(params.counter, "2nd Ave");
+  assert.equal(params.days, 7);
+  assert.ok(Object.isFrozen(params) && Object.isFrozen(params.opts) && Object.isFrozen(params.opts.tags));
+  assert.equal(jupyter.namespace.params, params, "parsed once");
+  assert.equal(reads, 1);
+});
+
+test("jupyter.params throws a TypeError for a value that isn't a JSON object (#456)", () => {
+  for (const text of ["{nope", "[1,2]", "42", "null"]) {
+    const { jupyter } = setup(undefined, () => text);
+    assert.throws(() => jupyter.namespace.params, (err: Error) => err instanceof TypeError && /GANYMEDE_PARAMS/.test(err.message), text);
+  }
+});
+
+test("jupyter.result sends Ganymede's result type with a text/plain line (#456)", () => {
+  const { jupyter, sent } = setup();
+  jupyter.namespace.result("weekday_drop", -0.19);
+  jupyter.namespace.result("when", { at: new Date(0), list: [1, "two", null] });
+  assert.deepEqual(sent, [
+    {
+      msgType: "display_data",
+      content: {
+        data: { "application/vnd.ganymede.result+json": { name: "weekday_drop", value: -0.19 }, "text/plain": "weekday_drop = -0.19" },
+        metadata: {},
+        transient: {},
+      },
+      metadata: {},
+      buffers: [],
+    },
+    {
+      msgType: "display_data",
+      content: {
+        data: {
+          "application/vnd.ganymede.result+json": { name: "when", value: { at: "1970-01-01T00:00:00.000Z", list: [1, "two", null] } },
+          "text/plain": 'when = {"at":"1970-01-01T00:00:00.000Z","list":[1,"two",null]}',
+        },
+        metadata: {},
+        transient: {},
+      },
+      metadata: {},
+      buffers: [],
+    },
+  ]);
+});
+
+test("jupyter.result refuses an empty name and values that aren't JSON (#456)", () => {
+  const { jupyter, sent } = setup();
+  const cycle: { self?: unknown } = {};
+  cycle.self = cycle;
+  for (const [name, value] of [["", 1], ["f", () => 1], ["u", undefined], ["b", 1n], ["c", cycle]] as [string, unknown][]) {
+    assert.throws(() => jupyter.namespace.result(name, value), TypeError, name);
+  }
+  assert.deepEqual(sent, []);
 });

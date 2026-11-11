@@ -45,6 +45,8 @@ const kernel = startBrowserKernel({
   // A host page's own features (#384).
   preload: ["./broken.mjs", "./preload.mjs"],
   capabilities: { device: ["echo"] },
+  // jupyter.params (#456).
+  params: { counter: "2nd Ave" },
   host: async ({ method, params }, signal) => {
     if (method === "echo") return { echoed: params };
     if (method === "fail") throw Object.assign(new Error("nope"), { name: "DeviceError", code: "denied" });
@@ -152,6 +154,9 @@ test("cells run in a browser Worker, with types stripped and state kept", { skip
 
   r = await execute("x + 1");
   assert.equal(result(r), "3");
+
+  // The `params` option reaches the cell (#456).
+  assert.equal(result(await execute("jupyter.params.counter")), "'2nd Ave'");
   assert.match(String(of(r, "execute_reply")[0].execution_count), /^2$/);
 
   r = await execute(`console.log("hi", { a: [1, "b"] }); console.error("oops")`);

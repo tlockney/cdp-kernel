@@ -115,6 +115,10 @@ class Session:
         time.sleep(5)
 
 
+# What every kernel gets as jupyter.params (#456).
+PARAMS = {"counter": "2nd Ave", "days": 7}
+
+
 def text_of(outputs, kind="stream"):
     return "".join(c.get("text", "") for t, c in outputs if t == kind)
 
@@ -149,6 +153,13 @@ def checks(runtime, workdir, offline):
         # The TypeScript the kernel ships (#340).
         major = package["dependencies"]["typescript"].lstrip("^~").split(".")[0]
         assert info["language_info"]["version"].split(".")[0] == major, info["language_info"]
+
+    def params_and_result(s):
+        # main() sets GANYMEDE_PARAMS for every kernel (#456).
+        _, out = s.run('jupyter.result("got", jupyter.params);\njupyter.params.counter')
+        assert "2nd Ave" in result_of(out)["text/plain"], out
+        shown = [c["data"] for t, c in out if t == "display_data"]
+        assert shown[0]["application/vnd.ganymede.result+json"] == {"name": "got", "value": PARAMS}, out
 
     def stdout_stream(s):
         reply, out = s.run('console.log("asdf")')
@@ -1089,11 +1100,11 @@ def checks(runtime, workdir, offline):
     if runtime in ("workerd-project", "celld-project"):
         # The busy interrupt restarts workerd, so it goes last.
         return [project_notice_once, kernel_info, project_bindings, durable_object_stub_across_cells,
-                project_worker_fetch, session_carries_over, relative_ts_import,
+                project_worker_fetch, session_carries_over, relative_ts_import, params_and_result,
                 interrupt_await_keeps_state, interrupt_busy_restarts]
 
     tests = [
-        kernel_info, stdout_stream, execute_result, typescript, redeclare_const,
+        kernel_info, stdout_stream, execute_result, params_and_result, typescript, redeclare_const,
         top_level_await, object_literal, thrown_error, structured_traceback, syntax_error,
         display_ordering, display_symbol, markdown_template, update_display,
         png_bytes, node_builtin_import, relative_ts_import, import_meta,
@@ -1254,6 +1265,7 @@ def main():
     failures = 0
     with tempfile.TemporaryDirectory() as data_dir:
         os.environ["JUPYTER_DATA_DIR"] = data_dir
+        os.environ["GANYMEDE_PARAMS"] = json.dumps(PARAMS)
         for runtime in runtimes:
             base, compat, project = VARIANTS[runtime]
             subprocess.run(

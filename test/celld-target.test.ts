@@ -50,10 +50,10 @@ function scratch(t: Hooks): string {
 const META = { url: "file:///nb/$cdpk$repl.mjs", dirname: "/nb", filename: "/nb/$cdpk$repl.mjs" };
 
 test("celldConfig runs the pre-built driver, with the token and meta as vars", () => {
-  const config = celldConfig(null, { token: "t", meta: META });
+  const config = celldConfig(null, { token: "t", meta: META, params: '{"a":1}' });
   assert.equal(config.main, "driver.mjs");
   assert.equal(config.no_bundle, true);
-  assert.deepEqual(config.vars, { TOKEN: "t", META: JSON.stringify(META) });
+  assert.deepEqual(config.vars, { TOKEN: "t", META: JSON.stringify(META), CDPK_PARAMS: '{"a":1}' });
 });
 
 test("celldConfig keeps a project's bindings and drops what celld would apply to the driver", () => {
@@ -74,7 +74,7 @@ test("celldConfig keeps a project's bindings and drops what celld would apply to
   assert.equal(config.compatibility_date, "2026-01-02");
   assert.equal(config.name, "cdpk");
   assert.equal(config.main, "driver.mjs");
-  assert.deepEqual(config.vars, { GREETING: "hi", TOKEN: "t", META: JSON.stringify(META) });
+  assert.deepEqual(config.vars, { GREETING: "hi", TOKEN: "t", META: JSON.stringify(META), CDPK_PARAMS: "" });
   for (const key of ["assets", "triggers", "define"]) assert.equal(config[key], undefined, key);
   assert.ok(PROJECT_KEYS.includes("d1_databases") && PROJECT_KEYS.includes("workflows"));
 });

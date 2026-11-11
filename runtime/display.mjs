@@ -343,8 +343,20 @@ function isMediaBundle(obj) {
  *   readFile: (path: string) => Uint8Array,
  *   send: (msgType: string, content: object, metadata: object, buffers: Uint8Array[]) => void,
  *   input: (prompt: string, password: boolean) => string | null,
+ *   params?: () => string | undefined,
  * }} host
  */
+/** The MIME type of a named result (cdp-kernel#456): `{ name, value }`. */
+export const RESULT_MIME = "application/vnd.ganymede.result+json";
+
+function deepFreeze(value) {
+  if (typeof value === "object" && value !== null) {
+    for (const v of Object.values(value)) deepFreeze(v);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 export function createJupyter(host) {
   async function format(obj) {
     return await formatNow(obj);
@@ -439,6 +451,46 @@ export function createJupyter(host) {
     return answer === "" ? defaultValue : answer;
   }
 
+  // jupyter.params (cdp-kernel#456): the run's parameters, which the host
+  // (ganymede execute -p) passes as JSON in GANYMEDE_PARAMS. Parsed on first
+  // read, so a bad value fails the cell that reads it, not the kernel.
+  let params;
+  function readParams() {
+    if (params !== undefined) return params;
+    const text = host.params?.();
+    if (text === undefined || text === "") return (params = Object.freeze({}));
+    let value;
+    try {
+      value = JSON.parse(text);
+    } catch (err) {
+      throw new TypeError(`GANYMEDE_PARAMS is not JSON: ${err instanceof Error ? err.message : err}`);
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new TypeError("GANYMEDE_PARAMS must be a JSON object, such as {\"counter\": \"Fremont\"}");
+    }
+    return (params = deepFreeze(value));
+  }
+
+  // jupyter.result (cdp-kernel#456): a named value as an output of
+  // Ganymede's result type, which a run's caller reads without parsing
+  // outputs. JSON only, so every reader sees the same value.
+  function result(name, value) {
+    if (typeof name !== "string" || name === "") throw new TypeError("jupyter.result: name must be a non-empty string");
+    let text;
+    try {
+      text = JSON.stringify(value);
+    } catch (err) {
+      throw new TypeError(`jupyter.result: ${name} is not JSON: ${err instanceof Error ? err.message : err}`);
+    }
+    if (text === undefined) throw new TypeError(`jupyter.result: ${name} is not JSON (${typeof value})`);
+    const json = JSON.parse(text);
+    broadcast("display_data", {
+      data: { [RESULT_MIME]: { name, value: json }, "text/plain": `${name} = ${text}` },
+      metadata: {},
+      transient: {},
+    });
+  }
+
   const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
 
   // jupyter.signal (#418): aborted when the kernel is interrupted, so cell
@@ -484,6 +536,10 @@ export function createJupyter(host) {
       },
       broadcast,
       display,
+      get params() {
+        return readParams();
+      },
+      result,
       format,
       md: taggedTemplate("text/markdown"),
       html: taggedTemplate("text/html"),
