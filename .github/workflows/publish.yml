@@ -46,7 +46,7 @@ jobs:
           # The newest completed run: a re-run still going after the merge
           # doesn't count against the one that gated it.
           conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&per_page=20" \
-            --jq '[.workflow_runs[] | select(.status == "completed")][0].conclusion // "none"')
+            --jq '[.workflow_runs[] | select(.status == "completed")][0].conclusion // "no completed run"')
           [ "$conclusion" = success ] || fail "CI on #$number (${head::12}) is '$conclusion', not success"
           echo "${sha::12} is #$number, whose CI passed on ${head::12}"
 

@@ -8,7 +8,7 @@
 # docs); CHANGELOG.md can (test/package.test.ts reads it), and anything
 # not listed counts as code. A push to main diffs against the commit
 # main was at before it (BASE_SHA, github.event.before; HEAD^1 without
-# it) with the same rules (#433). Any other event (publish.yml's call),
+# it) with the same rules (#433). Any other event,
 # and a push whose base can't be found or diffed, runs everything.
 set -eu
 

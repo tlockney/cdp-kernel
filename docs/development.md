@@ -114,7 +114,9 @@ The `publish` workflow then:
    on every matrix cell, the e2e suite against the packed npm tarball and
    against a Deno host, `deno publish --dry-run`, and the JupyterLab
    widget test) passed. That tree was tested before it merged, so CI
-   doesn't run again here.
+   doesn't run again here. The check trusts the pull request's CI, which
+   skips the suite on a docs-only change, so the code it publishes was
+   tested in the pull requests that changed it.
 3. Once both checks pass, tags the commit (when started with a version),
    then publishes to JSR (`deno publish`) and to npm
    (`npm publish`), in two jobs that run in parallel.
