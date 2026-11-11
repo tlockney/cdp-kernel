@@ -6,6 +6,9 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- esbuild, which bundles npm imports for workerd and celld cells, is now
+  0.28 (was 0.25), on npm and JSR. It needs macOS 12 or later
+  ([#457](https://github.com/tlockney/cdp-kernel/issues/457)).
 - Parameters and named results, so a notebook can run as a program:
   `jupyter.params` holds the run's parameters, a JSON object passed in the
   kernel's `GANYMEDE_PARAMS` environment variable (or the browser
