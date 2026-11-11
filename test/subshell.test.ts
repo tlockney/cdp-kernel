@@ -230,3 +230,24 @@ for (const [name, { launch, skip }] of Object.entries(targets)) {
     }
   });
 }
+
+// A runtime that exits takes its comms with it (#461): the kernel closes
+// them, so a frontend (or a Ganymede server's host comm) doesn't keep a
+// comm no runtime answers, and the next runtime can open its own.
+test("comms are closed when the runtime exits", async (t) => {
+  const { channels, stop } = kernel((events) => Target.launch("node", events));
+  t.after(stop);
+  // Handled before the cell: the main shell takes messages in order.
+  channels.push("shell", "comm_open", {
+    comm_id: "host-1",
+    target_name: "ganymede.host.v1",
+    data: { protocol: 1, server: "0", notebook: "a.ipynb", methods: [] },
+  });
+  const run = channels.push("shell", "execute_request", { code: "process.exit(1)" });
+  await channels.replyOf("execute_reply", run);
+  for (let i = 0; i < 100; i++) {
+    if (channels.published.some((m) => m.header.msg_type === "comm_close" && m.content.comm_id === "host-1")) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.fail("no comm_close for the runtime's comm");
+});

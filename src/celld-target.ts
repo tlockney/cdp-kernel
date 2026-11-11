@@ -55,12 +55,14 @@ export const PROJECT_KEYS = [
  */
 export function celldConfig(
   project: CdpParams | null,
-  { token, meta }: { token: string; meta: { url: string; dirname: string; filename: string } },
+  { token, meta, params = "" }: { token: string; meta: { url: string; dirname: string; filename: string }; params?: string },
 ): CdpParams {
   const config: CdpParams = { name: "cdpk", main: "driver.mjs", no_bundle: true, compatibility_date: "2026-09-01" };
   for (const key of PROJECT_KEYS) if (project && project[key] !== undefined) config[key] = project[key];
   const vars = project && typeof project.vars === "object" && project.vars !== null ? project.vars : {};
-  config.vars = { ...vars, TOKEN: token, META: JSON.stringify(meta) };
+  // CDPK_PARAMS: jupyter.params (#456), the JSON text of GANYMEDE_PARAMS;
+  // prefixed so a project's own PARAMS is kept.
+  config.vars = { ...vars, TOKEN: token, META: JSON.stringify(meta), CDPK_PARAMS: params };
   return config;
 }
 
@@ -208,7 +210,7 @@ class CelldHost implements WorkerHost {
     const token = randomBytes(32).toString("hex");
     // 0600: the config carries this launch's token.
     writeFileSync(join(dir, "driver.mjs"), await bundleDriver(source, main, define));
-    writeFileSync(join(dir, "wrangler.jsonc"), JSON.stringify(celldConfig(project, { token, meta: cellMeta(cwd) }), null, 2), {
+    writeFileSync(join(dir, "wrangler.jsonc"), JSON.stringify(celldConfig(project, { token, meta: cellMeta(cwd), params: process.env.GANYMEDE_PARAMS }), null, 2), {
       mode: 0o600,
     });
 

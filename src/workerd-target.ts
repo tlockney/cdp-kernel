@@ -37,7 +37,7 @@ import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
 import { ensureInstalledAsync, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
 
 /** The driver Worker's modules; the first is its main module. */
-export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "widget.mjs", "evaluator.mjs", "introspect.mjs"];
+export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "host.mjs", "widget.mjs", "evaluator.mjs", "introspect.mjs"];
 
 /** See BunTarget: how long an interrupted cell has to show it isn't busy. */
 export const INTERRUPT_GRACE_MS = 500;
@@ -81,6 +81,7 @@ const driver :Workerd.Worker = (
     (name = "UNSAFE", unsafeEval = void),
     (name = "TOKEN", fromEnvironment = "CDPK_TOKEN"),
     (name = "META", fromEnvironment = "CDPK_META"),
+    (name = "CDPK_PARAMS", fromEnvironment = "CDPK_PARAMS"),
   ],
 );
 `;
@@ -356,7 +357,10 @@ export class RawWorkerd implements WorkerHost {
     for (const name of WORKER_MODULES) copyFileSync(join(source, name), join(dir, name));
     writeFileSync(join(dir, "config.capnp"), workerdConfig({ socket, compatibilityDate }));
     const token = randomBytes(32).toString("hex");
-    const env: Record<string, string | undefined> = { ...process.env, CDPK_TOKEN: token, CDPK_META: JSON.stringify(cellMeta(cwd)) };
+    const env: Record<string, string | undefined> = { ...process.env, CDPK_TOKEN: token, CDPK_META: JSON.stringify(cellMeta(cwd)),
+      // jupyter.params (#456); always set, so the binding exists.
+      CDPK_PARAMS: process.env.GANYMEDE_PARAMS ?? "",
+    };
     // --experimental: the UnsafeEval binding.
     const child = spawn(workerd, ["serve", "config.capnp", "--experimental"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });
     child.once("exit", () => rmSync(dir, { recursive: true, force: true }));

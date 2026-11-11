@@ -42,9 +42,11 @@ sends on it is handled inside the request's I/O context, so:
 - Anything a cell creates carries over to the next cell: globals, a
   Durable Object stub, an open stream, a timer that's still pending.
 
-The driver's other bindings, `TOKEN` and `META` (the notebook's
-`import.meta` values) and on workerd `UNSAFE`, are removed from what cells
-see. Everything else becomes the global `env`, since a cell has no
+The driver's other bindings, `TOKEN`, `META` (the notebook's
+`import.meta` values), `CDPK_PARAMS` (the run's
+[parameters](jupyter-api.md#parameters-and-named-results)) and on workerd
+`UNSAFE`, are removed from what cells see, so a project can't use those
+names for its own bindings. Everything else becomes the global `env`, since a cell has no
 `fetch(request, env)` of its own to receive it.
 
 ## The session
@@ -141,8 +143,8 @@ doesn't know which one it has.
 3. Creates a temporary directory with `mkdtemp`, which makes it readable
    only by the current user, and copies the driver's modules into it.
 4. Writes a `config.capnp` that defines the driver Worker with these
-   bindings: `UNSAFE` (`unsafeEval`), `TOKEN` and `META` (both read from
-   environment variables), and outbound network access. It serves the
+   bindings: `UNSAFE` (`unsafeEval`), `TOKEN`, `META` and `CDPK_PARAMS`
+   (all read from environment variables), and outbound network access. It serves the
    driver on `unix:<dir>/sock`.
 5. Runs `workerd serve config.capnp --experimental` (the `unsafeEval`
    binding is experimental) with a random 32-byte `CDPK_TOKEN`.
