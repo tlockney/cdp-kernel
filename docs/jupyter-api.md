@@ -597,7 +597,7 @@ if (host) {
 - With no server, the first `jupyter.host()` waits up to its `timeout`
   (1 s by default) and resolves `null`; later calls answer `null` at
   once. An interrupt ends the wait.
-- Ganymede 0.8.0 or later answers every call: `notebooks.list`,
+- Ganymede 0.8.0 or later answers every call its grant allows: `notebooks.list`,
   `read`, `search` and `results`; `notebooks.run`, which runs a notebook
   with parameters in a fresh kernel and returns its named results, when
   the server has granted this notebook that one; and `self.add`, `edit`
