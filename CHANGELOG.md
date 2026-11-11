@@ -4,7 +4,7 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.10.0 (2026-11-11)
 
 - esbuild, which bundles npm imports for workerd and celld cells, is now
   0.28 (was 0.25), on npm and JSR. It needs macOS 12 or later
