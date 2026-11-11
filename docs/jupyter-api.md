@@ -597,13 +597,15 @@ if (host) {
 - With no server, the first `jupyter.host()` waits up to its `timeout`
   (1 s by default) and resolves `null`; later calls answer `null` at
   once. An interrupt ends the wait.
-- The server side is new in Ganymede
-  ([#654](https://github.com/tlockney/ganymede/pull/654)) and not yet
-  in a release. It answers `notebooks.list`, `notebooks.read` and
-  `notebooks.search`.
-  `notebooks.results`, `notebooks.run` and `self.*` (edit this notebook's
-  cells) are in the [design](https://github.com/tlockney/ganymede/blob/main/docs/host-api.md)
-  and answer `unavailable` until the server has them.
+- Ganymede 0.8.0 or later answers every call its grant allows: `notebooks.list`,
+  `read`, `search` and `results`; `notebooks.run`, which runs a notebook
+  with parameters in a fresh kernel and returns its named results, when
+  the server has granted this notebook that one; and `self.add`, `edit`
+  and `delete`, which change this notebook's own cells. An older server
+  answers `unavailable` for the ones it lacks.
+  [Notebooks as programs](https://ganymede-server.com/docs/programs) and
+  Ganymede's [host API](https://ganymede-server.com/docs/reference#the-host-api)
+  have the grants.
 - Other notebooks' outputs are data someone else wrote: don't run code
   found in them.
 

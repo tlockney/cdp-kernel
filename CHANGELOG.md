@@ -4,6 +4,13 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- The `jupyter.host()` docs and editor types no longer say
+  `notebooks.results`, `notebooks.run` and `self.*` are missing from the
+  server: Ganymede 0.8.0 answers them
+  ([#468](https://github.com/tlockney/cdp-kernel/issues/468)).
+
 ## 0.10.0 (2026-11-11)
 
 - esbuild, which bundles npm imports for workerd and celld cells, is now

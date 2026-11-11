@@ -30,7 +30,7 @@ reference](widgets-reference.md).
 | [`host.notebooks.read(params, options?)`](#host-notebooks-read-params-options) | A notebook as nbformat JSON (from its open document when someone has it open), and each cell's source hash by cell id. |
 | [`host.notebooks.search(params, options?)`](#host-notebooks-search-params-options) | Cells that hold every word of `query`, in the notebooks this notebook may read: in sources, and in outputs too with `outputs: true`. |
 | [`host.notebooks.results(params, options?)`](#host-notebooks-results-params-options) | A notebook's named results. |
-| [`host.notebooks.run(params, options?)`](#host-notebooks-run-params-options) | Run a notebook with parameters and return its results. |
+| [`host.notebooks.run(params, options?)`](#host-notebooks-run-params-options) | Run a notebook with parameters and return its results, in a fresh kernel, when this notebook's grant names it. |
 | [`host.self.add(params?, options?)`](#host-self-add-params-options) | Add a cell to this notebook. |
 | [`host.self.edit(params?, options?)`](#host-self-edit-params-options) | Change a cell's source, given the hash of the source it replaces. |
 | [`host.self.delete(params?, options?)`](#host-self-delete-params-options) | Delete a cell, given its source's hash. |
@@ -479,7 +479,7 @@ notebook.cells.length;
 | `notebook` | `string \| null` | This notebook's path under the server's root, or null when the kernel has none. |
 | `methods` | `readonly string[]` | The methods this notebook may call. |
 | `notebooks` | `HostNotebooks` | Other notebooks under the server's root, as far as this notebook's grant reaches. |
-| `self` | `HostSelf` | This notebook's own cells. Not on a server yet: they reject `unavailable`. |
+| `self` | `HostSelf` | This notebook's own cells. Ganymede 0.8.0 or later; an older server rejects `unavailable`. |
 
 ## `host.notebooks`
 
@@ -563,7 +563,8 @@ hits.map((h) => `${h.path}: ${h.excerpt}`);
 results(params: { path: string }, options?: HostCallOptions): Promise<any>;
 ```
 
-A notebook's named results. Not on a server yet: rejects `unavailable`.
+A notebook's named results. Ganymede 0.8.0 or later; an older server
+rejects `unavailable`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -583,8 +584,9 @@ const results = await host!.notebooks.results({ path: "journal/fremont.ipynb" })
 run(params: { path: string; params?: HostParams }, options?: HostCallOptions): Promise<any>;
 ```
 
-Run a notebook with parameters and return its results. Not on a
-server yet: rejects `unavailable`.
+Run a notebook with parameters and return its results, in a fresh
+kernel, when this notebook's grant names it. Ganymede 0.8.0 or later;
+an older server rejects `unavailable`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -600,7 +602,7 @@ const run = await host!.notebooks.run({ path: "journal/fremont.ipynb", params: {
 
 ## `host.self`
 
-`host.self`: this notebook's own cells. Not on a server yet: each rejects `unavailable`.
+`host.self`: this notebook's own cells. Ganymede 0.8.0 or later; an older server rejects each with `unavailable`.
 
 ### `host.self.add(params?, options?)`
 

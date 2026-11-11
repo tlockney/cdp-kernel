@@ -103,7 +103,7 @@ export interface Host {
   call(method: string, params?: HostParams, options?: HostCallOptions): Promise<any>;
   /** Other notebooks under the server's root, as far as this notebook's grant reaches. */
   readonly notebooks: HostNotebooks;
-  /** This notebook's own cells. Not on a server yet: they reject `unavailable`. */
+  /** This notebook's own cells. Ganymede 0.8.0 or later; an older server rejects `unavailable`. */
   readonly self: HostSelf;
 }
 
@@ -160,7 +160,8 @@ export interface HostNotebooks {
     options?: HostCallOptions,
   ): Promise<NotebookSearch>;
   /**
-   * A notebook's named results. Not on a server yet: rejects `unavailable`.
+   * A notebook's named results. Ganymede 0.8.0 or later; an older server
+   * rejects `unavailable`.
    *
    * @param params `path`: the notebook.
    * @param options `signal` cancels the call.
@@ -172,8 +173,9 @@ export interface HostNotebooks {
    */
   results(params: { path: string }, options?: HostCallOptions): Promise<any>;
   /**
-   * Run a notebook with parameters and return its results. Not on a
-   * server yet: rejects `unavailable`.
+   * Run a notebook with parameters and return its results, in a fresh
+   * kernel, when this notebook's grant names it. Ganymede 0.8.0 or later;
+   * an older server rejects `unavailable`.
    *
    * @param params `path`: the notebook; `params`: its parameters.
    * @param options `signal` cancels the run.
@@ -186,7 +188,7 @@ export interface HostNotebooks {
   run(params: { path: string; params?: HostParams }, options?: HostCallOptions): Promise<any>;
 }
 
-/** `host.self`: this notebook's own cells. Not on a server yet: each rejects `unavailable`. */
+/** `host.self`: this notebook's own cells. Ganymede 0.8.0 or later; an older server rejects each with `unavailable`. */
 export interface HostSelf {
   /**
    * Add a cell to this notebook.
