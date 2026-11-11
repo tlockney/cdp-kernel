@@ -198,14 +198,18 @@ docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel</code></pre>
 <section id="ganymede">
   <div class="wrap two">
     <div>
-      <h2>Notebooks without Python</h2>
-      <p>A Jupyter kernel still needs a Jupyter server, and the usual one is Python's
-        <code>jupyter lab</code>. If you write TypeScript, that means installing a Python
-        toolchain just to open a notebook.</p>
-      <p><a href="https://ganymede-server.com">Ganymede</a> is a Jupyter server written in Rust.
-        One binary serves JupyterLab's frontend and VS Code, and replaces
-        <code>jupyter lab</code>, <code>jupyter kernelspec</code> and <code>jupyter execute</code>.
-        With it, a notebook setup for cdp-kernel is Node or Deno plus Ganymede, nothing else.</p>
+      <h2>With Ganymede</h2>
+      <p><a href="https://ganymede-server.com">Ganymede</a> is a Jupyter server written in Rust,
+        with cdp-kernel as its first-class kernel. With it, a TypeScript notebook can also:</p>
+      <ul>
+        <li>run in the Mac, iPad and iPhone apps, on the device.
+          <a href="https://ganymede-server.com/docs/app">Apps</a></li>
+        <li>run like a program: <code>jupyter.params</code> in, <code>jupyter.result()</code> out,
+          from the command line, a link, a Shortcut or another notebook.
+          <a href="https://ganymede-server.com/docs/programs">Notebooks as programs</a></li>
+        <li>be the record an agent keeps as it works, open live in JupyterLab beside you.
+          <a href="https://ganymede-server.com/docs/mcp">Agents over MCP</a></li>
+      </ul>
       <p><a href="https://ganymede-server.com/docs/install">Install Ganymede</a> ·
         <a href="docs/getting-started">Getting started</a></p>
     </div>
