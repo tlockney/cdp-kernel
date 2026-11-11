@@ -27,3 +27,8 @@ updates:
       # every night.
       - dependency-name: workerd
       - dependency-name: wrangler
+      # TypeScript 7 is the native compiler: its package has no compiler
+      # API (ts.createLanguageService and the rest), which completion and
+      # inspection are built on (#458). Moving to it is a port, not a bump.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
