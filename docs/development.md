@@ -109,10 +109,12 @@ The `publish` workflow then:
    that `RELEASE_DATE` is today or yesterday. A JSR kernelspec's dependency
    cutoff comes from that date, so a stale one would block the release it
    ships in.
-2. Runs the whole CI workflow (`ci.yml`): the type check, unit tests and
-   e2e suite on every matrix cell, the e2e suite against the packed npm
-   tarball and against a Deno host, `deno publish --dry-run`, and the
-   JupyterLab widget test (`lab`).
+2. Checks that the commit is the merge of a pull request into `main`
+   whose last CI run (`ci.yml`: the type check, unit tests and e2e suite
+   on every matrix cell, the e2e suite against the packed npm tarball and
+   against a Deno host, `deno publish --dry-run`, and the JupyterLab
+   widget test) passed. That tree was tested before it merged, so CI
+   doesn't run again here.
 3. Once both checks pass, tags the commit (when started with a version),
    then publishes to JSR (`deno publish`) and to npm
    (`npm publish`), in two jobs that run in parallel.

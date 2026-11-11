@@ -16,8 +16,30 @@ on:
 permissions:
   contents: read
 jobs:
+  # The commit came through a pull request into main whose last CI run
+  # passed (#466). Branch protection requires that already; this says so
+  # in seconds instead of running all of CI again on the same tree.
   verify:
-    uses: ./.github/workflows/ci.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: the commit's pull request passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq .sha)
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$sha"'")][0] | "\(.number) \(.head.sha)"')
+          [ -n "$pr" ] && [ "$pr" != "null null" ] || fail "${sha::12} is not the merge of a pull request into main; publish from a release PR's merge"
+          number=${pr% *} head=${pr#* }
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "none"')
+          [ "$conclusion" = success ] || fail "CI on #$number (${head::12}) is '$conclusion', not success"
+          echo "${sha::12} is #$number, whose CI passed on ${head::12}"
 
   version:
     runs-on: ubuntu-latest
@@ -57,7 +79,7 @@ jobs:
           grep -qxF "## $actual ($released)" CHANGELOG.md || fail "CHANGELOG.md has no '## $actual ($released)' heading"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  # Run with a version, tags the commit CI just passed on. A tag pushed with
+  # Run with a version, tags the commit whose PR passed CI. A tag pushed with
   # the workflow's token starts no other run. On a tag, there is nothing to do.
   tag:
     needs: [verify, version]
