@@ -1,4 +1,4 @@
-name: latest runtimes
+name: Latest runtimes
 # The kernel relies on runtime behaviour found by probing rather than
 # documented (#15), and ci.yml tests pinned or range-resolved versions. This
 # runs the unit tests and the e2e suite against the newest release of every
@@ -35,6 +35,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # setup-node takes nightlies by major ("27-nightly"): the newest one's.
       - name: Node nightly major
         id: nightly

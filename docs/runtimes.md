@@ -167,7 +167,7 @@ workerd 2026-10-15 and celld 0.6.2.
   next cell's reply. Bun, workerd and celld restart the target to stop it
   (and lose the notebook's state); Node and Deno stop it in place.
 
-Your numbers will differ with the machine. The `bench` workflow runs the
+Your numbers will differ with the machine. The `Bench` workflow runs the
 same script on GitHub's Ubuntu runners on every push to `main` and weekly,
 and puts its table in the run's summary. Runner timings are noisy, so
 compare them as a trend.

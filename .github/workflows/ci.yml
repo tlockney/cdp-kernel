@@ -1,10 +1,15 @@
-name: ci
+name: CI
 on:
   push:
     branches: [main]
   pull_request:
 permissions:
   contents: read
+# A new push to a pull request cancels its older run, which would otherwise
+# hold a macOS runner the other Ganymede repos share; runs on main finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   # Whether a pull request needs the jobs below: scripts/ci-changes.sh says
   # no when it changes only docs, the site or Markdown (#431). The jobs
@@ -21,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The merge commit and its first parent, the base.
           fetch-depth: 2
       - id: changes
@@ -69,10 +75,13 @@ jobs:
         run: echo "Only docs, the site or Markdown changed, so nothing to test (#431)."
       - if: needs.changes.outputs.code != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - if: needs.changes.outputs.code != 'false'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
       - if: needs.changes.outputs.code != 'false'
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
@@ -127,6 +136,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: docker build -f container/Dockerfile --build-arg CDPK_SOURCE=checkout -t cdp-kernel .
       - run: docker run --rm -v "$PWD/container:/test:ro" cdp-kernel python /test/smoke-test.py
         timeout-minutes: 10
@@ -141,12 +152,21 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
+          cache: npm
       - run: npm ci
       # Playwright 1.56's install hangs after the download on Node 26.
       - run: npm install --no-save --no-audit --no-fund playwright@1.64.1
+      # The browsers, by Playwright version; --with-deps still installs
+      # their system libraries, and skips downloads the cache restored.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-1.64.1-chromium-webkit-firefox
       - run: npx playwright install --with-deps chromium webkit firefox
         timeout-minutes: 10
       - run: CDPK_BROWSER=chromium node --test test/browser.test.ts
@@ -167,9 +187,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
+          cache: npm
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: v2.x

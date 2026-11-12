@@ -1,4 +1,4 @@
-name: soak
+name: Soak
 # One long kernel session per runtime: thousands of mixed requests, large
 # and binary outputs, interrupts, and a memory check (#260). Too slow and
 # too broad for every PR, so it runs weekly, by hand, and on PRs that
@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
@@ -40,3 +42,27 @@ jobs:
         timeout-minutes: 30
         env:
           CDPK_SOAK_CELLS: ${{ inputs.cells || '2000' }}
+
+  # A scheduled failure opens an issue, or comments on the open one, as
+  # latest.yml's report job does: nobody watches a weekly run.
+  report:
+    needs: soak
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: "Weekly soak run failed"
+      RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Failed again: $RUN"
+          else
+            gh issue create --title "$TITLE" --body "The [soak run]($RUN) failed."
+          fi
