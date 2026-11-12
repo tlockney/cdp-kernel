@@ -53,7 +53,7 @@ CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
 
 CI tests the versions `ci.yml` names (celld's is in
 `scripts/install-celld.sh`, which the container image uses too). The
-`latest runtimes` workflow runs
+`Latest runtimes` workflow runs
 the type check, unit tests and e2e suite each night against the newest
 release of Node, Deno, Bun, workerd, wrangler and celld, on Linux and
 macOS, so a runtime release that breaks the kernel shows up before a user
@@ -77,7 +77,7 @@ survives, and that the kernel still answers and runs timers at the end. It
 fails if the host's or the target's resident memory grows by more than
 200 MiB between the session's second fifth and its end.
 `CDPK_SOAK_CELLS`, `CDPK_SOAK_SEED` and `CDPK_SOAK_MAX_GROWTH_MB` change
-those numbers. The `soak` workflow runs it weekly and can be started from
+those numbers. The `Soak` workflow runs it weekly and can be started from
 the Actions tab with a request count.
 
 ## Releasing
@@ -91,7 +91,7 @@ too, and the same test fails if it differs. To release:
 
 1. Bump all three and the landing page, and set `RELEASE_DATE` in
    `src/package.ts` to today (UTC). Commit, and merge to `main` by a PR.
-2. Start the `publish` workflow on `main` from the Actions tab with the
+2. Start the `Publish` workflow on `main` from the Actions tab with the
    new version (or `gh workflow run publish.yml --ref main -f version=0.5.1`).
    Whoever starts it must be a member of the `@tlockney` scope on JSR,
    which only accepts a publish run started by a scope member. A run that
@@ -100,9 +100,9 @@ too, and the same test fails if it differs. To release:
 
    Pushing the tag from a checkout instead
    (`git tag -a v0.5.1 -m v0.5.1 && git push origin v0.5.1`) starts the
-   `publish` workflow on the tag.
+   `Publish` workflow on the tag.
 
-The `publish` workflow then:
+The `Publish` workflow then:
 
 1. Checks that the version matches `package.json` and has a changelog
    entry, that its tag doesn't exist yet (when started with a version), and
