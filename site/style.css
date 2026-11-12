@@ -199,6 +199,9 @@ pre code { font-size: inherit; }
 .rt td:first-child { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 .rt tr:last-child td { border-bottom: 0; }
 .more { margin-top: 16px; }
+.also { margin: 28px 0 12px; }
+.rt th:first-child { width: 7rem; }
+.rt th:last-child { width: 6rem; }
 
 /* A notebook cell as the docs show one: a code block with its output under
    it, behind a tinted rule (docs/.vitepress/theme/custom.css, .nb-*). */

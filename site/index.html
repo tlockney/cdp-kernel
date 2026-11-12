@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cdp-kernel: TypeScript notebooks on the runtime you choose</title>
-<meta name="description" content="A Jupyter kernel for TypeScript and JavaScript, extracted from Deno's, that runs notebooks on Node, Deno, Bun, workerd and celld.">
+<meta name="description" content="A Jupyter kernel for TypeScript and JavaScript, extracted from Deno's, that runs notebooks on Node and Deno, and also on Bun, workerd and celld.">
 <link rel="stylesheet" href="style.css">
 <script>
   // Use the light/dark choice made with the docs' switch, if there is one.
@@ -35,8 +35,8 @@
       <p class="eyebrow">Jupyter kernel · TypeScript · JavaScript runtimes</p>
       <h1>TypeScript notebooks on the runtime you choose.</h1>
       <p class="lede">cdp-kernel is Deno's Jupyter kernel, extracted so the code in your cells can run on
-        Node, Deno, Bun, workerd or celld. The kernel speaks the Jupyter protocol; your
-        cells run in the runtime you pick.</p>
+        Node or Deno. It also runs cells on Bun, workerd and celld. The kernel speaks the
+        Jupyter protocol; your cells run in the runtime you pick.</p>
       <ul class="trust" aria-label="At a glance">
         <li><a href="docs/changelog">v0.10.0</a></li>
         <li>MIT license</li>
@@ -69,7 +69,7 @@
         <pre role="tabpanel" id="panel-npm" aria-labelledby="tab-npm" data-panel="npm"><code><span class="c"># Node 22.18+ host</span>
 npm install -g @tlockney/cdp-kernel
 cdp-kernel install --runtime node
-<span class="c"># or deno, bun, workerd, celld</span></code></pre>
+<span class="c"># or deno; also bun, workerd, celld</span></code></pre>
         <pre role="tabpanel" id="panel-jsr" aria-labelledby="tab-jsr" data-panel="jsr" hidden><code><span class="c"># Deno host</span>
 deno run -A jsr:@tlockney/cdp-kernel/cli \
   install --runtime deno</code></pre>
@@ -177,7 +177,8 @@ docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel</code></pre>
 <section id="runtimes">
   <div class="wrap">
     <h2>Runtimes</h2>
-    <p class="sub">The kernel host runs on Node or Deno. Cells run in a separate target process.</p>
+    <p class="sub">Node and Deno are the main targets, and the ones with the debugger.
+      The kernel host runs on either, and cells run in a separate target process.</p>
     <img class="diagram" src="images/concepts/notebook-kernel-runtime.svg" width="860" height="330"
       alt="The frontend sends each cell's code to the kernel host over the Jupyter protocol. The host drives the runtime you picked (Node, Deno, Bun, workerd or celld) in a separate process, and results and output come back to show under the cell.">
     <table class="rt">
@@ -185,6 +186,12 @@ docker run --rm -p 8888:8888 ghcr.io/tlockney/cdp-kernel</code></pre>
       <tbody>
         <tr><td>Node</td><td>Chrome DevTools Protocol over the inspector. Optional <code>Deno</code> compatibility namespace.</td><td>Yes</td></tr>
         <tr><td>Deno</td><td>Chrome DevTools Protocol, with the real <code>Deno.jupyter</code> namespace.</td><td>Yes</td></tr>
+      </tbody>
+    </table>
+    <h3 class="also">Also runs on</h3>
+    <table class="rt">
+      <thead><tr><th>Target</th><th>How cells run</th><th>Debugger</th></tr></thead>
+      <tbody>
         <tr><td>Bun</td><td>In-process, over a private pipe. Bun's inspector speaks WebKit's protocol, not CDP.</td><td>No</td></tr>
         <tr><td>workerd</td><td>Inside a driver Worker's request, so <code>fetch</code>, timers and bindings work. Runs on Miniflare in a Workers project.</td><td>No</td></tr>
         <tr><td>celld</td><td>The same driver Worker on celld, with the project's bindings copied in.</td><td>No</td></tr>

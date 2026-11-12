@@ -6,6 +6,9 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The site's landing page puts Node and Deno first and lists Bun, workerd
+  and celld under "Also runs on"
+  ([#468](https://github.com/tlockney/cdp-kernel/issues/468)).
 - The `jupyter.host()` docs and editor types no longer say
   `notebooks.results`, `notebooks.run` and `self.*` are missing from the
   server: Ganymede 0.8.0 answers them
