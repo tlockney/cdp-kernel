@@ -114,8 +114,17 @@ export function quoteString(text) {
   return `'${String(text).replaceAll("'", "''")}'`;
 }
 
-/** A parameter (as toParam leaves it) as a SQL literal. */
+/**
+ * A parameter (as toParam leaves it) as a SQL literal. A negative number
+ * is parenthesized, since after a minus sign `-1` would make `--`, a
+ * comment.
+ */
 export function sqlLiteral(value) {
+  const text = literalText(value);
+  return text.startsWith("-") ? `(${text})` : text;
+}
+
+function literalText(value) {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
   if (typeof value === "bigint") return `${value}`;
