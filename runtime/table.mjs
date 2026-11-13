@@ -95,12 +95,14 @@ function inferType(values) {
     else if (typeof v === "number") t = Number.isInteger(v) ? "integer" : "number";
     else if (typeof v === "boolean") t = "boolean";
     else if (typeof v === "string") t = "string";
-    else if (v instanceof Date) t = "datetime";
+    // A Date at midnight UTC, as new Date("1610-01-08") makes, is a date.
+    else if (v instanceof Date) t = v.getTime() % 86_400_000 === 0 ? "date" : "datetime";
     else if (Array.isArray(v) || ArrayBuffer.isView(v)) t = ArrayBuffer.isView(v) && !(v instanceof DataView) && v.BYTES_PER_ELEMENT === 1 ? "string" : "array";
     else t = "object";
     if (type === undefined) type = t;
     else if (type !== t) {
       if ((type === "integer" && t === "number") || (type === "number" && t === "integer")) type = "number";
+      else if ((type === "date" && t === "datetime") || (type === "datetime" && t === "date")) type = "datetime";
       else return "string";
     }
   }

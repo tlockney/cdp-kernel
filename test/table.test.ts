@@ -90,6 +90,12 @@ test("html: all rows up to 20, then head and tail with a count", () => {
   assert.match(table([{ a: "<b>" }], { title: "T&" }).html, /<caption>T&amp;<\/caption>.*&lt;b&gt;/);
 });
 
+test("a Date at midnight UTC is a date; mixed with times, a datetime", () => {
+  const fields = (rows: unknown[]) => table(rows).resource.schema.fields;
+  assert.equal(fields([{ d: new Date("1610-01-08") }])[0].type, "date");
+  assert.equal(fields([{ d: new Date("1610-01-08") }, { d: new Date("2026-11-13T10:00:00Z") }])[0].type, "datetime");
+});
+
 test("text: shape, ranges over the embedded rows, numbered head and tail", () => {
   const rows = Array.from({ length: 52_410 }, (_, i) => ({ station: `s${i % 7}`, riders: i, day: new Date(Date.UTC(2019, 0, 1 + (i % 365))) }));
   const { text } = table(rows);
@@ -98,7 +104,7 @@ test("text: shape, ranges over the embedded rows, numbered head and tail", () =>
   assert.equal(lines[1], "Columns (ranges over the first 1,000 of 52,410 rows):");
   assert.match(text, /station +string +7 values/);
   assert.match(text, /riders +integer +0 to 999/);
-  assert.match(text, /day +datetime +2019-01-01T00:00:00\.000Z to 2019-12-31T00:00:00\.000Z/);
+  assert.match(text, /day +date +2019-01-01 to 2019-12-31/);
   assert.match(text, /\n  0 +\| s0 +\| 0 /);
   assert.match(text, /\n  …\n  52408 \| /);
   assert.match(text, /\n  52409 \| s0 +\| 52409/);
