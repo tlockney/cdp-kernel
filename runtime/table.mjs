@@ -53,11 +53,12 @@ function isDuckDBShaped(value) {
 
 /**
  * A `@duckdb/node-api` result reader (from `runAndReadAll` or
- * `streamAndReadAll`), whose rows are read already. A `run()` result
+ * `streamAndReadAll`) that has read all its rows. A `run()` result
  * reads its rows asynchronously, so it isn't one.
  */
 export function isDuckDBResult(value) {
-  return isDuckDBShaped(value) && typeof value.currentRowCount === "number" && typeof value.getRowsJS === "function";
+  return isDuckDBShaped(value) && typeof value.currentRowCount === "number" && typeof value.getRowsJS === "function" &&
+    value.done === true;
 }
 
 /** Whether `value` shows as a table when it is a cell's value. */
@@ -180,7 +181,7 @@ export function encodeValue(value, type, declared) {
  */
 export function timeText(value, declared = "") {
   const d = String(declared);
-  const unit = /NANOSECOND|^Time$/.test(d) ? 1_000_000_000n : /MILLISECOND/i.test(d) ? 1000n : /<SECOND/i.test(d) ? 1n : 1_000_000n;
+  const unit = /NANOSECOND|^Time$|_NS$/i.test(d) ? 1_000_000_000n : /MILLISECOND/i.test(d) ? 1000n : /<SECOND/i.test(d) ? 1n : 1_000_000n;
   const total = typeof value === "bigint" ? value : BigInt(Math.trunc(value));
   const seconds = total / unit;
   const fraction = total % unit;
@@ -287,7 +288,9 @@ export function tableSource(value, options = {}) {
   if (isPolarsFrame(value)) return fromPolars(value, names);
   if (isDuckDBResult(value)) return fromDuckDB(value, names);
   if (isDuckDBShaped(value)) {
-    throw new TypeError("jupyter.table: a DuckDB run() result reads its rows asynchronously; use runAndReadAll(), or jupyter.sql");
+    throw new TypeError(typeof value.currentRowCount === "number"
+        ? "jupyter.table: this DuckDB reader hasn't read all its rows; call readAll() first, or use runAndReadAll()"
+        : "jupyter.table: a DuckDB run() result reads its rows asynchronously; use runAndReadAll(), or jupyter.sql");
   }
   if (Array.isArray(value)) {
     const first = value.find((row) => row !== null && row !== undefined);
