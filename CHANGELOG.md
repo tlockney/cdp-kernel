@@ -13,7 +13,9 @@ Issue and pull request numbers refer to
 - The widgets and comms reference opens with an overview of when to use
   a widget and when a comm, groups the widget model's members (state,
   events, custom messages, closing) and puts `jupyter.comm` and the
-  `Comm` object under one Comms section. Existing links keep working
+  `Comm` object under one Comms section. Mentions of anywidget there and
+  in the widgets guide link to [anywidget](https://anywidget.dev).
+  Existing links keep working
   ([#485](https://github.com/tlockney/cdp-kernel/issues/485)).
 
 ## 0.11.0 (2026-11-13)

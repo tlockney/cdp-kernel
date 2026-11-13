@@ -27,7 +27,7 @@ frontend extension that registered a target.
 | --- | --- |
 | [`widget.get(key)`](#widget-get-key) | The current value of a state key. |
 | [`widget.set(key, value)`](#widget-set-key-value) | Change one state key, or several at once, and sync the change to every view. |
-| [`widget.fullState()`](#widget-fullstate) | The full state, as the frontend sees it: anywidget's model keys (`_model_name`, `_view_name` and the rest) and the widget's own. |
+| [`widget.fullState()`](#widget-fullstate) | The full state, as the frontend sees it: [anywidget](https://anywidget.dev)'s model keys (`_model_name`, `_view_name` and the rest) and the widget's own. |
 | [`widget.on(event, listener)`](#widget-on-event-listener) | Listen for state changes or custom messages from the views. |
 | [`widget.off(event, listener)`](#widget-off-event-listener) | Remove a listener added with `on`. |
 | [`widget.send(content, buffers?)`](#widget-send-content-buffers) | Send a custom message to every view's `model.on("msg:custom", ...)`. |
@@ -47,7 +47,7 @@ frontend extension that registered a target.
 
 ## Widget model
 
-An anywidget model, from `jupyter.widget`, synced with its frontend
+An [anywidget](https://anywidget.dev) model, from `jupyter.widget`, synced with its frontend
 views. Display it to show a view; display it again for a second view of
 the same model.
 
@@ -143,7 +143,7 @@ progress.set({ message: "Done", value: 1 });
 fullState(): WidgetState;
 ```
 
-The full state, as the frontend sees it: anywidget's model keys
+The full state, as the frontend sees it: [anywidget](https://anywidget.dev)'s model keys
 (`_model_name`, `_view_name` and the rest) and the widget's own.
 
 **Returns** `WidgetState`: Every state key and its value.
@@ -466,7 +466,7 @@ Options for `jupyter.widget`.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `esm` | `string` | yes | The anywidget view module, as source: `export default { render({ model, el }) { ... } }`. A `${...}` inside a template literal here is filled in by the kernel, not the browser: escape it as `\${...}`. |
+| `esm` | `string` | yes | The [anywidget](https://anywidget.dev) view module, as source: `export default { render({ model, el }) { ... } }`. A `${...}` inside a template literal here is filled in by the kernel, not the browser: escape it as `\${...}`. |
 | `css` | `string` | no | CSS for the view. |
 | `state` | `WidgetState` | no | The initial synced state. `Uint8Array` and `ArrayBuffer` values travel as binary buffers. Default `{}`. |
 

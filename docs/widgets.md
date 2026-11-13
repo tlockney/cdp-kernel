@@ -13,7 +13,7 @@ snapshot; a widget is live.
 
 `deno jupyter` has no widgets. cdp-kernel supports them on every runtime
 (Node, Deno, Bun, workerd and celld) through `jupyter.widget`, which
-follows the [anywidget](https://github.com/manzt/anywidget) format: you write the view
+follows the [anywidget](https://anywidget.dev) format: you write the view
 as a small JavaScript module, and the kernel and the frontend keep a shared
 state object in sync.
 
@@ -23,7 +23,7 @@ and each picture is a screenshot of the Node run.
 
 ## Before you start
 
-Widgets are drawn by the frontend, which needs anywidget's JavaScript to
+Widgets are drawn by the frontend, which needs [anywidget](https://anywidget.dev)'s JavaScript to
 do it. Widgets work in JupyterLab, Jupyter Notebook 7 and VS Code, and each
 gets that JavaScript differently.
 
@@ -463,7 +463,7 @@ the notebook.
 
 ## Writing the view module
 
-The view module follows anywidget's format. `render({ model, el })` is
+The view module follows [anywidget's front-end module format](https://anywidget.dev/en/afm/). `render({ model, el })` is
 called once per view. In the view:
 
 | Call | What it does |
