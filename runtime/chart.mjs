@@ -20,6 +20,8 @@ export const LINKEDOM = "npm:linkedom@0.18";
 export const WARN_BYTES = 2_000_000;
 
 const $display = Symbol.for("Jupyter.display");
+/** Plot scales with a legend option, besides color. */
+const OTHER_LEGENDS = ["opacity", "r", "symbol"];
 const FONT = "system-ui, sans-serif";
 
 const rawToEntity = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -77,13 +79,22 @@ export function withNamespace(svg) {
   return /<svg\b[^>]*\sxmlns=/i.test(svg) ? svg : svg.replace(/<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
 }
 
+/** A short FNV-1a hash of `text`, in base 36. */
+function hash(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+
 const textWidth = (text, size) => String(text).length * size * 0.6;
 
 /**
  * A legend for a color scale, as SVG: swatches for a categorical scale,
- * a ramp for a continuous one. `scale` is Plot's scale description.
+ * a ramp for a continuous one, or the form `form` names ("swatches" or
+ * "ramp", as Plot's `legend` option does). `scale` is Plot's scale
+ * description.
  */
-export function legendSVG(scale, width) {
+export function legendSVG(scale, width, form) {
   if (!isObject(scale) || typeof scale.apply !== "function" || !Array.isArray(scale.domain)) return { svg: "", height: 0 };
   const label = typeof scale.label === "string" && scale.label ? scale.label : "";
   const parts = [];
@@ -92,7 +103,9 @@ export function legendSVG(scale, width) {
     parts.push(`<text x="0" y="10" font-weight="bold">${esc(label)}</text>`);
     y = 16;
   }
-  const continuous = /^(linear|log|pow|sqrt|symlog|utc|time|sequential|diverging|quantize|threshold|quantile)/.test(String(scale.type));
+  const continuous = form === "ramp" ||
+    (form !== "swatches" &&
+      /^(linear|log|pow|sqrt|symlog|utc|time|sequential|diverging|quantize|threshold|quantile)/.test(String(scale.type)));
   if (!continuous) {
     let x = 0;
     let row = y;
@@ -118,7 +131,8 @@ export function legendSVG(scale, width) {
     const v = typeof lo === "number" && typeof hi === "number" ? lo + ((hi - lo) * i) / n : i === 0 ? lo : hi;
     stops.push(`<stop offset="${(i / n) * 100}%" stop-color="${esc(scale.apply(v))}"/>`);
   }
-  const id = `ramp-${Math.random().toString(36).slice(2, 8)}`;
+  // From the stops, so the same chart gives the same SVG on every run.
+  const id = `ramp-${hash(stops.join(""))}`;
   const rampWidth = Math.min(240, width);
   const fmt = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : typeof v === "number" ? String(Number(v.toPrecision(4))) : String(v));
   parts.push(
@@ -243,8 +257,7 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
     return dom;
   }
 
-  async function renderVega(value, { spec: keepSpec = false } = {}) {
-    const spec = specOf(value);
+  async function renderVega(spec, { spec: keepSpec = false } = {}) {
     const [vega, vl] = await Promise.all([importModule(VEGA), isVegaSpec(spec) ? null : importModule(VEGA_LITE)]);
     const config = mergeConfig(VEGA_CONFIG, spec.config);
     const vgSpec = vl ? vl.compile({ ...spec, config }).spec : { ...spec, config };
@@ -266,19 +279,31 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
     if (!isObject(options)) throw new TypeError("jupyter.chart(Plot, options): options must be Plot's options object");
     const { title, subtitle, caption, ...rest } = options;
     const color = isObject(rest.color) ? rest.color : undefined;
-    const wantLegend = color?.legend === true;
+    const wantLegend = Boolean(color?.legend);
     const plotOptions = { ...rest, document: await document(), figure: false };
     if (color) plotOptions.color = { ...color, legend: false };
+    // Only the color legend is drawn; Plot would put the others in an
+    // HTML figure, which a reader that shows only images drops.
+    const others = OTHER_LEGENDS.filter((name) => isObject(rest[name]) && rest[name].legend);
+    if (others.length) {
+      warn(`jupyter.chart draws only a color legend; the ${others.join(", ")} legend is left out`);
+    }
     const element = Plot.plot(plotOptions);
     const inner = element.outerHTML;
     const { width } = svgSize(inner);
     const scale = wantLegend && typeof element.scale === "function" ? element.scale("color") : undefined;
-    const legend = scale ? legendSVG({ ...scale, label: scale.label ?? color.label }, width) : undefined;
+    const form = color?.legend === "ramp" || color?.legend === "swatches" ? color.legend : undefined;
+    const legend = scale ? legendSVG({ ...scale, label: scale.label ?? color.label }, width, form) : undefined;
     const svg = composeSVG(inner, { title, subtitle, caption, legend });
     return { "image/svg+xml": withNamespace(svg), "text/plain": summarizePlot(element, options) };
   }
 
   function chart(first, second) {
+    // Checked now, so a wrong argument fails the call.
+    const spec = isPlotModule(first) || isSvgElement(first) ? undefined : specOf(first);
+    if (isPlotModule(first) && !isObject(second)) {
+      throw new TypeError("jupyter.chart(Plot, options): options must be Plot's options object");
+    }
     if (isSvgElement(first)) {
       const bundle = { "image/svg+xml": withNamespace(first.outerHTML) };
       return { [$display]: () => bundle };
@@ -286,7 +311,7 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
     let pending;
     const render = () =>
       (pending ??= (async () => {
-        const bundle = isPlotModule(first) ? await renderPlot(first, second) : await renderVega(first, second);
+        const bundle = spec ? await renderVega(spec, second) : await renderPlot(first, second);
         const size = bundle["image/svg+xml"].length;
         if (size > WARN_BYTES) {
           warn(
@@ -296,9 +321,6 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
         }
         return bundle;
       })());
-    // Checked now, so a wrong argument fails the call.
-    if (!isPlotModule(first)) specOf(first);
-    else if (!isObject(second)) throw new TypeError("jupyter.chart(Plot, options): options must be Plot's options object");
     return { [$display]: render };
   }
 

@@ -477,8 +477,9 @@ Pass a [Vega-Lite](https://vega.github.io/vega-lite/) or Vega spec
 (or a vega-lite-api chart), or the
 [Observable Plot](https://observablehq.com/plot/) module and the
 options you would give `Plot.plot`. Plot's `title`, `subtitle`,
-`caption` and a `color: { legend: true }` legend are drawn into the
-SVG. An SVG element shows as it is.
+`caption` and the color legend (`legend: true`, `"swatches"` or
+`"ramp"`) are drawn into the SVG; other scales' legends are left
+out. An SVG element shows as it is.
 
 vega and vega-lite (version 6), and linkedom for Plot where there is
 no DOM, load through the cell's import on first use. A chart past

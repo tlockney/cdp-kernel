@@ -575,9 +575,11 @@ jupyter.chart(Plot, {
 
 Plot draws a title, caption and categorical legend as HTML beside its
 SVG, which a reader that shows only images drops. `jupyter.chart` draws
-`title`, `subtitle`, `caption` and the `color: { legend: true }` legend
-into the SVG instead: swatches for categories, a ramp for a continuous
-scale. An SVG element, such as `Plot.plot(...)` without those, also
+`title`, `subtitle`, `caption` and the color legend into the SVG
+instead: `color: { legend: true }` draws swatches for categories and a
+ramp for a continuous scale, and `legend: "swatches"` or `"ramp"` picks
+the form. Legends of other scales (`symbol`, `r`, `opacity`) are left
+out, with a warning. An SVG element, such as `Plot.plot(...)` without those, also
 shows as it is.
 
 vega and vega-lite (version 6), and [linkedom](https://github.com/WebReflection/linkedom)

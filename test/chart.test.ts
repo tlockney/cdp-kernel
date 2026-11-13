@@ -88,6 +88,13 @@ test("a Vega-Lite spec renders to SVG with a summary and the default config", as
   assert.equal(seen.finalized, 1);
 });
 
+test("toSpec() is called once, when chart is called", async () => {
+  const { chart } = setup();
+  let calls = 0;
+  await show(chart({ toSpec: () => (calls++, { mark: "bar" }) }));
+  assert.equal(calls, 1);
+});
+
 test("a Vega spec skips vega-lite; { spec: true } keeps the spec", async () => {
   const { chart, loads, seen } = setup();
   const spec = { $schema: "https://vega.github.io/schema/vega/v5.json", marks: [] };
@@ -166,6 +173,24 @@ test("a large SVG logs a warning", async () => {
   await show(chart({ mark: "point" }));
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /2\.1 MB/);
+});
+
+test("Plot: legend \"ramp\" or \"swatches\" picks the form; other scales' legends warn", async () => {
+  const { chart, warnings } = setup();
+  const { Plot } = fakePlot();
+  const ramp = (await show(chart(Plot, { color: { legend: "ramp" }, marks: [] })))["image/svg+xml"] as string;
+  assert.match(ramp, /<linearGradient/);
+  const swatches = (await show(chart(Plot, { color: { legend: "swatches" }, marks: [] })))["image/svg+xml"] as string;
+  assert.match(swatches, /<rect x="0" y="0" width="10" height="10" fill="#111111"\/>/);
+  assert.deepEqual(warnings, []);
+  await show(chart(Plot, { symbol: { legend: true }, r: { legend: true }, marks: [] }));
+  assert.deepEqual(warnings, ["jupyter.chart draws only a color legend; the r, symbol legend is left out"]);
+});
+
+test("the same continuous legend gives the same SVG", () => {
+  const a = legendSVG(scale("linear", [0, 10]), 400).svg;
+  assert.equal(a, legendSVG(scale("linear", [0, 10]), 400).svg);
+  assert.match(a, /<linearGradient id="ramp-[0-9a-z]+"/);
 });
 
 test("legends: swatches for categories, a ramp for a continuous scale", () => {
