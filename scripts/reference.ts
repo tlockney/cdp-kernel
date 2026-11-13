@@ -24,14 +24,39 @@ interface Section {
   /** How a member is named in headings: `jupyter.`, `widget.` */
   prefix: string;
   heading: string;
+  /** A heading id other than the heading's slug, kept when a heading is reworded. */
+  id?: string;
   intro?: string;
+  /**
+   * Members under group headings, in this order. When set, every member
+   * is in exactly one group.
+   */
+  groups?: Group[];
+}
+
+/** A heading over related members of one section. */
+interface Group {
+  heading: string;
+  intro?: string;
+  members: string[];
+}
+
+/** A heading over the sections after it, up to the next part. */
+interface Part {
+  part: string;
+  intro: string;
 }
 
 interface Page {
   file: string;
   title: string;
   intro: string;
-  sections: Section[];
+  /**
+   * With an overview, the page opens with an Overview section: this text,
+   * then a member table per section. Without, one table for the page.
+   */
+  overview?: string;
+  sections: (Section | Part)[];
   /** Global functions declared in src/globals.ts. */
   globals?: string[];
   /** Option and value types, as property tables. */
@@ -115,6 +140,13 @@ reference](widgets-reference.md).`,
 API under \`jupyter.comm\`, with their arguments, return values and an
 example. [Widgets and comms](widgets.md) explains them with a full
 walk-through, including the view module.`,
+    overview: `A **widget** is an [anywidget](https://anywidget.dev) model: state that
+the kernel and its views share, and a view module that draws it. Use one
+for interactive output: controls, progress, a chart that updates.
+
+A **comm** is the channel widgets are built on: messages both ways on a
+target name, with no shared state and no view. Use one to talk to a
+frontend extension that registered a target.`,
     sections: [
       {
         iface: "Widget",
@@ -122,9 +154,23 @@ walk-through, including the view module.`,
         prefix: "widget.",
         heading: "Widget model",
         intro: "`jupyter.widget(options)` returns it; see the [`jupyter` reference](jupyter-reference.md#jupyter-widget-options).",
+        groups: [
+          { heading: "State", intro: "The synced state, read and changed from the kernel.", members: ["get", "set", "fullState"] },
+          { heading: "Events", intro: "State changes and custom messages from the views.", members: ["on", "off"] },
+          { heading: "Custom messages", intro: "Messages to the views that aren't state; `on(\"msg:custom\", ...)` receives theirs.", members: ["send"] },
+          { heading: "Closing", members: ["close"] },
+        ],
+      },
+      {
+        part: "Comms",
+        intro: "`jupyter.comm` opens comms and accepts the ones the frontend opens; each is a `Comm` object.",
       },
       { iface: "CommApi", file: COMM, prefix: "jupyter.comm.", heading: "jupyter.comm" },
-      { iface: "Comm", file: COMM, prefix: "comm.", heading: "Comm" },
+      { iface: "Comm", file: COMM, prefix: "comm.", heading: "`Comm` object", id: "comm" },
+    ],
+    groups: [
+      { title: "[Widget model](#widget-model)", members: ["widget"] },
+      { title: "[Comms](#comms)", members: ["jupyter.comm", "comm"] },
     ],
     types: [
       { name: "WidgetOptions", file: WIDGET },
@@ -325,14 +371,46 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
   if (doc.see) out.push(seeLink(doc.see, where, r), "");
 }
 
-function renderSection(out: string[], index: IndexRow[], section: Section, sf: ts.SourceFile, r: Result) {
+/** A heading of `level` (2 is `##`), with its id when it isn't the slug. */
+function heading(level: number, text: string, id?: string): string {
+  return `${"#".repeat(level)} ${text}${id ? ` {#${id}}` : ""}`;
+}
+
+/**
+ * Members by name, overloads together: in group order when the section
+ * has groups (with each group's heading before its first member), else
+ * in declaration order. Members in no group come last, flagged: only
+ * plain properties, which go in the Properties table, may be.
+ */
+function ordered(
+  section: Section,
+  byName: Map<string, ts.TypeElement[]>,
+  r: Result,
+): { name: string; group?: Group; ungrouped?: boolean }[] {
+  if (!section.groups) return [...byName.keys()].map((name) => ({ name }));
+  const out: { name: string; group?: Group; ungrouped?: boolean }[] = [];
+  for (const group of section.groups) {
+    for (const [n, name] of group.members.entries()) {
+      if (!byName.has(name)) r.problems.push(`${section.iface}: group "${group.heading}" names no member ${name}`);
+      else out.push({ name, group: n === 0 ? group : undefined });
+    }
+  }
+  const grouped = section.groups.flatMap((g) => g.members);
+  for (const name of byName.keys()) {
+    if (!grouped.includes(name)) out.push({ name, ungrouped: true });
+    else if (grouped.indexOf(name) !== grouped.lastIndexOf(name)) r.problems.push(`${section.iface}.${name}: in two groups`);
+  }
+  return out;
+}
+
+function renderSection(out: string[], index: IndexRow[], section: Section, sf: ts.SourceFile, r: Result, level = 2) {
   const decl = sf.statements.find((s): s is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(s) && s.name.text === section.iface);
   if (!decl) {
     r.problems.push(`${section.file}: no interface ${section.iface}`);
     return;
   }
-  const heading = section.heading.includes(" ") ? section.heading : code(section.heading);
-  out.push(`## ${heading}`, "");
+  const sectionTitle = section.heading.includes(" ") ? section.heading : code(section.heading);
+  out.push(heading(level, sectionTitle, section.id), "");
   const ifaceDoc = readDoc(decl);
   if (ifaceDoc?.summary) out.push(ifaceDoc.summary, "");
   if (section.intro) out.push(section.intro, "");
@@ -347,7 +425,13 @@ function renderSection(out: string[], index: IndexRow[], section: Section, sf: t
   }
   // Plain properties without examples go in one table; the rest get headings.
   const props: string[] = [];
-  for (const [name, members] of byName) {
+  const memberLevel = level + (section.groups ? 2 : 1);
+  for (const { name, group, ungrouped } of ordered(section, byName, r)) {
+    const members = byName.get(name)!;
+    if (group) {
+      out.push(heading(level + 1, group.heading), "");
+      if (group.intro) out.push(group.intro, "");
+    }
     const first = members[0];
     const doc = members.map(readDoc).find((d) => d?.summary);
     const where = `${section.iface}.${name}`;
@@ -361,17 +445,18 @@ function renderSection(out: string[], index: IndexRow[], section: Section, sf: t
       props.push(`| \`${name}\` | \`${cell(p.type?.getText() ?? "")}\` | ${cell(oneLine(doc.summary))} |`);
       continue;
     }
+    if (ungrouped) r.problems.push(`${where}: in no group`);
     const full = `${section.prefix}${name}`;
     const title = sigs.length === 0 ? full : isTemplateTag(sigs[0]) ? `${full}\`…\`` : `${full}(${callShape(sigs[0])})`;
     const id = slugify(code(title));
     index.push({ name: full, row: `| [${code(title)}](#${id}) | ${cell(oneLine(doc.summary.split(/(?<=\.)\s/)[0]))} |` });
-    out.push(`### ${code(title)}`, "");
+    out.push(heading(memberLevel, code(title)), "");
     out.push("```ts", ...members.map((m) => source(m, sf)), "```", "");
     if (sigs.length > 0 && doc.examples.length === 0) r.problems.push(`${where}: no @example`);
     renderDoc(out, doc, sigs.length > 0 ? sigs : undefined, where, r);
   }
   if (props.length > 0) {
-    out.push("### Properties", "", "| Property | Type | Description |", "| --- | --- | --- |", ...props, "");
+    out.push(heading(level + 1, "Properties"), "", "| Property | Type | Description |", "| --- | --- | --- |", ...props, "");
   }
 }
 
@@ -462,7 +547,13 @@ export function generate(): Result {
   for (const page of pages) {
     const body: string[] = [];
     const index: IndexRow[] = [];
-    for (const section of page.sections) renderSection(body, index, section, source(section.file), r);
+    let level = 2;
+    for (const section of page.sections) {
+      if ("part" in section) {
+        body.push(heading(2, section.part), "", section.intro, "");
+        level = 3;
+      } else renderSection(body, index, section, source(section.file), r, level);
+    }
     if (page.globals) {
       body.push("## Globals", "");
       for (const name of page.globals) renderGlobal(body, index, name, source(GLOBALS), r);
@@ -471,17 +562,25 @@ export function generate(): Result {
     for (const t of page.types) renderType(body, t.name, source(t.file), r);
     // Links and the outline use VitePress's heading slugs, so a member's
     // must be unique on its page ("Properties" repeats, and isn't linked).
-    const slugs = body.filter((l) => /^#{2,3} /.test(l) && l !== "### Properties").map((l) => slugify(l.replace(/^#+ /, "")));
+    const slugs = body
+      .map((l) => /^#{2,6} (.+?)(?: \{#([^}]+)\})?$/.exec(l))
+      .filter((m) => m && m[1] !== "Properties")
+      .map((m) => m![2] ?? slugify(m![1]));
     for (const slug of new Set(slugs.filter((s, i) => slugs.indexOf(s) !== i))) {
       r.problems.push(`${page.file}: two headings have the slug #${slug}`);
     }
+    // The outline shows h2 and h3 (config.mts); a page with group
+    // headings has its members at h4, so its outline goes a level deeper.
+    const deep = body.some((l) => l.startsWith("#### ") && l !== "#### Properties");
     const out = [
-      `<!-- Generated by scripts/reference.ts from the doc comments in ${[...new Set([...page.sections.map((s) => s.file), ...(page.globals ? [GLOBALS] : []), ...page.types.map((t) => t.file)])].join(", ")}. Edit those, then run \`node scripts/reference.ts --write\`. -->`,
+      ...(deep ? ["---", "outline: [2, 4]", "---", ""] : []),
+      `<!-- Generated by scripts/reference.ts from the doc comments in ${[...new Set([...page.sections.flatMap((s) => ("file" in s ? [s.file] : [])), ...(page.globals ? [GLOBALS] : []), ...page.types.map((t) => t.file)])].join(", ")}. Edit those, then run \`node scripts/reference.ts --write\`. -->`,
       "",
       `# ${page.title}`,
       "",
       page.intro,
       "",
+      ...(page.overview ? ["## Overview", "", page.overview, ""] : []),
       ...renderIndex(page, index, r),
       ...body,
     ];

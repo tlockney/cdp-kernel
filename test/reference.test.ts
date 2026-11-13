@@ -79,3 +79,34 @@ test("@see anchors: fenced headings don't count, repeats and {#id} do", () => {
   assert.equal(title, "Guide");
   assert.deepEqual([...ids].sort(), ["guide", "mine", "raw", "setup", "setup-1"]);
 });
+
+test("the widgets page keeps the anchors other pages link to", () => {
+  // Grouping the page (#485) moved headings down a level; the ids stay, so
+  // links like cell-api/widgets#widget-model keep working.
+  const { ids } = anchors(result.files.get("docs/widgets-reference.md") ?? "");
+  for (const id of [
+    "widget-model",
+    "widget-get-key",
+    "widget-set-key-value",
+    "widget-on-event-listener",
+    "widget-off-event-listener",
+    "widget-send-content-buffers",
+    "widget-close",
+    "widget-fullstate",
+    "jupyter-comm",
+    "jupyter-comm-open-targetname-data-options",
+    "jupyter-comm-registertarget-targetname-handler",
+    "jupyter-comm-unregistertarget-targetname",
+    "comm",
+    "comm-send-data-options",
+    "comm-close-data-options",
+    "comm-onmsg-handler",
+    "comm-onclose-handler",
+    "types",
+    "widgetoptions",
+    "commmessage",
+    "commsendoptions",
+  ]) {
+    assert.ok(ids.has(id), `#${id} is gone`);
+  }
+});
