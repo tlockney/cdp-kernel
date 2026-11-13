@@ -251,6 +251,14 @@ export function tableSource(value, options = {}) {
   );
 }
 
+/** Each column's name and Table Schema type: declared, or inferred from `rows`. */
+export function fieldsOf(source, rows) {
+  return source.columns.map((c, i) => ({
+    name: c.name,
+    type: schemaType(c.declared) ?? inferType(rows.map((r) => r[i])),
+  }));
+}
+
 // --- The bundle -------------------------------------------------------------
 
 function count(n, noun) {
@@ -340,10 +348,7 @@ export function tableBundle(source, options = {}) {
   const total = source.total;
 
   const raw = source.read(0, Math.min(limit, total));
-  const fields = source.columns.map((c, i) => ({
-    name: c.name,
-    type: schemaType(c.declared) ?? inferType(raw.map((r) => r[i])),
-  }));
+  const fields = fieldsOf(source, raw);
   const encode = (r) => fields.map((f, i) => encodeValue(r[i], f.type));
 
   // Rows as JSON, stopping at MAX_BYTES.

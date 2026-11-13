@@ -32,3 +32,4 @@ export function schemaType(declared: unknown): string | undefined;
 export function encodeValue(value: unknown, type: string): unknown;
 export function tableSource(value: unknown, options?: TableBundleOptions): TableSource;
 export function tableBundle(source: TableSource, options?: TableBundleOptions): { [mediaType: string]: unknown };
+export function fieldsOf(source: TableSource, rows: unknown[][]): { name: string; type: string }[];
