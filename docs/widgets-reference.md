@@ -7,8 +7,6 @@ API under `jupyter.comm`, with their arguments, return values and an
 example. [Widgets and comms](widgets.md) explains them with a full
 walk-through, including the view module.
 
-**Widget model**
-
 | Member | What it does |
 | --- | --- |
 | [`widget.get(key)`](#widget-get-key) | The current value of a state key. |
@@ -17,12 +15,7 @@ walk-through, including the view module.
 | [`widget.off(event, listener)`](#widget-off-event-listener) | Remove a listener added with `on`. |
 | [`widget.send(content, buffers?)`](#widget-send-content-buffers) | Send a custom message to every view's `model.on("msg:custom", ...)`. |
 | [`widget.close()`](#widget-close) | Close the model. |
-| [`widget.fullState()`](#widget-fullstate) | The full state, as the frontend sees it: [anywidget](https://anywidget.dev)'s model keys (`_model_name`, `_view_name` and the rest) and the widget's own. |
-
-**Comms**
-
-| Member | What it does |
-| --- | --- |
+| [`widget.fullState()`](#widget-fullstate) | The full state, as the frontend sees it: anywidget's model keys (`_model_name`, `_view_name` and the rest) and the widget's own. |
 | [`jupyter.comm.open(targetName, data?, options?)`](#jupyter-comm-open-targetname-data-options) | Open a comm to a target the frontend registered. |
 | [`jupyter.comm.registerTarget(targetName, handler)`](#jupyter-comm-registertarget-targetname-handler) | Accept comms the frontend opens on `targetName`. |
 | [`jupyter.comm.unregisterTarget(targetName)`](#jupyter-comm-unregistertarget-targetname) | Stop accepting new comms on `targetName`. |
@@ -33,7 +26,7 @@ walk-through, including the view module.
 
 ## Widget model
 
-An [anywidget](https://anywidget.dev) model, from `jupyter.widget`, synced with its frontend
+An anywidget model, from `jupyter.widget`, synced with its frontend
 views. Display it to show a view; display it again for a second view of
 the same model.
 
@@ -266,7 +259,7 @@ w.close();
 fullState(): WidgetState;
 ```
 
-The full state, as the frontend sees it: [anywidget](https://anywidget.dev)'s model keys
+The full state, as the frontend sees it: anywidget's model keys
 (`_model_name`, `_view_name` and the rest) and the widget's own.
 
 **Returns** `WidgetState`: Every state key and its value.
@@ -434,7 +427,7 @@ Options for `jupyter.widget`.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `esm` | `string` | yes | The [anywidget](https://anywidget.dev) view module, as source: `export default { render({ model, el }) { ... } }`. A `${...}` inside a template literal here is filled in by the kernel, not the browser: escape it as `\${...}`. |
+| `esm` | `string` | yes | The anywidget view module, as source: `export default { render({ model, el }) { ... } }`. A `${...}` inside a template literal here is filled in by the kernel, not the browser: escape it as `\${...}`. |
 | `css` | `string` | no | CSS for the view. |
 | `state` | `WidgetState` | no | The initial synced state. `Uint8Array` and `ArrayBuffer` values travel as binary buffers. Default `{}`. |
 

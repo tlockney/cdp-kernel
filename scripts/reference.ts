@@ -131,10 +131,6 @@ walk-through, including the view module.`,
       { name: "CommMessage", file: COMM },
       { name: "CommSendOptions", file: COMM },
     ],
-    groups: [
-      { title: "Widget model", members: ["widget"] },
-      { title: "Comms", members: ["jupyter.comm", "comm"] },
-    ],
   },
 ];
 
