@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { encodeValue, MAX_LIMIT, schemaType, tableBundle, tableSource, TABLE_MIME } from "../runtime/table.mjs";
+import { encodeValue, MAX_LIMIT, timeText, uniqueNames, schemaType, tableBundle, tableSource, TABLE_MIME } from "../runtime/table.mjs";
 
 type Resource = {
   schema: { fields: { name: string; type: string }[] };
@@ -129,15 +129,45 @@ test("Arrow tables: fields, declared types and column access", () => {
   assert.deepEqual(table(arrow, { columns: ["name"] }).resource.schema.fields.map((f) => f.name), ["name"]);
 });
 
-test("DuckDB results: names, types and row objects", () => {
+test("DuckDB results: names, types and rows by position", () => {
   const result = {
-    columnNames: () => ["moon", "radius_km", "first_seen"],
-    columnTypes: () => [{ toString: () => "VARCHAR" }, { toString: () => "DOUBLE" }, { toString: () => "DATE" }],
-    getRowObjectsJS: () => [{ moon: "Ganymede", radius_km: 2634.1, first_seen: new Date("1610-01-07T00:00:00Z") }],
+    columnNames: () => ["moon", "radius_km", "first_seen", "moon"],
+    columnTypes: () => ["VARCHAR", "DOUBLE", "DATE", "VARCHAR"].map((t) => ({ toString: () => t })),
+    currentRowCount: 1,
+    getRowsJS: () => [["Ganymede", 2634.1, new Date("1610-01-07T00:00:00Z"), "Jupiter III"]],
+    getRowObjectsJS: () => [],
   };
   const { resource } = table(result);
-  assert.deepEqual(resource.schema.fields.map((f) => f.type), ["string", "number", "date"]);
-  assert.deepEqual(resource.data[0], { moon: "Ganymede", radius_km: 2634.1, first_seen: "1610-01-07" });
+  assert.deepEqual(resource.schema.fields.map((f) => f.type), ["string", "number", "date", "string"]);
+  assert.deepEqual(resource.data[0], { moon: "Ganymede", radius_km: 2634.1, first_seen: "1610-01-07", moon_1: "Jupiter III" });
+});
+
+test("a DuckDB run() result, whose rows load asynchronously, is refused", () => {
+  const result = { columnNames: () => ["a"], columnTypes: () => ["INTEGER"], rowCount: 1, getRowObjectsJS: async () => [{ a: 1 }] };
+  assert.throws(() => table(result), /runAndReadAll/);
+});
+
+test("repeated and __proto__ column names stay separate keys", () => {
+  const { resource } = table([[1, 2, 3]], { columns: ["x", "x", "__proto__"] });
+  assert.deepEqual(resource.schema.fields.map((f) => f.name), ["x", "x_1", "__proto__"]);
+  const row = resource.data[0] as Record<string, unknown>;
+  assert.deepEqual(Object.keys(row), ["x", "x_1", "__proto__"]);
+  assert.equal(Object.getPrototypeOf(row), Object.prototype);
+  assert.deepEqual(uniqueNames(["id", "id", "x", "id", "id_1"]), ["id", "id_1", "x", "id_2", "id_1_1"]);
+});
+
+test("TIME values as times of day, in their declared unit", () => {
+  assert.equal(timeText(36672500000n), "10:11:12.5");
+  assert.equal(timeText(36672000, "Time32<MILLISECOND>"), "10:11:12");
+  assert.equal(timeText(36672000000000n, "Time"), "10:11:12");
+  assert.equal(encodeValue(36672500000n, "time", "TIME"), "10:11:12.5");
+  assert.equal(schemaType("INTEGER[3]"), "array");
+});
+
+test("the 1 MB cap counts UTF-8 bytes", () => {
+  const rows = Array.from({ length: 1000 }, () => ({ s: "€".repeat(500) }));
+  const { resource } = table(rows);
+  assert.ok(resource.ganymede.shown < 1000 && resource.ganymede.shown > 500, String(resource.ganymede.shown));
 });
 
 test("Polars: slice for rows past the head", () => {
