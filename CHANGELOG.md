@@ -4,7 +4,7 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.11.0 (2026-11-13)
 
 - `jupyter.table(value, options?)` shows rows as a table: an array of
   row objects or arrays, an Arrow table, a Polars DataFrame or a
