@@ -24,6 +24,7 @@ at the end.
 | `jupyter.comm`, `jupyter.widget` | Comms and interactive widgets: see [Widgets and comms](widgets.md). Not in Deno. |
 | [`jupyter.signal`](#stopping-on-interrupt-jupyter-signal) | An `AbortSignal` that an interrupt aborts, so a waiting cell can stop. Not in Deno. |
 | [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
+| [`jupyter.table(value, options?)`](#tables) | Show rows as a table that every frontend can display, with a text summary for agents. Not in Deno. |
 
 `prompt()` and `confirm()` are globals rather than members, and are covered
 [below](#asking-for-input-prompt-and-confirm). The [`jupyter`
@@ -316,7 +317,7 @@ objects, without a dependency on it. They are checked in this order:
 | Object with a `[jupyter.$display]()` method | whatever it returns | the method |
 | Canvas | PNG image | a `toDataURL()` method |
 | Vega or Vega-Lite chart | interactive chart | a `toSpec()` method returning a spec with `$schema` |
-| DataFrame | table (HTML and `application/vnd.dataresource+json`) | `schema`, `head()` and `toRecords()` |
+| Arrow table, Polars DataFrame, DuckDB result | [table](#tables) | Arrow: `schema.fields`, `numRows`, `getChild()`; Polars: `schema`, `head()`, `toRecords()`; DuckDB: `columnNames()`, `columnTypes()`, `getRowObjectsJS()` |
 | `Uint8Array` of PNG or JPEG data | image | the file signature |
 | SVG element | SVG | `outerHTML` starting with `<svg` |
 | HTML element | HTML | an `outerHTML` string |
@@ -351,8 +352,8 @@ Vega-Lite bar chart: x=month (ordinal, 3 values), y=sales (quantitative, 28 to 5
 ```
 
 **Tables with Polars.** A [nodejs-polars](https://pola-rs.github.io/nodejs-polars/)
-DataFrame shows its first 10 rows as an HTML table (the
-`dataresource` part carries 50), with its size and column types as text:
+DataFrame shows as a [table](#tables), as do Arrow tables and DuckDB
+results:
 
 ```ts cell
 import pl from "npm:nodejs-polars@0.18";
@@ -403,6 +404,63 @@ vega-lite-api works: packages with native add-ons (Polars, @napi-rs/canvas)
 can't be bundled for workerd, and linkedom fails on an optional import of
 `canvas`. Deno's `deno jupyter` can also display WebGPU textures and
 buffers; that is not supported here.
+
+## Tables
+
+`jupyter.table(value, options?)` shows rows and columns as a table. It
+takes an array of row objects, an array of arrays (named with
+`columns`), an Arrow table, a Polars DataFrame or a `@duckdb/node-api`
+result:
+
+```ts
+const moons = [
+  { moon: "Io", radius_km: 1821.6, discovered: new Date("1610-01-08") },
+  { moon: "Europa", radius_km: 1560.8, discovered: new Date("1610-01-08") },
+  { moon: "Ganymede", radius_km: 2634.1, discovered: new Date("1610-01-07") },
+  { moon: "Callisto", radius_km: 2410.3, discovered: new Date("1610-01-07") },
+];
+jupyter.table(moons, { title: "Galilean moons" });
+```
+
+The output has three parts, so each frontend shows what it can:
+
+- `application/vnd.dataresource+json`: each column's name and
+  [Table Schema](https://specs.frictionlessdata.io/table-schema/) type,
+  the rows as JSON, and `ganymede: { rows, shown }` with the total row
+  count and how many rows the output holds. The
+  [Ganymede](https://ganymede-server.com) apps show this part as a table
+  with sorting and paging.
+- `text/html`: a plain table with each column's type under its name, up
+  to 20 rows, and past that the first 10 and the last 5. JupyterLab, VS
+  Code and GitHub show this.
+- `text/plain`: the shape, each column's type and range, and numbered
+  first and last rows, for `jupyter console` and agents reading the
+  notebook. For the cell above it reads:
+
+```
+Table "Galilean moons" (4 rows, 3 columns)
+Columns:
+  moon        string    4 values
+  radius_km   number    1560.8 to 2634.1
+  discovered  datetime  1610-01-07T00:00:00.000Z to 1610-01-08T00:00:00.000Z
+Rows:
+  0 | Io       | 1821.6 | 1610-01-08T00:00:00.000Z
+  1 | Europa   | 1560.8 | 1610-01-08T00:00:00.000Z
+  2 | Ganymede | 2634.1 | 1610-01-07T00:00:00.000Z
+  3 | Callisto | 2410.3 | 1610-01-07T00:00:00.000Z
+```
+
+The output holds at most `limit` rows: 1,000 by default, up to 10,000,
+and never more than 1 MB of JSON. A bigger table says so everywhere it
+shows ("1,000 shown" in the summary, whose ranges then cover those rows),
+and its last rows still come from the whole table. Values are stored as
+JSON: integers past 2^53 as strings, dates as ISO 8601 strings, `NaN` and
+infinities as the strings `"NaN"`, `"Infinity"` and `"-Infinity"`, and
+binary data as its length.
+
+`columns` picks columns and their order, and `title` adds a caption. An
+Arrow table, Polars DataFrame or DuckDB result shows as a table without
+the call when it is a cell's value.
 
 ## Getting a bundle with format
 

@@ -23,6 +23,7 @@ reference](widgets-reference.md).
 | [`jupyter.signal`](#jupyter-signal) | An `AbortSignal` that an interrupt aborts, so code waiting on something only it can end can stop and clean up. |
 | [`jupyter.params`](#jupyter-params) | The parameters of this run: a frozen object, empty unless whoever started the kernel passed some, such as `ganymede execute -p counter="2nd Ave"`. |
 | [`jupyter.result(name, value)`](#jupyter-result-name-value) | Publish a value under a name, as an output that a run's caller reads by name instead of parsing outputs: `ganymede execute --results`, or another notebook. |
+| [`jupyter.table(value, options?)`](#jupyter-table-value-options) | Show rows and columns as a table. |
 | [`jupyter.host(options?)`](#jupyter-host-options) | The Ganymede server running this kernel, through its host API: read, search and (when granted) run other notebooks under its root. |
 | [`host.has(method)`](#host-has-method) | Whether this notebook may call `method`. |
 | [`host.call(method, params?, options?)`](#host-call-method-params-options) | Call a method by name. |
@@ -384,6 +385,43 @@ jupyter.result("counts", counts);
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#parameters-and-named-results)
+
+### `jupyter.table(value, options?)`
+
+```ts
+table(value: unknown, options?: TableOptions): Displayable;
+```
+
+Show rows and columns as a table. The output has Ganymede's table
+type, `application/vnd.dataresource+json` (Table Schema fields, up to
+`limit` rows as JSON, and the total row count), which the Ganymede
+apps show with sorting and paging; a plain HTML table of the first
+and last rows for JupyterLab and VS Code; and a text summary of each
+column's type and range for agents and consoles.
+
+An Arrow table, a Polars DataFrame or a DuckDB result also shows this
+way when it is a cell's value; pass one here to set `limit`,
+`columns` or `title`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `value` | `unknown` | yes | An array of row objects, an array of arrays (name them with `columns`), an Arrow table (apache-arrow, duckdb-wasm), a Polars DataFrame, or a `@duckdb/node-api` result. |
+| `options` | `TableOptions` | no | `limit`: rows to embed, default 1,000, at most 10,000, and never more than 1 MB of JSON. `columns`: which columns, in order. `title`: a caption. |
+
+**Returns** `Displayable`
+
+**Throws** `TypeError`: `value` isn't one of those, or `limit` isn't a whole number.
+
+```ts
+const moons = [
+  { moon: "Io", radius_km: 1821.6, discovered: new Date("1610-01-08") },
+  { moon: "Europa", radius_km: 1560.8, discovered: new Date("1610-01-08") },
+  { moon: "Ganymede", radius_km: 2634.1, discovered: new Date("1610-01-07") },
+];
+jupyter.table(moons, { title: "Galilean moons" });
+```
+
+Guide: [The `jupyter` namespace](jupyter-api.md#tables)
 
 ### `jupyter.host(options?)`
 

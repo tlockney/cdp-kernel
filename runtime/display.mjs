@@ -4,19 +4,23 @@
 //
 // Ported from Deno's cli/js/40_jupyter.js (v2.9.6), which is
 // Copyright 2018-2026 the Deno authors, MIT license. The formatting rules
-// (display symbol, canvas, Vega, Polars-style DataFrames, JPEG/PNG bytes,
-// HTML/SVG elements) are unchanged; the Deno internals it used are injected:
+// (display symbol, canvas, Vega, JPEG/PNG bytes, HTML/SVG elements) are
+// unchanged; Polars-style DataFrames show through table.mjs instead (#475),
+// as do Arrow tables and DuckDB results. The Deno internals it used are
+// injected:
 //   Deno[Deno.internal].inspectArgs -> host.inspect
 //   op_base64_encode_from_buffer    -> host.base64
 //   Deno.readFileSync               -> host.readFile
 //   op_jupyter_broadcast            -> host.send
 // WebGPU texture/buffer display depends on Deno's wgpu bindings and is
-// omitted. Comms and widgets (jupyter.comm, jupyter.widget) are additions
-// Deno doesn't have; see comm.mjs and widget.mjs.
+// omitted. Comms, widgets and tables (jupyter.comm, jupyter.widget,
+// jupyter.table) are additions Deno doesn't have; see comm.mjs, widget.mjs
+// and table.mjs.
 
 import { createComms } from "./comm.mjs";
 import { createHost } from "./host.mjs";
 import { createWidgetFactory } from "./widget.mjs";
+import { isTableLike, tableBundle, tableSource } from "./table.mjs";
 
 export const $display = Symbol.for("Jupyter.display");
 
@@ -243,66 +247,6 @@ function summarizeChart(spec) {
   }
 }
 
-function isDataFrameLike(obj) {
-  return obj !== null && typeof obj === "object" &&
-    obj.schema !== undefined && typeof obj.schema === "object" &&
-    typeof obj.head === "function" && typeof obj.toRecords === "function";
-}
-
-function mapPolarsTypeToJSONSchema(colType) {
-  const typeMapping = {
-    Null: "null",
-    Bool: "boolean",
-    Int8: "integer",
-    Int16: "integer",
-    Int32: "integer",
-    Int64: "integer",
-    UInt8: "integer",
-    UInt16: "integer",
-    UInt32: "integer",
-    UInt64: "integer",
-    Float32: "number",
-    Float64: "number",
-    Date: "string",
-    Datetime: "string",
-    Utf8: "string",
-    Categorical: "string",
-    List: "array",
-    Struct: "object",
-  };
-  // Polars DataTypes only expose their name through toJSON().
-  const dataType = typeof colType?.toJSON === "function" ? colType.toJSON()["DataType"] : undefined;
-  return typeMapping[dataType] || "string";
-}
-
-function extractDataFrame(df) {
-  const fields = [];
-  for (const [name, colType] of Object.entries(df.schema)) {
-    fields.push({ name, type: mapPolarsTypeToJSONSchema(colType) });
-  }
-  const data = df.head(50).toRecords();
-  let html = "<table><thead><tr>";
-  for (const field of fields) html += `<th>${escapeHTML(String(field.name))}</th>`;
-  html += "</tr></thead><tbody>";
-  for (const row of df.head(10).toRecords()) {
-    html += "<tr>";
-    for (const field of fields) html += `<td>${escapeHTML(String(row[field.name]))}</td>`;
-    html += "</tr>";
-  }
-  html += "</tbody></table>";
-  // Polars has `height`; the row count is left out when there isn't one.
-  const size = [];
-  if (Number.isInteger(df.height)) size.push(`${df.height} ${df.height === 1 ? "row" : "rows"}`);
-  size.push(`${fields.length} ${fields.length === 1 ? "column" : "columns"}`);
-  const columns = fields.slice(0, 20).map((field) => `${clip(String(field.name), 40)} (${field.type})`);
-  if (fields.length > 20) columns.push(`… ${fields.length - 20} more`);
-  return {
-    "application/vnd.dataresource+json": { data, schema: { fields } },
-    "text/html": html,
-    "text/plain": `DataFrame (${size.join(", ")})${columns.length ? `: ${columns.join(", ")}` : ""}`,
-  };
-}
-
 function isCanvasLike(obj) {
   return obj !== null && typeof obj === "object" && "toDataURL" in obj;
 }
@@ -377,7 +321,8 @@ export function createJupyter(host) {
       const vega = extractVega(obj);
       if (vega) return vega;
     }
-    if (isDataFrameLike(obj)) return extractDataFrame(obj);
+    // Arrow tables, Polars DataFrames and DuckDB results (#475).
+    if (isTableLike(obj)) return tableBundle(tableSource(obj));
     if (isJpg(obj)) return { "image/jpeg": host.base64(obj) };
     if (isPng(obj)) return { "image/png": host.base64(obj) };
     if (isSVGElementLike(obj)) return { "image/svg+xml": obj.outerHTML };
@@ -407,6 +352,13 @@ export function createJupyter(host) {
     throw new TypeError(
       "Object is not a valid image or a path to an image. `jupyter.image` supports displaying JPG or PNG images.",
     );
+  }
+
+  // jupyter.table (#475): rows and columns as Ganymede's table output,
+  // built now so a bad value fails the call, not the display.
+  function table(value, options = {}) {
+    const bundle = tableBundle(tableSource(value, options), options);
+    return { [$display]: () => bundle };
   }
 
   function broadcast(msgType, content, { metadata = {}, buffers = [] } = {}) {
@@ -546,6 +498,7 @@ export function createJupyter(host) {
         return readParams();
       },
       result,
+      table,
       format,
       md: taggedTemplate("text/markdown"),
       html: taggedTemplate("text/html"),
