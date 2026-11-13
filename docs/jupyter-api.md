@@ -493,13 +493,15 @@ rows.map((r) => r.n);  // [ 0, 1, 2 ]
 ```
 
 Integers that fit a JavaScript number are numbers, larger ones
-`bigint`; `DATE` and `TIMESTAMP` values are `Date`s.
+`bigint`; `DATE` and `TIMESTAMP` values are `Date`s, and `TIME` values
+`"HH:MM:SS"` strings. A repeated column name, as from a join, gets a
+suffix: the second `id` is `id_1`.
 
 DuckDB reads CSV, Parquet and JSON files by path or URL, and Parquet over
 HTTP in ranges, fetching only the columns a query needs.
 `jupyter.sql.load(name, source)` makes a table from a file, or from
 data the notebook already has: an array of row objects, an Arrow table
-or a Polars DataFrame.
+or a Polars DataFrame. Rows go in whole; bytes become base64 text.
 
 ```ts
 await jupyter.sql.load("weather", "https://raw.githubusercontent.com/vega/vega-datasets/v2.11.0/data/seattle-weather.csv");

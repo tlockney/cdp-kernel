@@ -14,7 +14,7 @@
 //
 // No static imports beyond table.mjs: this file must load in every target.
 
-import { encodeValue, fieldsOf, tableBundle, tableSource } from "./table.mjs";
+import { fieldsOf, tableBundle, tableSource } from "./table.mjs";
 
 export const NODE_API = "npm:@duckdb/node-api@1.5.6-r.2";
 export const DUCKDB_WASM = "npm:@duckdb/duckdb-wasm@1.29.0";
@@ -24,6 +24,9 @@ const RAW = Symbol("cdpk.sql.raw");
 
 /** A value from DuckDB as plain JavaScript: safe bigints as numbers. */
 function jsValue(value, declared) {
+  if (/^time(?!stamp)/i.test(declared ?? "") && (typeof value === "bigint" || typeof value === "number")) {
+    return timeText(value, declared);
+  }
   if (typeof value === "bigint") return Number.isSafeInteger(Number(value)) ? Number(value) : value;
   if (typeof value === "number" && /^(date|timestamp)/i.test(declared ?? "")) return new Date(value);
   if (Array.isArray(value)) return value.map((v) => jsValue(v));
@@ -39,15 +42,49 @@ function jsValue(value, declared) {
   return value;
 }
 
-/** An Arrow decimal's little-endian 32-bit words, scaled, as a number. */
+/**
+ * A TIME as "HH:MM:SS" with any fraction: DuckDB's native build gives
+ * microseconds since midnight, Arrow's type name says its unit.
+ */
+export function timeText(value, declared = "") {
+  const unit = /NANOSECOND/i.test(declared) ? 1_000_000_000n : /MILLISECOND/i.test(declared) ? 1000n : /<SECOND/i.test(declared) ? 1n : 1_000_000n;
+  const total = BigInt(value);
+  const seconds = total / unit;
+  const fraction = total % unit;
+  const pad = (n) => String(n).padStart(2, "0");
+  const text = `${pad(seconds / 3600n)}:${pad((seconds / 60n) % 60n)}:${pad(seconds % 60n)}`;
+  if (fraction === 0n) return text;
+  const digits = String(unit).length - 1;
+  return `${text}.${String(fraction).padStart(digits, "0").replace(/0+$/, "")}`;
+}
+
+/**
+ * Unique column names: a result may have two columns called `id` (a
+ * join), and rows are keyed by name, so the second becomes `id_1`.
+ */
+export function uniqueNames(names) {
+  const seen = new Set();
+  return names.map((name) => {
+    let unique = name;
+    for (let i = 1; seen.has(unique); i++) unique = `${name}_${i}`;
+    seen.add(unique);
+    return unique;
+  });
+}
+
+/**
+ * An Arrow decimal's little-endian 32-bit words, scaled, as a number; with
+ * no scale (HUGEINT), a bigint when a number can't hold it.
+ */
 export function decimalValue(words, scale) {
+  if (typeof words === "bigint" && scale === 0) return jsValue(words);
   if (typeof words === "number" || typeof words === "bigint") return Number(words) / 10 ** scale;
   const list = Array.from(words);
   let big = 0n;
   list.forEach((w, i) => (big |= BigInt(w >>> 0) << BigInt(32 * i)));
   const bits = BigInt(32 * list.length);
   if (list.length && list.at(-1) >>> 31) big -= 1n << bits;
-  return Number(big) / 10 ** scale;
+  return scale === 0 ? jsValue(big) : Number(big) / 10 ** scale;
 }
 
 /** A query's result: its columns and rows, shown as a table. */
@@ -77,6 +114,9 @@ export class SqlResult {
 /** A JavaScript value as a DuckDB parameter. */
 export function toParam(value) {
   if (value === undefined) return null;
+  // duckdb-wasm sends parameters as JSON, which has no bigint; DuckDB
+  // casts the text back where a number is wanted.
+  if (typeof value === "bigint") return Number.isSafeInteger(Number(value)) ? Number(value) : String(value);
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "object" && value !== null && !ArrayBuffer.isView(value)) return JSON.stringify(value);
   return value;
@@ -140,8 +180,10 @@ export function createSql({ importModule, signal, openEngine }) {
   }));
 
   async function run(text, params) {
-    const e = await open();
+    // The cell's signal, read before the first open's wait, so a cell that
+    // starts meanwhile doesn't take the query over.
     const s = signal?.();
+    const e = await open();
     if (s?.aborted) throw s.reason;
     const onAbort = () => e.interrupt?.();
     s?.addEventListener("abort", onAbort, { once: true });
@@ -195,6 +237,34 @@ export function createSql({ importModule, signal, openEngine }) {
   return sql;
 }
 
+/** A value as JSON for loading: nothing clipped, unlike a table's display. */
+function loadValue(value, type, depth = 0) {
+  if (value === null || value === undefined) return null;
+  if (type === "date" || type === "datetime") {
+    const d = value instanceof Date ? value : typeof value === "number" || typeof value === "bigint" ? new Date(Number(value)) : null;
+    if (d) return Number.isNaN(d.getTime()) ? null : type === "date" ? d.toISOString().slice(0, 10) : d.toISOString();
+  }
+  if (typeof value === "bigint") return Number.isSafeInteger(Number(value)) ? Number(value) : String(value);
+  // DOUBLE takes no "NaN" text from JSON; null instead.
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "object") return value;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  if (depth > 64) throw new TypeError("jupyter.sql.load: a value is nested more than 64 levels deep");
+  if (ArrayBuffer.isView(value) && !(value instanceof DataView) && value.BYTES_PER_ELEMENT === 1) {
+    // Bytes as base64 text: JSON has no binary.
+    let text = "";
+    for (const byte of value) text += String.fromCharCode(byte);
+    return btoa(text);
+  }
+  if (Array.isArray(value) || ArrayBuffer.isView(value)) return Array.from(value, (v) => loadValue(v, undefined, depth + 1));
+  if (typeof value.toJSON === "function" && Object.getPrototypeOf(value) !== Object.prototype) {
+    return loadValue(value.toJSON(), undefined, depth + 1);
+  }
+  const out = {};
+  for (const [k, v] of Object.entries(value)) out[k] = loadValue(v, undefined, depth + 1);
+  return out;
+}
+
 /** Rows, an Arrow table or a DataFrame as JSON and a from_json structure. */
 export function rowsAsJson(source) {
   const src = tableSource(source);
@@ -204,10 +274,7 @@ export function rowsAsJson(source) {
   const rows = raw.map((r) => {
     const obj = {};
     fields.forEach((f, i) => {
-      let v = encodeValue(r[i], f.type);
-      // DOUBLE takes no "NaN" text from JSON; null instead.
-      if ((f.type === "number" || f.type === "integer") && typeof v === "string" && !/^-?\d+$/.test(v)) v = null;
-      obj[f.name] = v;
+      obj[f.name] = loadValue(r[i], f.type);
     });
     return obj;
   });
@@ -241,10 +308,11 @@ async function nativeEngine(importModule) {
     async query(text, params) {
       const result = await conn.runAndReadAll(text, params);
       const types = result.columnTypes();
-      const columns = result.columnNames().map((name, i) => ({ name, type: String(types[i]) }));
-      const rows = result.getRowObjectsJS().map((row) => {
+      const columns = uniqueNames(result.columnNames()).map((name, i) => ({ name, type: String(types[i]) }));
+      // By position, as two columns may share a name.
+      const rows = result.getRowsJS().map((row) => {
         const out = {};
-        for (const c of columns) out[c.name] = jsValue(row[c.name], c.type);
+        columns.forEach((c, j) => (out[c.name] = jsValue(row[j], c.type)));
         return out;
       });
       return new SqlResult(columns, rows);
@@ -271,32 +339,45 @@ async function wasmEngine(importModule) {
     connection: conn,
     interrupt: () => void conn.cancelSent?.(),
     async query(text, params) {
-      let table;
-      if (params.length === 0) table = await conn.query(text);
+      // send() streams the result, which cancelSent() can stop; query()
+      // runs to the end in the worker whatever is asked of it.
+      let reader;
+      let statement;
+      if (params.length === 0) reader = await conn.send(text, true);
       else {
-        const statement = await conn.prepare(text);
-        try {
-          table = await statement.query(...params);
-        } finally {
-          await statement.close();
+        statement = await conn.prepare(text);
+        reader = await statement.send(...params);
+      }
+      try {
+        const columns = [];
+        const rows = [];
+        let decimal = [];
+        for await (const batch of reader) {
+          if (columns.length === 0 && batch.schema.fields.length) {
+            const fields = batch.schema.fields;
+            uniqueNames(fields.map((f) => f.name)).forEach((name, j) => columns.push({ name, type: String(fields[j].type) }));
+            // Arrow gives a DECIMAL as its 128-bit words; DuckDB's native
+            // build gives a number, so this does too.
+            decimal = fields.map((f) => (/^decimal/i.test(String(f.type)) ? f.type.scale ?? 0 : null));
+          }
+          const vectors = columns.map((_, j) => batch.getChildAt(j));
+          for (let i = 0; i < batch.numRows; i++) {
+            const row = {};
+            columns.forEach((c, j) => {
+              const v = vectors[j]?.get(i);
+              row[c.name] = decimal[j] !== null && v != null ? decimalValue(v, decimal[j]) : jsValue(v, c.type);
+            });
+            rows.push(row);
+          }
         }
+        if (columns.length === 0 && reader.schema?.fields) {
+          const fields = reader.schema.fields;
+          uniqueNames(fields.map((f) => f.name)).forEach((name, j) => columns.push({ name, type: String(fields[j].type) }));
+        }
+        return new SqlResult(columns, rows);
+      } finally {
+        await statement?.close();
       }
-      const fields = table.schema.fields;
-      const columns = fields.map((f) => ({ name: f.name, type: String(f.type) }));
-      const vectors = columns.map((c) => table.getChild(c.name));
-      // Arrow gives a DECIMAL as its 128-bit words; DuckDB's native build
-      // gives a number, so this does too.
-      const decimal = fields.map((f) => (/^decimal/i.test(String(f.type)) ? f.type.scale ?? 0 : null));
-      const rows = [];
-      for (let i = 0; i < table.numRows; i++) {
-        const row = {};
-        columns.forEach((c, j) => {
-          const v = vectors[j]?.get(i);
-          row[c.name] = decimal[j] !== null && v != null ? decimalValue(v, decimal[j]) : jsValue(v, c.type);
-        });
-        rows.push(row);
-      }
-      return new SqlResult(columns, rows);
     },
     async close() {
       await conn.close();

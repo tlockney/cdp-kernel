@@ -120,6 +120,10 @@ export interface Sql {
 
 export function decimalValue(words: ArrayLike<number> | number | bigint, scale: number): number;
 export function toParam(value: unknown): unknown;
+/** A DuckDB TIME as `HH:MM:SS[.fraction]`, from its count in the declared type's unit (microseconds by default). */
+export function timeText(value: number | bigint, declared?: string): string;
+/** Column names made unique: a repeated `id` becomes `id_1`, `id_2`, and so on. */
+export function uniqueNames(names: readonly string[]): string[];
 export function compose(strings: readonly string[], values: unknown[]): { text: string; params: unknown[] };
 export function quoteIdent(name: string): string;
 export function quoteString(text: string): string;
