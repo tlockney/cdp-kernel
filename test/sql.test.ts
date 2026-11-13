@@ -109,14 +109,14 @@ test("load: a file path is quoted into the query, rows go in as JSON", async () 
   const { state, openEngine } = fake();
   const sql = createSql({ importModule: () => Promise.reject(new Error("unused")), openEngine });
   await sql.load("w x", "data/it's.csv");
-  await sql.load("moons", [{ moon: "Io", r: 1821.6, d: new Date("1610-01-08T00:00:00Z"), n: 1, tags: ["a"] }]);
+  await sql.load("moons", [{ moon: "Io", r: 1821.6, d: new Date("1610-01-08T10:00:00Z"), day: new Date("1610-01-08"), n: 1, tags: ["a"] }]);
   assert.equal(state.calls[0].text, `create or replace table "w x" as select * from 'data/it''s.csv'`);
   assert.equal(state.calls[1].text, `create or replace table "moons" as select unnest(from_json(?, ?), recursive := true)`);
   assert.deepEqual(JSON.parse(state.calls[1].params[1] as string), [
-    { moon: "VARCHAR", r: "DOUBLE", d: "TIMESTAMP", n: "BIGINT", tags: "JSON" },
+    { moon: "VARCHAR", r: "DOUBLE", d: "TIMESTAMP", day: "DATE", n: "BIGINT", tags: "JSON" },
   ]);
   assert.deepEqual(JSON.parse(state.calls[1].params[0] as string), [
-    { moon: "Io", r: 1821.6, d: "1610-01-08T00:00:00.000Z", n: 1, tags: ["a"] },
+    { moon: "Io", r: 1821.6, d: "1610-01-08T10:00:00.000Z", day: "1610-01-08", n: 1, tags: ["a"] },
   ]);
   await assert.rejects(sql.load("", []), TypeError);
   await assert.rejects(sql.load("e", []), /no columns/);
