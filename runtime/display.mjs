@@ -13,13 +13,14 @@
 //   Deno.readFileSync               -> host.readFile
 //   op_jupyter_broadcast            -> host.send
 // WebGPU texture/buffer display depends on Deno's wgpu bindings and is
-// omitted. Comms, widgets and tables (jupyter.comm, jupyter.widget,
-// jupyter.table) are additions Deno doesn't have; see comm.mjs, widget.mjs
-// and table.mjs.
+// omitted. Comms, widgets, tables and SQL (jupyter.comm, jupyter.widget,
+// jupyter.table, jupyter.sql) are additions Deno doesn't have; see
+// comm.mjs, widget.mjs, table.mjs and sql.mjs.
 
 import { createComms } from "./comm.mjs";
 import { createHost } from "./host.mjs";
 import { createWidgetFactory } from "./widget.mjs";
+import { createSql } from "./sql.mjs";
 import { isTableLike, tableBundle, tableSource } from "./table.mjs";
 
 export const $display = Symbol.for("Jupyter.display");
@@ -444,6 +445,17 @@ export function createJupyter(host) {
     });
   }
 
+  // jupyter.sql (#477): DuckDB, loaded through the cell's own import on
+  // the first query; an interrupt (jupyter.signal) interrupts the query.
+  const sql = createSql({
+    importModule: (specifier) => {
+      const load = globalThis.__cdpk?.import;
+      if (typeof load !== "function") return Promise.reject(new Error("jupyter.sql: no module loader in this runtime"));
+      return load(specifier);
+    },
+    signal: () => current.signal,
+  });
+
   const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
 
   // jupyter.signal (#418): aborted when the kernel is interrupted, so cell
@@ -499,6 +511,7 @@ export function createJupyter(host) {
       },
       result,
       table,
+      sql,
       format,
       md: taggedTemplate("text/markdown"),
       html: taggedTemplate("text/html"),

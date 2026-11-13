@@ -45,6 +45,7 @@ const DISPLAY = "runtime/display.d.mts";
 const COMM = "runtime/comm.d.mts";
 const WIDGET = "runtime/widget.d.mts";
 const HOST = "runtime/host.d.mts";
+const SQL = "runtime/sql.d.mts";
 const GLOBALS = "src/globals.ts";
 
 export const pages: Page[] = [
@@ -67,6 +68,13 @@ reference](widgets-reference.md).`,
       },
       { iface: "HostNotebooks", file: HOST, prefix: "host.notebooks.", heading: "host.notebooks" },
       { iface: "HostSelf", file: HOST, prefix: "host.self.", heading: "host.self" },
+      {
+        iface: "Sql",
+        file: SQL,
+        prefix: "jupyter.sql.",
+        heading: "Sql",
+        intro: "Methods of [`jupyter.sql`](#jupyter-sql), beside the tag itself.",
+      },
     ],
     globals: ["prompt", "confirm"],
     types: [

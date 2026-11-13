@@ -1,7 +1,9 @@
 import type { CommApi, Comms } from "./comm.d.mts";
 import type { Host, HostCallOptions, HostError, HostErrorCode, HostNotebooks, HostOptions, HostSelf, NotebookEntry, NotebookHit, NotebookSearch } from "./host.d.mts";
 import type { Widget, WidgetOptions } from "./widget.d.mts";
+import type { Sql, SqlColumn, SqlFragment, SqlResult } from "./sql.d.mts";
 
+export type { Sql, SqlColumn, SqlFragment, SqlResult };
 export type { CommApi, Host, HostCallOptions, HostError, HostErrorCode, HostNotebooks, HostOptions, HostSelf, NotebookEntry, NotebookHit, NotebookSearch, Widget, WidgetOptions };
 
 /**
@@ -374,6 +376,33 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#tables
    */
   table(value: unknown, options?: TableOptions): Displayable;
+  /**
+   * Run SQL on an in-memory [DuckDB](https://duckdb.org) database, as a
+   * tagged template: each `${value}` becomes a bound parameter, never
+   * query text, so values can't change the query. Resolves to a
+   * `SqlResult`, which shows as a table and has `columns` and `rows`.
+   *
+   * The database opens on the first query and lasts until the kernel
+   * restarts or `jupyter.sql.close()`. DuckDB reads CSV, Parquet and JSON
+   * files by path or URL; `jupyter.sql.load` makes a table from rows the
+   * notebook already has. An interrupt stops a running query.
+   *
+   * @throws {TypeError} Called as a function rather than a tag.
+   * @availability Node, Deno and Bun use `@duckdb/node-api`; the browser
+   *   target (the Ganymede apps) uses duckdb-wasm from a CDN. Not on
+   *   workerd or celld.
+   * @example
+   * ```ts
+   * const min = 2000;
+   * await jupyter.sql`
+   *   select moon, radius_km
+   *   from (values ('Io', 1821.6), ('Ganymede', 2634.1), ('Callisto', 2410.3)) as m(moon, radius_km)
+   *   where radius_km > ${min}
+   *   order by radius_km desc`;
+   * ```
+   * @see jupyter-api.md#sql-with-duckdb
+   */
+  readonly sql: Sql;
   /**
    * The Ganymede server running this kernel, through its host API: read,
    * search and (when granted) run other notebooks under its root. The

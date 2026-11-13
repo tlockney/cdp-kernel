@@ -25,6 +25,7 @@ at the end.
 | [`jupyter.signal`](#stopping-on-interrupt-jupyter-signal) | An `AbortSignal` that an interrupt aborts, so a waiting cell can stop. Not in Deno. |
 | [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
 | [`jupyter.table(value, options?)`](#tables) | Show rows as a table that every frontend can display, with a text summary for agents. Not in Deno. |
+| [`` jupyter.sql`...` ``](#sql-with-duckdb) | Run SQL on an in-memory DuckDB database; results show as tables. Not in Deno. |
 
 `prompt()` and `confirm()` are globals rather than members, and are covered
 [below](#asking-for-input-prompt-and-confirm). The [`jupyter`
@@ -468,6 +469,63 @@ shows as a table without the call when it is a cell's value. For DuckDB,
 that is a reader from `runAndReadAll()`: a `run()` result loads its rows
 asynchronously, so `jupyter.table` refuses it.
 
+## SQL with DuckDB
+
+`jupyter.sql` runs SQL on an in-memory [DuckDB](https://duckdb.org)
+database, as a tagged template. The result shows as a [table](#tables):
+
+```ts
+const min = 2000;
+await jupyter.sql`
+  select moon, radius_km
+  from (values ('Io', 1821.6), ('Ganymede', 2634.1), ('Callisto', 2410.3)) as m(moon, radius_km)
+  where radius_km > ${min}
+  order by radius_km desc`;
+```
+
+A `${value}` can't change the query, whatever it holds: it becomes a
+bound parameter, or in the browser target a quoted literal (so that an
+interrupt can stop the query). `Date`s go in as ISO strings,
+objects and arrays as JSON. For text that has to be part of the query, a
+table name or a file path built in code, use `jupyter.sql.raw(text)`,
+and never with text from outside the notebook.
+
+The result has `columns` (name and DuckDB type) and `rows` (plain
+objects), for code that goes on with the data:
+
+```ts
+const { rows } = await jupyter.sql`select range as n from range(3)`;
+rows.map((r) => r.n);  // [ 0, 1, 2 ]
+```
+
+Integers that fit a JavaScript number are numbers, larger ones
+`bigint`; `DATE` and `TIMESTAMP` values are `Date`s, and `TIME` values
+`"HH:MM:SS"` strings. A repeated column name, as from a join, gets a
+suffix: the second `id` is `id_1`.
+
+DuckDB reads CSV, Parquet and JSON files by path or URL, and Parquet over
+HTTP in ranges, fetching only the columns a query needs.
+`jupyter.sql.load(name, source)` makes a table from a file, or from
+data the notebook already has: an array of row objects, an Arrow table
+or a Polars DataFrame. Rows go in whole; bytes become base64 text.
+
+```ts
+await jupyter.sql.load("weather", "https://raw.githubusercontent.com/vega/vega-datasets/v2.11.0/data/seattle-weather.csv");
+await jupyter.sql.load("moons", [
+  { moon: "Io", radius_km: 1821.6, discovered: new Date("1610-01-08") },
+  { moon: "Ganymede", radius_km: 2634.1, discovered: new Date("1610-01-07") },
+]);
+await jupyter.sql`select year(date) as year, round(avg(temp_max), 1) as avg_high from weather group by year order by year`;
+```
+
+The database opens on the first query, which loads DuckDB: the
+`@duckdb/node-api` package on Node, Deno and Bun (installed on first use
+like any `npm:` import), and DuckDB's WebAssembly build from a CDN in the
+browser target and the Ganymede apps. It lasts until the kernel restarts
+or `await jupyter.sql.close()`. Interrupting the kernel stops a running
+query. `await jupyter.sql.connection()` returns DuckDB's own connection
+for anything the tag doesn't cover. workerd and celld have no DuckDB.
+
 ## Getting a bundle with format
 
 `await jupyter.format(value)` returns the MIME bundle that displaying
@@ -726,6 +784,7 @@ Everything on this page works on every runtime, except:
 | `prompt`, `confirm` | yes | yes | return `null` / `false` |
 | `Deno.jupyter` | Deno, or Node with `--deno-compat` | no | no |
 | Native-add-on packages (Polars, canvas) | yes | yes | no |
+| `jupyter.sql` | yes | yes | no |
 
 What counts as a cell's result also differs slightly on Bun, workerd and
 celld: only an expression statement at the very end of the cell is a

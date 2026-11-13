@@ -16,6 +16,14 @@ Issue and pull request numbers refer to
   as a cell's value, and Polars DataFrames show the new output instead of
   50 rows and a 10-row HTML table
   ([#475](https://github.com/tlockney/cdp-kernel/issues/475)).
+- `` jupyter.sql`...` `` runs SQL on an in-memory DuckDB database, with
+  each `${value}` as a bound parameter, and resolves to a result that
+  shows as a table and has `columns` and `rows`. `jupyter.sql.load`
+  makes a table from a CSV, Parquet or JSON file, rows, an Arrow table or
+  a DataFrame; `query`, `raw`, `close` and `connection` cover the rest.
+  DuckDB loads on the first query: `@duckdb/node-api` on Node, Deno and
+  Bun, duckdb-wasm from a CDN on the browser target. Not on workerd or
+  celld ([#477](https://github.com/tlockney/cdp-kernel/issues/477)).
 - The site's landing page puts Node and Deno first and lists Bun, workerd
   and celld under "Also runs on"
   ([#468](https://github.com/tlockney/cdp-kernel/issues/468)).

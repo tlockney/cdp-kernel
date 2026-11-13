@@ -36,3 +36,4 @@ export function timeText(value: number | bigint, declared?: string): string;
 export function uniqueNames(names: readonly string[]): string[];
 export function tableSource(value: unknown, options?: TableBundleOptions): TableSource;
 export function tableBundle(source: TableSource, options?: TableBundleOptions): { [mediaType: string]: unknown };
+export function fieldsOf(source: TableSource, rows: unknown[][]): { name: string; type: string }[];

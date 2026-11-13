@@ -50,6 +50,7 @@ export const RUNTIME_FILES = [
   "host.mjs",
   "widget.mjs",
   "table.mjs",
+  "sql.mjs",
   "node-hooks.mjs",
   "deno-compat.mjs",
   "node-modules-resolve.mjs",
