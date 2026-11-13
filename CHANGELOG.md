@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The browser kernel's `modules` option maps import specifiers to URLs
+  the page serves, ahead of the CDN, and `CHART_MODULES` names the
+  packages `jupyter.chart` loads, so a page can ship them and draw
+  charts offline
+  ([#491](https://github.com/tlockney/cdp-kernel/issues/491)).
 - The `jupyter` namespace guide and the `jupyter` reference group their
   members by topic: showing output, data, asking and interrupting, and
   notebooks as programs. Mentions of anywidget link to the widget model

@@ -31,6 +31,13 @@ export interface BrowserTargetOptions {
   /** Where npm:, jsr: and bare imports load from; esm.sh by default. */
   cdn?: string;
   /**
+   * Specifiers, as written, mapped to URLs the page serves (resolved
+   * against `base`), which win over `cdn`: a cell's import and
+   * `jupyter.chart`'s and `jupyter.sql`'s libraries load from there, so
+   * they work offline. `CHART_MODULES` names jupyter.chart's.
+   */
+  modules?: { readonly [specifier: string]: string };
+  /**
    * Modules the Worker imports before the first cell, each time it starts,
    * resolved against `base`. A module's default export, if a function, is
    * called with `{ host, jupyter }` (#384).
@@ -101,7 +108,7 @@ export class BrowserTarget implements KernelTarget {
     const base = options.base ?? globalThis.location?.href ?? "file:///";
     try {
       const params = options.params === undefined ? undefined : JSON.stringify(options.params);
-      const { userAgent } = await target.#request("info", { base, cdn: options.cdn, preload: options.preload ?? [], params });
+      const { userAgent } = await target.#request("info", { base, cdn: options.cdn, modules: options.modules, preload: options.preload ?? [], params });
       if (typeof userAgent === "string") target.versions.runtime = browserName(userAgent);
       target.versions.engine = engineName(typeof userAgent === "string" ? userAgent : "");
     } catch (err) {
