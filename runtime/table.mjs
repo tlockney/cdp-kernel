@@ -46,9 +46,18 @@ export function isPolarsFrame(value) {
     typeof value.toRecords === "function";
 }
 
-export function isDuckDBResult(value) {
+function isDuckDBShaped(value) {
   return isObject(value) && typeof value.columnNames === "function" && typeof value.columnTypes === "function" &&
     typeof value.getRowObjectsJS === "function";
+}
+
+/**
+ * A `@duckdb/node-api` result reader (from `runAndReadAll` or
+ * `streamAndReadAll`), whose rows are read already. A `run()` result
+ * reads its rows asynchronously, so it isn't one.
+ */
+export function isDuckDBResult(value) {
+  return isDuckDBShaped(value) && typeof value.currentRowCount === "number" && typeof value.getRowsJS === "function";
 }
 
 /** Whether `value` shows as a table when it is a cell's value. */
@@ -62,7 +71,7 @@ export function isTableLike(value) {
 export function schemaType(declared) {
   const t = String(declared ?? "");
   if (t === "") return undefined;
-  if (/^(list|large_?list|fixed_?size_?list|array)\b|\[\]$/i.test(t)) return "array";
+  if (/^(list|large_?list|fixed_?size_?list|array)\b|\[\d*\]$/i.test(t)) return "array";
   if (/^(struct|map|union|json)\b/i.test(t)) return "object";
   if (/^(u?int\d*|u?(tiny|small|big|huge)?int(eger)?)\b/i.test(t)) return "integer";
   if (/^(float\d*|double|real|decimal|numeric)\b/i.test(t)) return "number";
@@ -146,8 +155,9 @@ function plain(value, depth = 0) {
 }
 
 /** One cell as Table Schema JSON for a column of `type`. */
-export function encodeValue(value, type) {
+export function encodeValue(value, type, declared) {
   if (value === null || value === undefined) return null;
+  if (type === "time" && (typeof value === "bigint" || typeof value === "number")) return timeText(value, declared);
   if (type === "date" || type === "datetime") {
     const d = toDate(value);
     if (d) return type === "date" ? d.toISOString().slice(0, 10) : d.toISOString();
@@ -161,6 +171,37 @@ export function encodeValue(value, type) {
   if (typeof value === "string") return clipString(value);
   if (typeof value === "boolean") return value;
   return plain(value);
+}
+
+/**
+ * A time of day as `HH:MM:SS[.fraction]`, from a count in the declared
+ * type's unit: Arrow's `Time64<NANOSECOND>` and the like, Polars' `Time`
+ * (nanoseconds), or microseconds, as DuckDB's `TIME` is.
+ */
+export function timeText(value, declared = "") {
+  const d = String(declared);
+  const unit = /NANOSECOND|^Time$/.test(d) ? 1_000_000_000n : /MILLISECOND/i.test(d) ? 1000n : /<SECOND/i.test(d) ? 1n : 1_000_000n;
+  const total = typeof value === "bigint" ? value : BigInt(Math.trunc(value));
+  const seconds = total / unit;
+  const fraction = total % unit;
+  const pad = (n) => String(n).padStart(2, "0");
+  const text = `${pad(seconds / 3600n)}:${pad((seconds / 60n) % 60n)}:${pad(seconds % 60n)}`;
+  if (fraction === 0n) return text;
+  return `${text}.${String(fraction).padStart(String(unit).length - 1, "0").replace(/0+$/, "")}`;
+}
+
+/**
+ * Unique column names: a result may have two columns called `id` (a
+ * join), and rows are keyed by name, so the second becomes `id_1`.
+ */
+export function uniqueNames(names) {
+  const seen = new Set();
+  return names.map((name) => {
+    let unique = name;
+    for (let i = 1; seen.has(unique); i++) unique = `${name}_${i}`;
+    seen.add(unique);
+    return unique;
+  });
 }
 
 // --- Sources ----------------------------------------------------------------
@@ -228,12 +269,13 @@ function fromDuckDB(result, names) {
   const types = result.columnTypes();
   const all = result.columnNames().map((name, i) => ({ name, declared: String(types[i]) }));
   const columns = names ? all.filter((c) => names.includes(c.name)) : all;
+  const at = columns.map((c) => all.indexOf(c));
   let rows;
-  const get = () => (rows ??= result.getRowObjectsJS());
+  const get = () => (rows ??= result.getRowsJS());
   return {
     columns,
-    total: typeof result.rowCount === "number" ? result.rowCount : get().length,
-    read: (start, end) => get().slice(start, end).map((row) => columns.map((c) => row[c.name])),
+    total: result.currentRowCount,
+    read: (start, end) => get().slice(start, end).map((row) => at.map((i) => row[i])),
   };
 }
 
@@ -244,6 +286,9 @@ export function tableSource(value, options = {}) {
   if (isArrowTable(value)) return fromArrow(value, names);
   if (isPolarsFrame(value)) return fromPolars(value, names);
   if (isDuckDBResult(value)) return fromDuckDB(value, names);
+  if (isDuckDBShaped(value)) {
+    throw new TypeError("jupyter.table: a DuckDB run() result reads its rows asynchronously; use runAndReadAll(), or jupyter.sql");
+  }
   if (Array.isArray(value)) {
     const first = value.find((row) => row !== null && row !== undefined);
     return Array.isArray(first) ? fromArrays(value, names) : fromObjects(value, names);
@@ -342,11 +387,13 @@ export function tableBundle(source, options = {}) {
   const total = source.total;
 
   const raw = source.read(0, Math.min(limit, total));
+  const names = uniqueNames(source.columns.map((c) => c.name));
   const fields = source.columns.map((c, i) => ({
-    name: c.name,
+    name: names[i],
     type: schemaType(c.declared) ?? inferType(raw.map((r) => r[i])),
   }));
-  const encode = (r) => fields.map((f, i) => encodeValue(r[i], f.type));
+  const encode = (r) => fields.map((f, i) => encodeValue(r[i], f.type, source.columns[i].declared));
+  const utf8 = new TextEncoder();
 
   // Rows as JSON, stopping at MAX_BYTES.
   const encoded = [];
@@ -354,9 +401,10 @@ export function tableBundle(source, options = {}) {
   let bytes = 0;
   for (const r of raw) {
     const values = encode(r);
+    // defineProperty, so a column called __proto__ is an ordinary key.
     const obj = {};
-    fields.forEach((f, i) => (obj[f.name] = values[i]));
-    bytes += JSON.stringify(obj).length + 1;
+    fields.forEach((f, i) => Object.defineProperty(obj, f.name, { value: values[i], enumerable: true, writable: true, configurable: true }));
+    bytes += utf8.encode(JSON.stringify(obj)).length + 1;
     if (bytes > MAX_BYTES && data.length > 0) break;
     encoded.push(values);
     data.push(obj);

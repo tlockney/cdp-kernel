@@ -317,7 +317,7 @@ objects, without a dependency on it. They are checked in this order:
 | Object with a `[jupyter.$display]()` method | whatever it returns | the method |
 | Canvas | PNG image | a `toDataURL()` method |
 | Vega or Vega-Lite chart | interactive chart | a `toSpec()` method returning a spec with `$schema` |
-| Arrow table, Polars DataFrame, DuckDB result | [table](#tables) | Arrow: `schema.fields`, `numRows`, `getChild()`; Polars: `schema`, `head()`, `toRecords()`; DuckDB: `columnNames()`, `columnTypes()`, `getRowObjectsJS()` |
+| Arrow table, Polars DataFrame, DuckDB result | [table](#tables) | Arrow: `schema.fields`, `numRows`, `getChild()`; Polars: `schema`, `head()`, `toRecords()`; DuckDB: `columnNames()`, `columnTypes()`, `getRowsJS()`, `currentRowCount` (a reader, from `runAndReadAll()`) |
 | `Uint8Array` of PNG or JPEG data | image | the file signature |
 | SVG element | SVG | `outerHTML` starting with `<svg` |
 | HTML element | HTML | an `outerHTML` string |
@@ -440,27 +440,33 @@ The output has three parts, so each frontend shows what it can:
 ```
 Table "Galilean moons" (4 rows, 3 columns)
 Columns:
-  moon        string    4 values
-  radius_km   number    1560.8 to 2634.1
-  discovered  datetime  1610-01-07T00:00:00.000Z to 1610-01-08T00:00:00.000Z
+  moon        string  4 values
+  radius_km   number  1560.8 to 2634.1
+  discovered  date    1610-01-07 to 1610-01-08
 Rows:
-  0 | Io       | 1821.6 | 1610-01-08T00:00:00.000Z
-  1 | Europa   | 1560.8 | 1610-01-08T00:00:00.000Z
-  2 | Ganymede | 2634.1 | 1610-01-07T00:00:00.000Z
-  3 | Callisto | 2410.3 | 1610-01-07T00:00:00.000Z
+  0 | Io       | 1821.6 | 1610-01-08
+  1 | Europa   | 1560.8 | 1610-01-08
+  2 | Ganymede | 2634.1 | 1610-01-07
+  3 | Callisto | 2410.3 | 1610-01-07
 ```
 
 The output holds at most `limit` rows: 1,000 by default, up to 10,000,
-and never more than 1 MB of JSON. A bigger table says so everywhere it
+and never more than 1 MB of JSON (in UTF-8). A bigger table says so everywhere it
 shows ("1,000 shown" in the summary, whose ranges then cover those rows),
 and its last rows still come from the whole table. Values are stored as
-JSON: integers past 2^53 as strings, dates as ISO 8601 strings, `NaN` and
+JSON: integers past 2^53 as strings, dates as ISO 8601 strings, times
+of day as `HH:MM:SS`, `NaN` and
 infinities as the strings `"NaN"`, `"Infinity"` and `"-Infinity"`, and
 binary data as its length.
 
-`columns` picks columns and their order, and `title` adds a caption. An
-Arrow table, Polars DataFrame or DuckDB result shows as a table without
-the call when it is a cell's value.
+`columns` picks columns (and, for rows given as objects or arrays, their
+order), and `title` adds a caption. A column name that repeats, as from
+a join, gets a suffix: the second `id` is `id_1`. Column types come from
+the source when it declares them (Arrow, Polars, DuckDB), and otherwise
+from the rows embedded. An Arrow table, Polars DataFrame or DuckDB result
+shows as a table without the call when it is a cell's value. For DuckDB,
+that is a reader from `runAndReadAll()`: a `run()` result loads its rows
+asynchronously, so `jupyter.table` refuses it.
 
 ## Getting a bundle with format
 
