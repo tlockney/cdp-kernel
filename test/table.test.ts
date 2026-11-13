@@ -134,6 +134,7 @@ test("DuckDB results: names, types and rows by position", () => {
     columnNames: () => ["moon", "radius_km", "first_seen", "moon"],
     columnTypes: () => ["VARCHAR", "DOUBLE", "DATE", "VARCHAR"].map((t) => ({ toString: () => t })),
     currentRowCount: 1,
+    done: true,
     getRowsJS: () => [["Ganymede", 2634.1, new Date("1610-01-07T00:00:00Z"), "Jupiter III"]],
     getRowObjectsJS: () => [],
   };
@@ -145,6 +146,8 @@ test("DuckDB results: names, types and rows by position", () => {
 test("a DuckDB run() result, whose rows load asynchronously, is refused", () => {
   const result = { columnNames: () => ["a"], columnTypes: () => ["INTEGER"], rowCount: 1, getRowObjectsJS: async () => [{ a: 1 }] };
   assert.throws(() => table(result), /runAndReadAll/);
+  const partial = { columnNames: () => ["a"], columnTypes: () => ["INTEGER"], currentRowCount: 0, done: false, getRowsJS: () => [], getRowObjectsJS: () => [] };
+  assert.throws(() => table(partial), /readAll\(\) first/);
 });
 
 test("repeated and __proto__ column names stay separate keys", () => {
@@ -160,6 +163,7 @@ test("TIME values as times of day, in their declared unit", () => {
   assert.equal(timeText(36672500000n), "10:11:12.5");
   assert.equal(timeText(36672000, "Time32<MILLISECOND>"), "10:11:12");
   assert.equal(timeText(36672000000000n, "Time"), "10:11:12");
+  assert.equal(timeText(36672500000000n, "TIME_NS"), "10:11:12.5");
   assert.equal(encodeValue(36672500000n, "time", "TIME"), "10:11:12.5");
   assert.equal(schemaType("INTEGER[3]"), "array");
 });
