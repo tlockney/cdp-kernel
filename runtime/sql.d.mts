@@ -120,6 +120,10 @@ export interface Sql {
 
 export function decimalValue(words: ArrayLike<number> | number | bigint, scale: number): number;
 export function toParam(value: unknown): unknown;
+/** A parameter as a SQL literal. */
+export function sqlLiteral(value: unknown): string;
+/** The query with each `?` placeholder (outside strings, quoted names and comments) replaced by its parameter as a literal. */
+export function inlineParams(text: string, params: unknown[]): string;
 /** A DuckDB TIME as `HH:MM:SS[.fraction]`, from its count in the declared type's unit (microseconds by default). */
 export function timeText(value: number | bigint, declared?: string): string;
 /** Column names made unique: a repeated `id` becomes `id_1`, `id_2`, and so on. */

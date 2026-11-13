@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compose, createSql, decimalValue, quoteIdent, quoteString, rowsAsJson, SqlResult, timeText, toParam, uniqueNames, type SqlEngine } from "../runtime/sql.mjs";
+import { compose, createSql, decimalValue, inlineParams, quoteIdent, quoteString, rowsAsJson, SqlResult, timeText, toParam, uniqueNames, type SqlEngine } from "../runtime/sql.mjs";
 import { TABLE_MIME } from "../runtime/table.mjs";
 
 function fake(rows: Record<string, unknown>[] = [{ n: 1 }]) {
@@ -44,8 +44,17 @@ test("toParam: dates as ISO strings, objects as JSON, undefined as null", () => 
   assert.equal(toParam(new Date(0)), "1970-01-01T00:00:00.000Z");
   assert.equal(toParam({ a: [1] }), '{"a":[1]}');
   assert.equal(toParam(undefined), null);
-  assert.equal(toParam(5n), 5);
-  assert.equal(toParam(12345678901234567890n), "12345678901234567890");
+  assert.equal(toParam(2n ** 60n), 2n ** 60n);
+});
+
+test("inlineParams: literals for ? outside strings, names and comments", () => {
+  assert.equal(
+    inlineParams(`select '?', "a?", ? -- why?\n, ? /* ? */ , ?, ?, ?, ?, ?, ?`, [1, "it's", null, true, 1.5, 2n ** 70n, Number.NaN, new Uint8Array([97, 255])]),
+    `select '?', "a?", 1 -- why?\n, 'it''s' /* ? */ , NULL, TRUE, 1.5::DOUBLE, 1180591620717411303424, 'NaN'::DOUBLE, '\\x61\\xff'::BLOB`,
+  );
+  assert.equal(inlineParams("select 'it''s ?', ?", [2]), "select 'it''s ?', 2");
+  assert.throws(() => inlineParams("select ?", [1, 2]), RangeError);
+  assert.throws(() => inlineParams("select ?, ?", [1]), RangeError);
 });
 
 test("quoting identifiers and strings", () => {
