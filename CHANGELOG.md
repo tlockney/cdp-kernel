@@ -30,6 +30,9 @@ Issue and pull request numbers refer to
   and axes are drawn in `currentColor`. vega, vega-lite and linkedom
   load on first use. Not on workerd or celld
   ([#479](https://github.com/tlockney/cdp-kernel/issues/479)).
+- An example notebook, [Tables, SQL and charts](https://cdp-kernel.org/docs/example-data-output),
+  shows `jupyter.table`, `jupyter.sql` and `jupyter.chart` together
+  ([#481](https://github.com/tlockney/cdp-kernel/issues/481)).
 - The site's landing page puts Node and Deno first and lists Bun, workerd
   and celld under "Also runs on"
   ([#468](https://github.com/tlockney/cdp-kernel/issues/468)).

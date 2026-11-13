@@ -58,6 +58,7 @@ export function groups(site: string): Group[] {
         { text: "A Deno-style notebook", link: "/example-deno-style" },
         { text: "One package's numbers", link: "/example-package-stats" },
         { text: "Comparing packages", link: "/example-compare-packages" },
+        { text: "Tables, SQL and charts", link: "/example-data-output" },
       ],
     },
     {

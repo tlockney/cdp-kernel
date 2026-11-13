@@ -24,6 +24,11 @@ cdp-kernel kernel installed ([Getting started](getting-started.md)).
 - [Comparing packages](example-compare-packages.md): runs the notebook
   above for four packages from another notebook, through Ganymede's
   `jupyter.host()`, then tabulates and charts the results.
+- [Tables, SQL and charts](example-data-output.md): `jupyter.table`,
+  `jupyter.sql` and `jupyter.chart` on Jupiter's moons and a CSV of
+  Seattle weather: tables, DuckDB queries over rows and a file on the
+  web, and Vega-Lite and Observable Plot charts drawn as SVG. Runs on
+  `cdp-node`.
 
 Ganymede's site also shows two
 [agent journals](https://ganymede-server.com/docs/examples#agent-journals):
