@@ -6,6 +6,16 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- `jupyter.table(value, options?)` shows rows as a table: an array of
+  row objects or arrays, an Arrow table, a Polars DataFrame or a
+  `@duckdb/node-api` result. The output is
+  `application/vnd.dataresource+json` with up to 1,000 rows (`limit`, at
+  most 10,000 and 1 MB) and the total row count, a plain HTML table of
+  the first and last rows, and a text summary of each column's type and
+  range for agents. Arrow tables and DuckDB results now show this way
+  as a cell's value, and Polars DataFrames show the new output instead of
+  50 rows and a 10-row HTML table
+  ([#475](https://github.com/tlockney/cdp-kernel/issues/475)).
 - The site's landing page puts Node and Deno first and lists Bun, workerd
   and celld under "Also runs on"
   ([#468](https://github.com/tlockney/cdp-kernel/issues/468)).

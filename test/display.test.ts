@@ -221,12 +221,13 @@ test("format: Vega-like without $schema falls through", async () => {
   assert.deepEqual(Object.keys(out), ["text/plain"]);
 });
 
-test("format: DataFrame-like gives dataresource and an escaped html table", async () => {
+test("format: a Polars DataFrame shows as the table output (#475)", async () => {
   const { jupyter } = setup();
   const dtype = (name: string) => ({ toJSON: () => ({ DataType: name }) });
   const rows = Array.from({ length: 60 }, (_, i) => ({ "a<b": i, s: i === 0 ? "<x&y>" : "ok" }));
   const df = {
-    schema: { "a<b": dtype("Int64"), s: dtype("Utf8"), z: dtype("Weird"), f: {} },
+    schema: { "a<b": dtype("Int64"), s: dtype("Utf8") },
+    height: rows.length,
     head: (n: number) => ({ toRecords: () => rows.slice(0, n) }),
     toRecords: () => rows,
   };
@@ -234,28 +235,27 @@ test("format: DataFrame-like gives dataresource and an escaped html table", asyn
   const resource = out["application/vnd.dataresource+json"] as {
     data: unknown[];
     schema: { fields: { name: string; type: string }[] };
+    ganymede: { rows: number; shown: number };
   };
   assert.deepEqual(resource.schema.fields, [
     { name: "a<b", type: "integer" },
     { name: "s", type: "string" },
-    { name: "z", type: "string" },
-    { name: "f", type: "string" },
   ]);
-  assert.equal(resource.data.length, 50);
+  assert.equal(resource.data.length, 60);
+  assert.deepEqual(resource.ganymede, { rows: 60, shown: 60 });
   const html = out["text/html"] as string;
-  assert.match(html, /<th>a&lt;b<\/th>/);
+  assert.match(html, /<th>a&lt;b<br><small>integer<\/small><\/th>/);
   assert.match(html, /<td>&lt;x&amp;y&gt;<\/td>/);
-  assert.equal(html.split("<tr>").length - 1, 1 + 10); // header + 10 rows
-  assert.equal(out["text/plain"], "DataFrame (4 columns): a<b (integer), s (string), z (string), f (string)");
+  assert.match(out["text/plain"] as string, /^Table \(60 rows, 2 columns\)/);
 });
 
-test("format: DataFrame text/plain gives the row count from height", async () => {
+test("jupyter.table returns a displayable built at the call", async () => {
   const { jupyter } = setup();
-  const columns = Object.fromEntries(Array.from({ length: 22 }, (_, i) => [`c${i}`, {}]));
-  const df = { schema: columns, height: 1, head: () => ({ toRecords: () => [] }), toRecords: () => [] };
-  const text = (await jupyter.namespace.format(df))["text/plain"] as string;
-  assert.match(text, /^DataFrame \(1 row, 22 columns\): c0 \(string\), c1 \(string\), /);
-  assert.match(text, /c19 \(string\), … 2 more$/);
+  const shown = jupyter.namespace.table([{ a: 1 }], { title: "T" });
+  const out = await jupyter.namespace.format(shown);
+  assert.equal((out["application/vnd.dataresource+json"] as { ganymede: { title: string } }).ganymede.title, "T");
+  assert.throws(() => jupyter.namespace.table(42), TypeError);
+  assert.throws(() => jupyter.namespace.table([], { limit: 1.5 }), TypeError);
 });
 
 test("format: PNG and JPEG bytes use the injected base64", async () => {

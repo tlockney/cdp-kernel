@@ -34,6 +34,16 @@ export const RESULT_MIME: "application/vnd.ganymede.result+json";
 /** A JSON value, as `JSON.parse` returns it. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+/** Options for `jupyter.table`. */
+export interface TableOptions {
+  /** Rows to embed: default 1,000, at most 10,000, and never past 1 MB of JSON. */
+  limit?: number;
+  /** The columns to show, in order. Names an array of arrays' columns. */
+  columns?: string[];
+  /** A caption for the table. */
+  title?: string;
+}
+
 /** Options for `jupyter.display`. */
 export interface DisplayOptions {
   /**
@@ -332,6 +342,38 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#parameters-and-named-results
    */
   result(name: string, value: unknown): void;
+  /**
+   * Show rows and columns as a table. The output has Ganymede's table
+   * type, `application/vnd.dataresource+json` (Table Schema fields, up to
+   * `limit` rows as JSON, and the total row count), which the Ganymede
+   * apps show with sorting and paging; a plain HTML table of the first
+   * and last rows for JupyterLab and VS Code; and a text summary of each
+   * column's type and range for agents and consoles.
+   *
+   * An Arrow table, a Polars DataFrame or a DuckDB result also shows this
+   * way when it is a cell's value; pass one here to set `limit`,
+   * `columns` or `title`.
+   *
+   * @param value An array of row objects, an array of arrays (name them
+   *   with `columns`), an Arrow table (apache-arrow, duckdb-wasm), a
+   *   Polars DataFrame, or a `@duckdb/node-api` result.
+   * @param options `limit`: rows to embed, default 1,000, at most 10,000,
+   *   and never more than 1 MB of JSON. `columns`: which columns, in order.
+   *   `title`: a caption.
+   * @throws {TypeError} `value` isn't one of those, or `limit` isn't a
+   *   whole number.
+   * @example
+   * ```ts
+   * const moons = [
+   *   { moon: "Io", radius_km: 1821.6, discovered: new Date("1610-01-08") },
+   *   { moon: "Europa", radius_km: 1560.8, discovered: new Date("1610-01-08") },
+   *   { moon: "Ganymede", radius_km: 2634.1, discovered: new Date("1610-01-07") },
+   * ];
+   * jupyter.table(moons, { title: "Galilean moons" });
+   * ```
+   * @see jupyter-api.md#tables
+   */
+  table(value: unknown, options?: TableOptions): Displayable;
   /**
    * The Ganymede server running this kernel, through its host API: read,
    * search and (when granted) run other notebooks under its root. The
