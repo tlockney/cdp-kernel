@@ -416,7 +416,8 @@ export interface JupyterNamespace {
    * Draw a chart in the kernel as one SVG, with its title and legend
    * inside, plus a text summary for readers that can't see it. The SVG
    * shows the same in the Ganymede apps, JupyterLab, VS Code and a
-   * published page. Text and axes take the reader's text color.
+   * published page. Text and axes are drawn in `currentColor`: the
+   * notebook's text color in the Ganymede apps, black in JupyterLab.
    *
    * Pass a [Vega-Lite](https://vega.github.io/vega-lite/) or Vega spec
    * (or a vega-lite-api chart), or the

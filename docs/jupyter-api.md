@@ -525,7 +525,9 @@ its title and legend inside, plus a text summary for readers that can't
 see it (an agent, `jupyter console`, a notebook converted to text). The
 SVG shows the same in the Ganymede apps, JupyterLab, VS Code and a
 published page, with no chart library in the frontend. Text and axes
-take the reader's text color, so a chart reads on a light or dark page.
+are drawn in `currentColor` on no background: the Ganymede apps give
+them the notebook's text color, light or dark; a frontend that shows SVG
+as a plain image, such as JupyterLab, draws them black.
 
 Pass a [Vega-Lite](https://vega.github.io/vega-lite/) spec:
 

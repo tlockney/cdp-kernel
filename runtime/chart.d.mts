@@ -10,7 +10,6 @@ export function isVegaSpec(spec: Record<string, unknown>): boolean;
 export function specOf(value: unknown): Record<string, unknown>;
 export function svgSize(svg: string): { width: number; height: number };
 export function withNamespace(svg: string): string;
-export function standalone(svg: string): string;
 export function legendSVG(scale: unknown, width: number): { svg: string; height: number };
 export function composeSVG(
   inner: string,

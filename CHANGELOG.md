@@ -27,7 +27,7 @@ Issue and pull request numbers refer to
 - `jupyter.chart(spec)` and `jupyter.chart(Plot, options)` draw a
   Vega-Lite or Vega spec, or an Observable Plot chart, in the kernel as
   one SVG with its title and legend inside, plus a text summary. Text
-  and axes take the reader's text color. vega, vega-lite and linkedom
+  and axes are drawn in `currentColor`. vega, vega-lite and linkedom
   load on first use. Not on workerd or celld
   ([#479](https://github.com/tlockney/cdp-kernel/issues/479)).
 - The site's landing page puts Node and Deno first and lists Bun, workerd

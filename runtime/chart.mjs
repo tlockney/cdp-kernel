@@ -77,26 +77,6 @@ export function withNamespace(svg) {
   return /<svg\b[^>]*\sxmlns=/i.test(svg) ? svg : svg.replace(/<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
 }
 
-/**
- * The SVG ready to show on its own: with its namespace, and with
- * `color-scheme: light dark`, so that `currentColor` is the page's text
- * color when the SVG is inline and, in an <img> (JupyterLab draws SVG
- * that way), black or white by the system's appearance rather than always
- * black.
- */
-export function standalone(svg) {
-  const open = /<svg\b[^>]*>/i.exec(withNamespace(svg));
-  if (!open) return svg;
-  const tag = open[0];
-  let next = tag;
-  if (!/color-scheme/i.test(tag)) {
-    next = /\sstyle="/i.test(tag)
-      ? tag.replace(/\sstyle="/i, ' style="color-scheme: light dark; ')
-      : tag.replace(/<svg\b/i, '<svg style="color-scheme: light dark"');
-  }
-  return withNamespace(svg).replace(tag, next);
-}
-
 const textWidth = (text, size) => String(text).length * size * 0.6;
 
 /**
@@ -223,7 +203,11 @@ export function summarizePlot(element, options) {
 // --- Vega's defaults, for a chart on any background ----------------------------
 
 const INK = "currentColor";
-/** Text and lines in the reader's text color (see standalone), on no background. */
+/**
+ * Text and lines in `currentColor`, on no background: the page's text
+ * color when the SVG is inline, and in the Ganymede apps, which give an
+ * SVG image the page's color. In a plain <img> it is black.
+ */
 export const VEGA_CONFIG = {
   background: "transparent",
   axis: { labelColor: INK, titleColor: INK, domainColor: INK, tickColor: INK, gridColor: INK, gridOpacity: 0.15 },
@@ -271,7 +255,7 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
     } finally {
       view.finalize();
     }
-    const bundle = { "image/svg+xml": standalone(svg) };
+    const bundle = { "image/svg+xml": withNamespace(svg) };
     const summary = summarizeSpec?.({ $schema: "https://vega.github.io/schema/vega-lite/v5.json", ...spec });
     if (summary) bundle["text/plain"] = summary;
     if (keepSpec) bundle[vl ? "application/vnd.vegalite.v5+json" : "application/vnd.vega.v5+json"] = spec;
@@ -291,12 +275,12 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
     const scale = wantLegend && typeof element.scale === "function" ? element.scale("color") : undefined;
     const legend = scale ? legendSVG({ ...scale, label: scale.label ?? color.label }, width) : undefined;
     const svg = composeSVG(inner, { title, subtitle, caption, legend });
-    return { "image/svg+xml": standalone(svg), "text/plain": summarizePlot(element, options) };
+    return { "image/svg+xml": withNamespace(svg), "text/plain": summarizePlot(element, options) };
   }
 
   function chart(first, second) {
     if (isSvgElement(first)) {
-      const bundle = { "image/svg+xml": standalone(first.outerHTML) };
+      const bundle = { "image/svg+xml": withNamespace(first.outerHTML) };
       return { [$display]: () => bundle };
     }
     let pending;

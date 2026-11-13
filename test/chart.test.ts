@@ -6,7 +6,6 @@ import {
   isPlotModule,
   legendSVG,
   LINKEDOM,
-  standalone,
   summarizePlot,
   svgSize,
   VEGA,
@@ -80,7 +79,7 @@ test("a Vega-Lite spec renders to SVG with a summary and the default config", as
   const { chart, loads, seen } = setup();
   const bundle = await show(chart({ mark: "bar", config: { axis: { labelColor: "red" } } }));
   assert.deepEqual(Object.keys(bundle).sort(), ["image/svg+xml", "text/plain"]);
-  assert.match(bundle["image/svg+xml"] as string, /^<svg style="color-scheme: light dark" xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+  assert.match(bundle["image/svg+xml"] as string, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/);
   assert.equal(bundle["text/plain"], "summary of bar");
   assert.deepEqual(loads, [VEGA, VEGA_LITE]);
   assert.equal(seen.compiled.config.background, "transparent");
@@ -132,7 +131,7 @@ test("Plot: title, subtitle, caption and legend are drawn into one SVG", async (
   assert.equal(given[0].title, undefined, "Plot doesn't draw the title itself");
   assert.equal((given[0].color as { legend: boolean }).legend, false);
   const svg = bundle["image/svg+xml"] as string;
-  assert.match(svg, /^<svg style="color-scheme: light dark" xmlns="http:\/\/www.w3.org\/2000\/svg" width="300"/);
+  assert.match(svg, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" width="300"/);
   assert.match(svg, />T &lt;1&gt;</);
   assert.match(svg, />S</);
   assert.match(svg, />C</);
@@ -159,9 +158,7 @@ test("a page's own document is used for Plot when there is one", async () => {
 test("an SVG element shows as it is", async () => {
   const { chart } = setup();
   const bundle = await show(chart({ outerHTML: "<svg><g/></svg>" }));
-  assert.deepEqual(bundle, {
-    "image/svg+xml": '<svg style="color-scheme: light dark" xmlns="http://www.w3.org/2000/svg"><g/></svg>',
-  });
+  assert.deepEqual(bundle, { "image/svg+xml": '<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>' });
 });
 
 test("a large SVG logs a warning", async () => {
@@ -190,8 +187,6 @@ test("SVG helpers", () => {
   assert.deepEqual(svgSize('<svg viewBox="0 0 30 40">'), { width: 30, height: 40 });
   assert.deepEqual(svgSize("<g/>"), { width: 640, height: 400 });
   assert.equal(withNamespace('<svg xmlns="x"/>'), '<svg xmlns="x"/>');
-  assert.equal(standalone('<svg xmlns="x" style="a: b">'), '<svg xmlns="x" style="color-scheme: light dark; a: b">');
-  assert.equal(standalone('<svg xmlns="x" style="color-scheme: dark">'), '<svg xmlns="x" style="color-scheme: dark">');
   assert.match(composeSVG('<svg width="10" height="20"></svg>', {}), /height="20" viewBox="0 0 10 20"/);
   assert.equal(isPlotModule({ plot() {}, barY() {} }), true);
   assert.equal(isPlotModule({ plot() {} }), false);
