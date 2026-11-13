@@ -278,7 +278,8 @@ function columnStats(rows, i, type) {
       if (nums.length) {
         const min = Math.min(...nums);
         const max = Math.max(...nums);
-        const fmt = (n) => (Number.isInteger(n) ? n.toLocaleString("en-US") : String(Number(n.toPrecision(6))));
+        // Grouping only from 10,000, so years read as years.
+        const fmt = (n) => (Number.isInteger(n) && Math.abs(n) >= 10_000 ? n.toLocaleString("en-US") : String(Number(n.toPrecision(6))));
         range = min === max ? fmt(min) : `${fmt(min)} to ${fmt(max)}`;
       }
     } else if (type === "date" || type === "datetime" || type === "time") {
