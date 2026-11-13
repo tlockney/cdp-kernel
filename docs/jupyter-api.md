@@ -484,8 +484,9 @@ await jupyter.sql`
   order by radius_km desc`;
 ```
 
-Each `${value}` becomes a bound parameter, not query text, so a value
-can't change the query, whatever it holds. `Date`s go in as ISO strings,
+A `${value}` can't change the query, whatever it holds: it becomes a
+bound parameter, or in the browser target a quoted literal (so that an
+interrupt can stop the query). `Date`s go in as ISO strings,
 objects and arrays as JSON. For text that has to be part of the query, a
 table name or a file path built in code, use `jupyter.sql.raw(text)`,
 and never with text from outside the notebook.

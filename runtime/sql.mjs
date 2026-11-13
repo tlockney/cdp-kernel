@@ -143,6 +143,9 @@ function literalText(value) {
  * The query with each `?` placeholder replaced by its parameter as a
  * literal. A `?` inside a string, a quoted name or a comment is left as it
  * is. duckdb-wasm can cancel only an unprepared query, so it runs this.
+ * Dollar-quoted (`$$…$$`) and `E'…'` strings and nested comments aren't
+ * recognized: a `?` in one counts as a placeholder, and the count then
+ * fails to match the parameters and throws.
  */
 export function inlineParams(text, params) {
   if (params.length === 0) return text;
