@@ -18,10 +18,19 @@ export interface TableSource {
   read: (start: number, end: number) => unknown[][];
 }
 
+/** Keeps a table cut by the cap for paging through the kernel; returns its id. */
+export interface TablePager {
+  register(source: TableSource, fields: { name: string; type: string }[]): string;
+}
+
+export function setTablePager(pager: TablePager | null): void;
+
 export interface TableBundleOptions {
   limit?: number;
   title?: string;
   columns?: string[];
+  /** Keeps the table if the cap cuts it; the one `setTablePager` set by default, `null` for none. */
+  pager?: TablePager | null;
 }
 
 export function isArrowTable(value: unknown): boolean;

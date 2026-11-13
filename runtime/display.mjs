@@ -23,7 +23,8 @@ import { createHost } from "./host.mjs";
 import { createWidgetFactory } from "./widget.mjs";
 import { createSql } from "./sql.mjs";
 import { createChart } from "./chart.mjs";
-import { isTableLike, tableBundle, tableSource } from "./table.mjs";
+import { isTableLike, setTablePager, tableBundle, tableSource } from "./table.mjs";
+import { createTablePager } from "./table-paging.mjs";
 
 export const $display = Symbol.for("Jupyter.display");
 
@@ -463,6 +464,8 @@ export function createJupyter(host) {
   const chart = createChart({ importModule: cellImport("jupyter.chart"), summarizeSpec: summarizeChart });
 
   const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
+  // Tables cut by the cap page through the kernel over a comm (ganymede#747).
+  setTablePager(createTablePager(comms.api));
 
   // jupyter.signal (#418): aborted when the kernel is interrupted, so cell
   // code can stop waiting on what the interrupt can't reach, such as a comm

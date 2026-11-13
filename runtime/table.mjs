@@ -387,9 +387,18 @@ function textTable(fields, numbered) {
   return cells.map((row) => `  ${row.map((c, i) => c.padEnd(widths[i])).join(" | ").trimEnd()}`);
 }
 
+/** Keeps a cut table for paging through the kernel (table-paging.mjs); set by the jupyter namespace. */
+let defaultPager = null;
+
+/** @param {{ register(source: Source, fields: { name: string, type: string }[]): string } | null} pager */
+export function setTablePager(pager) {
+  defaultPager = pager;
+}
+
 /**
  * The MIME bundle for a table: Table Schema JSON with up to `limit` rows,
- * an HTML table and a text summary.
+ * an HTML table and a text summary. A table cut by the cap is kept by the
+ * pager, and `ganymede.page` names it.
  */
 export function tableBundle(source, options = {}) {
   const requested = options.limit ?? DEFAULT_LIMIT;
@@ -458,6 +467,8 @@ export function tableBundle(source, options = {}) {
   /** @type {Record<string, unknown>} */
   const resource = { schema: { fields }, data, ganymede: { rows: total, shown } };
   if (title) resource.ganymede.title = title;
+  const pager = options.pager === undefined ? defaultPager : options.pager;
+  if (pager && shown < total) resource.ganymede.page = pager.register(source, fields);
   return {
     [TABLE_MIME]: resource,
     "text/html": htmlTable(fields, htmlHead, htmlTail, total, title),
