@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compose, createSql, decimalValue, quoteIdent, quoteString, rowsAsJson, SqlResult, toParam, type SqlEngine } from "../runtime/sql.mjs";
+import { compose, createSql, decimalValue, quoteIdent, quoteString, rowsAsJson, SqlResult, timeText, toParam, uniqueNames, type SqlEngine } from "../runtime/sql.mjs";
 import { TABLE_MIME } from "../runtime/table.mjs";
 
 function fake(rows: Record<string, unknown>[] = [{ n: 1 }]) {
@@ -44,7 +44,8 @@ test("toParam: dates as ISO strings, objects as JSON, undefined as null", () => 
   assert.equal(toParam(new Date(0)), "1970-01-01T00:00:00.000Z");
   assert.equal(toParam({ a: [1] }), '{"a":[1]}');
   assert.equal(toParam(undefined), null);
-  assert.equal(toParam(5n), 5n);
+  assert.equal(toParam(5n), 5);
+  assert.equal(toParam(12345678901234567890n), "12345678901234567890");
 });
 
 test("quoting identifiers and strings", () => {
@@ -122,6 +123,26 @@ test("load: a file path is quoted into the query, rows go in as JSON", async () 
   await assert.rejects(sql.load("e", []), /no columns/);
 });
 
+test("rowsAsJson: load keeps whole values, with bytes as base64", () => {
+  const long = "x".repeat(5000);
+  const { json } = rowsAsJson([{ s: long, b: new Uint8Array([97, 98]), nested: { at: new Date("2020-01-02T03:04:05Z"), big: 2n ** 70n } }]);
+  assert.deepEqual(JSON.parse(json), [{ s: long, b: "YWI=", nested: { at: "2020-01-02T03:04:05.000Z", big: "1180591620717411303424" } }]);
+  const deep: Record<string, unknown> = {};
+  let at = deep;
+  for (let i = 0; i < 100; i++) at = (at.next = {}) as Record<string, unknown>;
+  assert.throws(() => rowsAsJson([{ deep }]), TypeError);
+});
+
+test("timeText: TIME values in their declared unit", () => {
+  assert.equal(timeText(36672500000n), "10:11:12.5");
+  assert.equal(timeText(36672000, "Time<MILLISECOND>"), "10:11:12");
+  assert.equal(timeText(0), "00:00:00");
+});
+
+test("uniqueNames: repeated column names get a suffix", () => {
+  assert.deepEqual(uniqueNames(["id", "id", "x", "id", "id_1"]), ["id", "id_1", "x", "id_2", "id_1_1"]);
+});
+
 test("rowsAsJson: non-finite numbers become null", () => {
   const { json } = rowsAsJson([{ x: 1.5 }, { x: Number.NaN }]);
   assert.deepEqual(JSON.parse(json), [{ x: 1.5 }, { x: null }]);
@@ -137,6 +158,7 @@ test("a SqlResult shows as a table with DuckDB's types", () => {
 
 test("decimalValue: Arrow's 128-bit words, signed and scaled", () => {
   assert.equal(decimalValue(new Uint32Array([26341, 0, 0, 0]), 1), 2634.1);
+  assert.equal(decimalValue(new Uint32Array([0xeb1f0ad2, 0xab54a98c, 0, 0]), 0), 12345678901234567890n);
   assert.equal(decimalValue(new Uint32Array([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]), 2), -0.01);
   assert.equal(decimalValue(125, 2), 1.25);
 });
