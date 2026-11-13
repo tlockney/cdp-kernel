@@ -120,6 +120,7 @@ test("a wrong argument fails the call", () => {
   const { Plot } = fakePlot();
   assert.throws(() => chart([1, 2]), TypeError);
   assert.throws(() => chart("bar"), TypeError);
+  assert.throws(() => chart({ columns: [], rows: [] }), TypeError, "a SqlResult isn't a spec");
   assert.throws(() => chart(Plot), /options must be/);
 });
 
@@ -191,6 +192,40 @@ test("the same continuous legend gives the same SVG", () => {
   const a = legendSVG(scale("linear", [0, 10]), 400).svg;
   assert.equal(a, legendSVG(scale("linear", [0, 10]), 400).svg);
   assert.match(a, /<linearGradient id="ramp-[0-9a-z]+"/);
+});
+
+test("a ramp samples Plot's interpolator, or steps through a Date domain", () => {
+  const seen: number[] = [];
+  const interpolated = legendSVG({ ...scale("log", [1, 10000]), range: [0, 1], interpolate: (t: number) => (seen.push(t), `c${t}`) }, 400);
+  assert.equal(seen.length, 17);
+  assert.match(interpolated.svg, /stop-color="c0.5"/);
+  const applied: unknown[] = [];
+  const dates = { type: "utc", domain: [new Date(0), new Date(16_000)], apply: (v: Date) => (applied.push(v), `t${v.getTime()}`) };
+  const ramp = legendSVG(dates, 400).svg;
+  assert.match(ramp, /stop-color="t8000"/);
+  assert.match(ramp, />1970-01-01</);
+});
+
+test("a failed load or render is retried, not kept", async () => {
+  let fail = true;
+  const chart = createChart({
+    importModule: async (s) => {
+      if (fail) throw new Error(`offline: ${s}`);
+      return { parseHTML: () => ({ document: {} }) };
+    },
+  });
+  const { Plot } = fakePlot();
+  const d = chart(Plot, { marks: [] });
+  await assert.rejects(show(d), /offline/);
+  fail = false;
+  assert.match((await show(d))["image/svg+xml"] as string, /<svg/);
+});
+
+test("{ spec: true } keeps a Vega-Lite v4 spec under the v4 type; null options are fine", async () => {
+  const { chart } = setup();
+  const spec = { $schema: "https://vega.github.io/schema/vega-lite/v4.json", mark: "bar" };
+  assert.ok("application/vnd.vegalite.v4+json" in (await show(chart(spec, { spec: true }))));
+  assert.ok("image/svg+xml" in (await show(chart({ mark: "bar" }, null))));
 });
 
 test("legends: swatches for categories, a ramp for a continuous scale", () => {

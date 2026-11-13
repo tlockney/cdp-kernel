@@ -37,10 +37,13 @@ export function isPlotModule(value) {
     typeof value.barY === "function";
 }
 
+/** Keys one of which every Vega-Lite or Vega spec has. */
+const SPEC_KEYS = ["$schema", "mark", "marks", "layer", "spec", "concat", "hconcat", "vconcat", "facet", "repeat"];
+
 /** A spec object, or anything with toSpec() (vega-lite-api). */
 export function specOf(value) {
   const spec = isObject(value) && typeof value.toSpec === "function" ? value.toSpec() : value;
-  if (!isObject(spec) || Array.isArray(spec)) {
+  if (!isObject(spec) || Array.isArray(spec) || !SPEC_KEYS.some((key) => key in spec)) {
     throw new TypeError(
       "jupyter.chart takes a Vega-Lite or Vega spec, the Plot module and Plot options, or an SVG element",
     );
@@ -127,9 +130,23 @@ export function legendSVG(scale, width, form) {
   const [lo, hi] = [scale.domain[0], scale.domain.at(-1)];
   const n = 16;
   const stops = [];
+  // Plot's interpolator runs over the scale's output (its range), so
+  // sampling it spaces a log or sqrt scale's colors as the chart does;
+  // without one, step through the domain, Dates as their times.
+  const range = Array.isArray(scale.range) && scale.range.length >= 2 && scale.range.every((r) => typeof r === "number")
+    ? [scale.range[0], scale.range.at(-1)]
+    : undefined;
+  const numeric = (v) => (v instanceof Date ? v.getTime() : typeof v === "number" ? v : NaN);
+  const [a, b] = [numeric(lo), numeric(hi)];
   for (let i = 0; i <= n; i++) {
-    const v = typeof lo === "number" && typeof hi === "number" ? lo + ((hi - lo) * i) / n : i === 0 ? lo : hi;
-    stops.push(`<stop offset="${(i / n) * 100}%" stop-color="${esc(scale.apply(v))}"/>`);
+    const t = i / n;
+    let color;
+    if (typeof scale.interpolate === "function" && range) color = scale.interpolate(range[0] + (range[1] - range[0]) * t);
+    else if (Number.isFinite(a) && Number.isFinite(b)) {
+      const v = a + (b - a) * t;
+      color = scale.apply(lo instanceof Date ? new Date(v) : v);
+    } else color = scale.apply(i === 0 ? lo : hi);
+    stops.push(`<stop offset="${t * 100}%" stop-color="${esc(color)}"/>`);
   }
   // From the stops, so the same chart gives the same SVG on every run.
   const id = `ramp-${hash(stops.join(""))}`;
@@ -253,11 +270,18 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
   let dom;
   async function document() {
     if (globalThis.document && typeof globalThis.document.createElementNS === "function") return globalThis.document;
-    dom ??= importModule(LINKEDOM).then(({ parseHTML }) => parseHTML("<!doctype html><html><body></body></html>").document);
+    // A failed load isn't kept, so the next chart tries again.
+    dom ??= importModule(LINKEDOM)
+      .then(({ parseHTML }) => parseHTML("<!doctype html><html><body></body></html>").document)
+      .catch((err) => {
+        dom = undefined;
+        throw err;
+      });
     return dom;
   }
 
-  async function renderVega(spec, { spec: keepSpec = false } = {}) {
+  async function renderVega(spec, options) {
+    const keepSpec = isObject(options) && options.spec === true;
     const [vega, vl] = await Promise.all([importModule(VEGA), isVegaSpec(spec) ? null : importModule(VEGA_LITE)]);
     const config = mergeConfig(VEGA_CONFIG, spec.config);
     const vgSpec = vl ? vl.compile({ ...spec, config }).spec : { ...spec, config };
@@ -271,7 +295,10 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
     const bundle = { "image/svg+xml": withNamespace(svg) };
     const summary = summarizeSpec?.({ $schema: "https://vega.github.io/schema/vega-lite/v5.json", ...spec });
     if (summary) bundle["text/plain"] = summary;
-    if (keepSpec) bundle[vl ? "application/vnd.vegalite.v5+json" : "application/vnd.vega.v5+json"] = spec;
+    if (keepSpec) {
+      const v4 = /\/schema\/vega-lite\/v4/.test(String(spec.$schema));
+      bundle[vl ? (v4 ? "application/vnd.vegalite.v4+json" : "application/vnd.vegalite.v5+json") : "application/vnd.vega.v5+json"] = spec;
+    }
     return bundle;
   }
 
@@ -320,7 +347,11 @@ export function createChart({ importModule, summarizeSpec, warn = (m) => console
           );
         }
         return bundle;
-      })());
+      })().catch((err) => {
+        // Not kept, so displaying the chart again retries.
+        pending = undefined;
+        throw err;
+      }));
     return { [$display]: render };
   }
 
