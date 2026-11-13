@@ -102,7 +102,8 @@ code("""import * as Plot from "npm:@observablehq/plot@0.6";
 const byMonth = await jupyter.sql`
   select month(date) as month, weather, count(*) as days
   from weather
-  group by all`;
+  group by all
+  order by month, weather`;
 
 jupyter.chart(Plot, {
   title: "What the weather was, by month",
@@ -125,13 +126,13 @@ jupyter.chart(Plot, {
 });"""),
 md("""## Large results
 
-A result shows up to 1,000 rows (`limit` raises it, up to 10,000), and always says how many there are. The apps page through them and sort by any column; a published page shows the first 100."""),
-code("""await jupyter.sql`select * from weather order by date`;"""),
+A result shows up to 1,000 rows and always says how many there are. `jupyter.table(result, { limit })` sets a different cap, up to 10,000. The apps page through the rows and sort by any column; a published page shows the first 100."""),
+code("""const all = await jupyter.sql`select * from weather order by date`;
+jupyter.table(all, { limit: 200, title: "Seattle weather, 2012–2015" });"""),
 md("""## What an agent sees
 
 Every one of these outputs carries a `text/plain` summary: the column types and ranges for a table, the marks and scales for a chart. That is what an agent reads, and what `jupyter console` prints."""),
-code("""const result = await jupyter.sql`select * from weather`;
-console.log((await jupyter.format(result))["text/plain"]);"""),
+code("""console.log((await jupyter.format(all))["text/plain"]);"""),
 ]
 
 nbf.write(nb, HERE / "data-output.ipynb")
