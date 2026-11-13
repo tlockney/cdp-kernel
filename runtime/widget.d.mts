@@ -8,7 +8,7 @@ export type WidgetState = { [key: string]: unknown };
 /** Options for `jupyter.widget`. */
 export interface WidgetOptions {
   /**
-   * The anywidget view module, as source:
+   * The [anywidget](https://anywidget.dev) view module, as source:
    * `export default { render({ model, el }) { ... } }`. A `${...}` inside
    * a template literal here is filled in by the kernel, not the browser:
    * escape it as `\${...}`.
@@ -24,7 +24,7 @@ export interface WidgetOptions {
 }
 
 /**
- * An anywidget model, from `jupyter.widget`, synced with its frontend
+ * An [anywidget](https://anywidget.dev) model, from `jupyter.widget`, synced with its frontend
  * views. Display it to show a view; display it again for a second view of
  * the same model.
  */
@@ -219,7 +219,7 @@ export interface Widget {
    */
   close(): void;
   /**
-   * The full state, as the frontend sees it: anywidget's model keys
+   * The full state, as the frontend sees it: [anywidget](https://anywidget.dev)'s model keys
    * (`_model_name`, `_view_name` and the rest) and the widget's own.
    *
    * @returns Every state key and its value.
