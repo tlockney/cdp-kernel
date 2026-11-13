@@ -24,6 +24,12 @@ Issue and pull request numbers refer to
   DuckDB loads on the first query: `@duckdb/node-api` on Node, Deno and
   Bun, duckdb-wasm from a CDN on the browser target. Not on workerd or
   celld ([#477](https://github.com/tlockney/cdp-kernel/issues/477)).
+- `jupyter.chart(spec)` and `jupyter.chart(Plot, options)` draw a
+  Vega-Lite or Vega spec, or an Observable Plot chart, in the kernel as
+  one SVG with its title and legend inside, plus a text summary. Text
+  and axes take the reader's text color. vega, vega-lite and linkedom
+  load on first use. Not on workerd or celld
+  ([#479](https://github.com/tlockney/cdp-kernel/issues/479)).
 - The site's landing page puts Node and Deno first and lists Bun, workerd
   and celld under "Also runs on"
   ([#468](https://github.com/tlockney/cdp-kernel/issues/468)).
