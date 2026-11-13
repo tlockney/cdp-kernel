@@ -86,9 +86,6 @@ export class SqlResult {
 /** A JavaScript value as a DuckDB parameter. */
 export function toParam(value) {
   if (value === undefined) return null;
-  // duckdb-wasm sends parameters as JSON, which has no bigint; DuckDB
-  // casts the text back where a number is wanted.
-  if (typeof value === "bigint") return Number.isSafeInteger(Number(value)) ? Number(value) : String(value);
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "object" && value !== null && !ArrayBuffer.isView(value)) return JSON.stringify(value);
   return value;
@@ -115,6 +112,52 @@ export function quoteIdent(name) {
 
 export function quoteString(text) {
   return `'${String(text).replaceAll("'", "''")}'`;
+}
+
+/** A parameter (as toParam leaves it) as a SQL literal. */
+export function sqlLiteral(value) {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (typeof value === "bigint") return `${value}`;
+  if (typeof value === "number") {
+    if (Number.isSafeInteger(value)) return String(value);
+    return Number.isFinite(value) ? `${value}::DOUBLE` : `'${value}'::DOUBLE`;
+  }
+  if (value instanceof Uint8Array) {
+    return `'${Array.from(value, (b) => `\\x${b.toString(16).padStart(2, "0")}`).join("")}'::BLOB`;
+  }
+  if (ArrayBuffer.isView(value)) return `[${Array.from(value, (v) => sqlLiteral(v)).join(", ")}]`;
+  return quoteString(value);
+}
+
+/**
+ * The query with each `?` placeholder replaced by its parameter as a
+ * literal. A `?` inside a string, a quoted name or a comment is left as it
+ * is. duckdb-wasm can cancel only an unprepared query, so it runs this.
+ */
+export function inlineParams(text, params) {
+  if (params.length === 0) return text;
+  let out = "";
+  let next = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const end =
+      c === "'" || c === '"' ? text.indexOf(c, i + 1) :
+      c === "-" && text[i + 1] === "-" ? text.indexOf("\n", i) :
+      c === "/" && text[i + 1] === "*" ? text.indexOf("*/", i + 2) + 1 :
+      undefined;
+    if (end !== undefined) {
+      // A doubled quote ('it''s') reads as two strings back to back.
+      const stop = end < 0 || end === 0 ? text.length : end + 1;
+      out += text.slice(i, stop);
+      i = stop - 1;
+    } else if (c === "?") {
+      if (next >= params.length) throw new RangeError("jupyter.sql: more ? placeholders than parameters");
+      out += sqlLiteral(params[next++]);
+    } else out += c;
+  }
+  if (next < params.length) throw new RangeError("jupyter.sql: more parameters than ? placeholders");
+  return out;
 }
 
 const DUCK_TYPES = {
@@ -271,14 +314,16 @@ async function defaultEngine(importModule) {
 }
 
 async function nativeEngine(importModule) {
-  const { DuckDBInstance } = await importModule(NODE_API);
+  const { DuckDBInstance, blobValue } = await importModule(NODE_API);
   const db = await DuckDBInstance.create(":memory:");
   const conn = await db.connect();
   return {
     connection: conn,
     interrupt: () => conn.interrupt?.(),
     async query(text, params) {
-      const result = await conn.runAndReadAll(text, params);
+      // Bytes need a declared BLOB; the rest bind by their JavaScript type.
+      const bound = params.map((p) => (p instanceof Uint8Array && blobValue ? blobValue(p) : p));
+      const result = await conn.runAndReadAll(text, bound);
       const types = result.columnTypes();
       const columns = uniqueNames(result.columnNames()).map((name, i) => ({ name, type: String(types[i]) }));
       // By position, as two columns may share a name.
@@ -307,20 +352,25 @@ async function wasmEngine(importModule) {
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
   URL.revokeObjectURL(loader);
   const conn = await db.connect();
+  let cancelled = false;
   return {
     connection: conn,
-    interrupt: () => void conn.cancelSent?.(),
+    interrupt: () => {
+      cancelled = true;
+      void conn.cancelSent?.();
+    },
     async query(text, params) {
       // send() streams the result, which cancelSent() can stop; query()
-      // runs to the end in the worker whatever is asked of it.
-      let reader;
-      let statement;
-      if (params.length === 0) reader = await conn.send(text, true);
-      else {
-        statement = await conn.prepare(text);
-        reader = await statement.send(...params);
-      }
+      // runs to the end in the worker whatever is asked of it, and so
+      // does a prepared statement's send(). So the parameters go into the
+      // text as literals, and the batch loop stops on an interrupt too.
+      cancelled = false;
+      const reader = await conn.send(inlineParams(text, params), true);
+      const stop = () => {
+        if (cancelled) throw new DOMException("The query was interrupted", "AbortError");
+      };
       try {
+        stop();
         const columns = [];
         const rows = [];
         let decimal = [];
@@ -332,6 +382,7 @@ async function wasmEngine(importModule) {
             // build gives a number, so this does too.
             decimal = fields.map((f) => (/^decimal/i.test(String(f.type)) ? f.type.scale ?? 0 : null));
           }
+          stop();
           const vectors = columns.map((_, j) => batch.getChildAt(j));
           for (let i = 0; i < batch.numRows; i++) {
             const row = {};
@@ -347,8 +398,9 @@ async function wasmEngine(importModule) {
           uniqueNames(fields.map((f) => f.name)).forEach((name, j) => columns.push({ name, type: String(fields[j].type) }));
         }
         return new SqlResult(columns, rows);
-      } finally {
-        await statement?.close();
+      } catch (err) {
+        await Promise.resolve((reader.cancel ?? reader.return)?.call(reader)).catch(() => {});
+        throw err;
       }
     },
     async close() {
