@@ -1,3 +1,7 @@
+---
+outline: [2, 4]
+---
+
 # The `jupyter` namespace
 
 Every cell can use a global named `jupyter`. It decides how values appear in
