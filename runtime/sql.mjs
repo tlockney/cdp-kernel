@@ -14,7 +14,9 @@
 //
 // No static imports beyond table.mjs: this file must load in every target.
 
-import { fieldsOf, tableBundle, tableSource } from "./table.mjs";
+import { fieldsOf, tableBundle, tableSource, timeText, uniqueNames } from "./table.mjs";
+
+export { timeText, uniqueNames };
 
 export const NODE_API = "npm:@duckdb/node-api@1.5.6-r.2";
 export const DUCKDB_WASM = "npm:@duckdb/duckdb-wasm@1.29.0";
@@ -40,36 +42,6 @@ function jsValue(value, declared) {
     return out;
   }
   return value;
-}
-
-/**
- * A TIME as "HH:MM:SS" with any fraction: DuckDB's native build gives
- * microseconds since midnight, Arrow's type name says its unit.
- */
-export function timeText(value, declared = "") {
-  const unit = /NANOSECOND/i.test(declared) ? 1_000_000_000n : /MILLISECOND/i.test(declared) ? 1000n : /<SECOND/i.test(declared) ? 1n : 1_000_000n;
-  const total = BigInt(value);
-  const seconds = total / unit;
-  const fraction = total % unit;
-  const pad = (n) => String(n).padStart(2, "0");
-  const text = `${pad(seconds / 3600n)}:${pad((seconds / 60n) % 60n)}:${pad(seconds % 60n)}`;
-  if (fraction === 0n) return text;
-  const digits = String(unit).length - 1;
-  return `${text}.${String(fraction).padStart(digits, "0").replace(/0+$/, "")}`;
-}
-
-/**
- * Unique column names: a result may have two columns called `id` (a
- * join), and rows are keyed by name, so the second becomes `id_1`.
- */
-export function uniqueNames(names) {
-  const seen = new Set();
-  return names.map((name) => {
-    let unique = name;
-    for (let i = 1; seen.has(unique); i++) unique = `${name}_${i}`;
-    seen.add(unique);
-    return unique;
-  });
 }
 
 /**
