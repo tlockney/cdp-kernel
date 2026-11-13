@@ -10,6 +10,13 @@ Issue and pull request numbers refer to
   members by topic: showing output, data, asking and interrupting, and
   notebooks as programs. Mentions of anywidget link to the widget model
   ([#486](https://github.com/tlockney/cdp-kernel/issues/486)).
+- The widgets and comms reference opens with an overview of when to use
+  a widget and when a comm, groups the widget model's members (state,
+  events, custom messages, closing) and puts `jupyter.comm` and the
+  `Comm` object under one Comms section. Mentions of anywidget there and
+  in the widgets guide link to [anywidget](https://anywidget.dev).
+  Existing links keep working
+  ([#485](https://github.com/tlockney/cdp-kernel/issues/485)).
 
 ## 0.11.0 (2026-11-13)
 
