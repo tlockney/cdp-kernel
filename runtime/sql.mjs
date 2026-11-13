@@ -165,6 +165,8 @@ export function inlineParams(text, params) {
       i = stop - 1;
     } else if (c === "?") {
       if (next >= params.length) throw new RangeError("jupyter.sql: more ? placeholders than parameters");
+      // A space after a quote, so 'a'? doesn't read as one string 'a''x'.
+      if (out.endsWith("'") || out.endsWith('"')) out += " ";
       out += sqlLiteral(params[next++]);
     } else out += c;
   }

@@ -53,6 +53,7 @@ test("inlineParams: literals for ? outside strings, names and comments", () => {
     `select '?', "a?", 1 -- why?\n, 'it''s' /* ? */ , NULL, TRUE, 1.5::DOUBLE, 1180591620717411303424, 'NaN'::DOUBLE, '\\x61\\xff'::BLOB`,
   );
   assert.equal(inlineParams("select 'it''s ?', ?", [2]), "select 'it''s ?', 2");
+  assert.equal(inlineParams("select 'a'?", ["x"]), "select 'a' 'x'");
   assert.equal(inlineParams("select 1-?, 1-?, 1-?", [-1, -1.5, -(2n ** 70n)]), "select 1-(-1), 1-(-1.5::DOUBLE), 1-(-1180591620717411303424)");
   assert.throws(() => inlineParams("select ?", [1, 2]), RangeError);
   assert.throws(() => inlineParams("select ?, ?", [1]), RangeError);
