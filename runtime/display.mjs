@@ -13,14 +13,16 @@
 //   Deno.readFileSync               -> host.readFile
 //   op_jupyter_broadcast            -> host.send
 // WebGPU texture/buffer display depends on Deno's wgpu bindings and is
-// omitted. Comms, widgets, tables and SQL (jupyter.comm, jupyter.widget,
-// jupyter.table, jupyter.sql) are additions Deno doesn't have; see
-// comm.mjs, widget.mjs, table.mjs and sql.mjs.
+// omitted. Comms, widgets, tables, SQL and charts (jupyter.comm,
+// jupyter.widget, jupyter.table, jupyter.sql, jupyter.chart) are additions
+// Deno doesn't have; see comm.mjs, widget.mjs, table.mjs, sql.mjs and
+// chart.mjs.
 
 import { createComms } from "./comm.mjs";
 import { createHost } from "./host.mjs";
 import { createWidgetFactory } from "./widget.mjs";
 import { createSql } from "./sql.mjs";
+import { createChart } from "./chart.mjs";
 import { isTableLike, tableBundle, tableSource } from "./table.mjs";
 
 export const $display = Symbol.for("Jupyter.display");
@@ -445,16 +447,20 @@ export function createJupyter(host) {
     });
   }
 
-  // jupyter.sql (#477): DuckDB, loaded through the cell's own import on
-  // the first query; an interrupt (jupyter.signal) interrupts the query.
-  const sql = createSql({
-    importModule: (specifier) => {
-      const load = globalThis.__cdpk?.import;
-      if (typeof load !== "function") return Promise.reject(new Error("jupyter.sql: no module loader in this runtime"));
-      return load(specifier);
-    },
-    signal: () => current.signal,
-  });
+  // The cell's own import, so npm: resolution and the browser target's CDN
+  // apply to the packages jupyter.sql and jupyter.chart load.
+  const cellImport = (what) => (specifier) => {
+    const load = globalThis.__cdpk?.import;
+    if (typeof load !== "function") return Promise.reject(new Error(`${what}: no module loader in this runtime`));
+    return load(specifier);
+  };
+
+  // jupyter.sql (#477): DuckDB, loaded on the first query; an interrupt
+  // (jupyter.signal) interrupts the query.
+  const sql = createSql({ importModule: cellImport("jupyter.sql"), signal: () => current.signal });
+
+  // jupyter.chart (#479): vega, vega-lite or linkedom, loaded on first use.
+  const chart = createChart({ importModule: cellImport("jupyter.chart"), summarizeSpec: summarizeChart });
 
   const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
 
@@ -512,6 +518,7 @@ export function createJupyter(host) {
       result,
       table,
       sql,
+      chart,
       format,
       md: taggedTemplate("text/markdown"),
       html: taggedTemplate("text/html"),

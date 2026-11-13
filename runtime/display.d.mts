@@ -46,6 +46,15 @@ export interface TableOptions {
   title?: string;
 }
 
+/** Options for `jupyter.chart` with a Vega-Lite or Vega spec. */
+export interface ChartOptions {
+  /**
+   * Also keep the spec under its Vega MIME type, for a frontend that
+   * draws Vega itself. Default `false`: the SVG and a text summary only.
+   */
+  spec?: boolean;
+}
+
 /** Options for `jupyter.display`. */
 export interface DisplayOptions {
   /**
@@ -403,6 +412,50 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#sql-with-duckdb
    */
   readonly sql: Sql;
+  /**
+   * Draw a chart in the kernel as one SVG, with its title and legend
+   * inside, plus a text summary for readers that can't see it. The SVG
+   * shows the same in the Ganymede apps, JupyterLab, VS Code and a
+   * published page. Text and axes are drawn in `currentColor`: the
+   * notebook's text color in the Ganymede apps, black in JupyterLab.
+   *
+   * Pass a [Vega-Lite](https://vega.github.io/vega-lite/) or Vega spec
+   * (or a vega-lite-api chart), or the
+   * [Observable Plot](https://observablehq.com/plot/) module and the
+   * options you would give `Plot.plot`. Plot's `title`, `subtitle`,
+   * `caption` and the color legend (`legend: true`, `"swatches"` or
+   * `"ramp"`) are drawn into the SVG; other scales' legends are left
+   * out. An SVG element shows as it is.
+   *
+   * vega and vega-lite (version 6), and linkedom for Plot where there is
+   * no DOM, load through the cell's import on first use. A chart past
+   * 2 MB of SVG logs a warning: aggregate or sample first.
+   *
+   * @param chart A Vega-Lite or Vega spec, the Plot module, or an SVG
+   *   element.
+   * @param options With a spec, `ChartOptions`; with Plot, Plot's options.
+   * @throws {TypeError} `chart` is none of those, or Plot comes without
+   *   options.
+   * @example
+   * ```ts
+   * jupyter.chart({
+   *   title: "Galilean moons",
+   *   data: { values: [
+   *     { moon: "Io", radius_km: 1821.6 },
+   *     { moon: "Europa", radius_km: 1560.8 },
+   *     { moon: "Ganymede", radius_km: 2634.1 },
+   *     { moon: "Callisto", radius_km: 2410.3 },
+   *   ] },
+   *   mark: "bar",
+   *   encoding: {
+   *     x: { field: "moon", sort: "-y" },
+   *     y: { field: "radius_km", type: "quantitative" },
+   *   },
+   * });
+   * ```
+   * @see jupyter-api.md#charts
+   */
+  chart(chart: object, options?: ChartOptions | Record<string, unknown>): Displayable;
   /**
    * The Ganymede server running this kernel, through its host API: read,
    * search and (when granted) run other notebooks under its root. The

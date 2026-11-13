@@ -26,6 +26,7 @@ at the end.
 | [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
 | [`jupyter.table(value, options?)`](#tables) | Show rows as a table that every frontend can display, with a text summary for agents. Not in Deno. |
 | [`` jupyter.sql`...` ``](#sql-with-duckdb) | Run SQL on an in-memory DuckDB database; results show as tables. Not in Deno. |
+| [`jupyter.chart(chart, options?)`](#charts) | Draw a Vega-Lite spec or an Observable Plot chart as one SVG, with a text summary. Not in Deno. |
 
 `prompt()` and `confirm()` are globals rather than members, and are covered
 [below](#asking-for-input-prompt-and-confirm). The [`jupyter`
@@ -526,6 +527,78 @@ or `await jupyter.sql.close()`. Interrupting the kernel stops a running
 query. `await jupyter.sql.connection()` returns DuckDB's own connection
 for anything the tag doesn't cover. workerd and celld have no DuckDB.
 
+## Charts
+
+`jupyter.chart` draws a chart in the kernel and shows it as one SVG, with
+its title and legend inside, plus a text summary for readers that can't
+see it (an agent, `jupyter console`, a notebook converted to text). The
+SVG shows the same in the Ganymede apps, JupyterLab, VS Code and a
+published page, with no chart library in the frontend. Text and axes
+are drawn in `currentColor` on no background: the Ganymede apps give
+them the notebook's text color, light or dark; a frontend that shows SVG
+as a plain image, such as JupyterLab, draws them black.
+
+Pass a [Vega-Lite](https://vega.github.io/vega-lite/) spec:
+
+```ts
+jupyter.chart({
+  title: "Galilean moons",
+  data: { values: [
+    { moon: "Io", radius_km: 1821.6 },
+    { moon: "Europa", radius_km: 1560.8 },
+    { moon: "Ganymede", radius_km: 2634.1 },
+    { moon: "Callisto", radius_km: 2410.3 },
+  ] },
+  mark: "bar",
+  encoding: {
+    x: { field: "moon", sort: "-y" },
+    y: { field: "radius_km", type: "quantitative" },
+  },
+});
+```
+
+A Vega spec, or a [vega-lite-api](https://github.com/vega/vega-lite-api)
+chart, works the same. A spec's own `config` wins over the defaults.
+`jupyter.chart(spec, { spec: true })` also keeps the spec, under
+`application/vnd.vegalite.v5+json`, for a frontend that draws Vega
+itself.
+
+Or pass the [Observable Plot](https://observablehq.com/plot/) module and
+the options you would give `Plot.plot`:
+
+```ts
+import * as Plot from "npm:@observablehq/plot@0.6";
+
+const moons = [
+  { moon: "Io", radius_km: 1821.6, group: "inner" },
+  { moon: "Europa", radius_km: 1560.8, group: "inner" },
+  { moon: "Ganymede", radius_km: 2634.1, group: "outer" },
+  { moon: "Callisto", radius_km: 2410.3, group: "outer" },
+];
+jupyter.chart(Plot, {
+  title: "Galilean moons",
+  color: { legend: true },
+  marks: [Plot.barY(moons, { x: "moon", y: "radius_km", fill: "group" }), Plot.ruleY([0])],
+});
+```
+
+Plot draws a title, caption and categorical legend as HTML beside its
+SVG, which a reader that shows only images drops. `jupyter.chart` draws
+`title`, `subtitle`, `caption` and the color legend into the SVG
+instead: `color: { legend: true }` draws swatches for categories and a
+ramp for a continuous scale, and `legend: "swatches"` or `"ramp"` picks
+the form. Legends of other scales (`symbol`, `r`, `opacity`) are left
+out, with a warning. An SVG element, such as `Plot.plot(...)` without those, also
+shows as it is.
+
+vega and vega-lite (version 6), and [linkedom](https://github.com/WebReflection/linkedom)
+for Plot where there is no DOM, load through the cell's import on first
+use, so a notebook that draws no chart loads none of them. A chart past
+2 MB of SVG logs a warning, as every point is in the notebook: aggregate
+or sample the data first, for example with `jupyter.sql`. workerd and
+celld bundle a cell's imports before it runs, so `jupyter.chart` isn't
+available there.
+
 ## Getting a bundle with format
 
 `await jupyter.format(value)` returns the MIME bundle that displaying
@@ -785,6 +858,7 @@ Everything on this page works on every runtime, except:
 | `Deno.jupyter` | Deno, or Node with `--deno-compat` | no | no |
 | Native-add-on packages (Polars, canvas) | yes | yes | no |
 | `jupyter.sql` | yes | yes | no |
+| `jupyter.chart` | yes | yes | no |
 
 What counts as a cell's result also differs slightly on Bun, workerd and
 celld: only an expression statement at the very end of the cell is a

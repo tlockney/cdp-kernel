@@ -25,6 +25,7 @@ reference](widgets-reference.md).
 | [`jupyter.result(name, value)`](#jupyter-result-name-value) | Publish a value under a name, as an output that a run's caller reads by name instead of parsing outputs: `ganymede execute --results`, or another notebook. |
 | [`jupyter.table(value, options?)`](#jupyter-table-value-options) | Show rows and columns as a table. |
 | [`jupyter.sql`](#jupyter-sql) | Run SQL on an in-memory [DuckDB](https://duckdb.org) database, as a tagged template: each `${value}` becomes a bound parameter, never query text, so values can't change the query. |
+| [`jupyter.chart(chart, options?)`](#jupyter-chart-chart-options) | Draw a chart in the kernel as one SVG, with its title and legend inside, plus a text summary for readers that can't see it. |
 | [`jupyter.host(options?)`](#jupyter-host-options) | The Ganymede server running this kernel, through its host API: read, search and (when granted) run other notebooks under its root. |
 | [`host.has(method)`](#host-has-method) | Whether this notebook may call `method`. |
 | [`host.call(method, params?, options?)`](#host-call-method-params-options) | Call a method by name. |
@@ -459,6 +460,58 @@ await jupyter.sql`
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#sql-with-duckdb)
+
+### `jupyter.chart(chart, options?)`
+
+```ts
+chart(chart: object, options?: ChartOptions | Record<string, unknown>): Displayable;
+```
+
+Draw a chart in the kernel as one SVG, with its title and legend
+inside, plus a text summary for readers that can't see it. The SVG
+shows the same in the Ganymede apps, JupyterLab, VS Code and a
+published page. Text and axes are drawn in `currentColor`: the
+notebook's text color in the Ganymede apps, black in JupyterLab.
+
+Pass a [Vega-Lite](https://vega.github.io/vega-lite/) or Vega spec
+(or a vega-lite-api chart), or the
+[Observable Plot](https://observablehq.com/plot/) module and the
+options you would give `Plot.plot`. Plot's `title`, `subtitle`,
+`caption` and the color legend (`legend: true`, `"swatches"` or
+`"ramp"`) are drawn into the SVG; other scales' legends are left
+out. An SVG element shows as it is.
+
+vega and vega-lite (version 6), and linkedom for Plot where there is
+no DOM, load through the cell's import on first use. A chart past
+2 MB of SVG logs a warning: aggregate or sample first.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `chart` | `object` | yes | A Vega-Lite or Vega spec, the Plot module, or an SVG element. |
+| `options` | `ChartOptions \| Record<string, unknown>` | no | With a spec, `ChartOptions`; with Plot, Plot's options. |
+
+**Returns** `Displayable`
+
+**Throws** `TypeError`: `chart` is none of those, or Plot comes without options.
+
+```ts
+jupyter.chart({
+  title: "Galilean moons",
+  data: { values: [
+    { moon: "Io", radius_km: 1821.6 },
+    { moon: "Europa", radius_km: 1560.8 },
+    { moon: "Ganymede", radius_km: 2634.1 },
+    { moon: "Callisto", radius_km: 2410.3 },
+  ] },
+  mark: "bar",
+  encoding: {
+    x: { field: "moon", sort: "-y" },
+    y: { field: "radius_km", type: "quantitative" },
+  },
+});
+```
+
+Guide: [The `jupyter` namespace](jupyter-api.md#charts)
 
 ### `jupyter.host(options?)`
 
