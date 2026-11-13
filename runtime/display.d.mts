@@ -84,33 +84,6 @@ export interface Displayable {
  */
 export interface JupyterNamespace {
   /**
-   * Send a raw Jupyter message on the kernel's output channel (IOPub), as a
-   * reply to the running cell. The other helpers are built on it. It does
-   * not check the message: a wrong field is ignored or mishandled by the
-   * frontend.
-   *
-   * @param msgType An IOPub message type, such as `"clear_output"` or
-   *   `"display_data"`.
-   * @param content The message content, as the messaging spec defines it
-   *   for `msgType`.
-   * @param options `metadata` for the message, and binary `buffers`.
-   * @example
-   * ```ts
-   * // Count down in place: clear_output with wait avoids a flicker.
-   * for (const n of [3, 2, 1]) {
-   *   jupyter.broadcast("clear_output", { wait: true });
-   *   await jupyter.display(jupyter.md`Launching in **${n}**…`);
-   *   await new Promise((resolve) => setTimeout(resolve, 1000));
-   * }
-   * ```
-   * @see jupyter-api.md#raw-messages-with-broadcast
-   */
-  broadcast(
-    msgType: string,
-    content: object,
-    options?: { metadata?: object; buffers?: Uint8Array[] },
-  ): void;
-  /**
    * Show a value now, in the middle of a cell, or replace one shown
    * earlier. The value can be anything a cell could end with: a template
    * from `md`, `html` or `svg`, an image, a widget, an object with a
@@ -142,22 +115,6 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#showing-output-with-display
    */
   display(obj: unknown, options?: DisplayOptions): Promise<void>;
-  /**
-   * The MIME bundle that displaying a value would send, without showing
-   * anything. For plain values `text/plain` holds terminal color codes,
-   * as the notebook shows them.
-   *
-   * @param obj The value to format.
-   * @returns The bundle, for example `{ "text/plain": "\x1b[33m42\x1b[39m" }`
-   *   for `42`.
-   * @example
-   * ```ts
-   * const bundle = await jupyter.format(jupyter.md`# Weekly report`);
-   * bundle["text/markdown"]; // "# Weekly report"
-   * ```
-   * @see jupyter-api.md#getting-a-bundle-with-format
-   */
-  format(obj: unknown): Promise<MediaBundle>;
   /**
    * A tagged template that renders as Markdown. Interpolated values are
    * inserted as is, without escaping.
@@ -250,109 +207,48 @@ export interface JupyterNamespace {
    */
   $display: typeof $display;
   /**
-   * Jupyter comms: message channels to the frontend outside cell
-   * execution. Its methods are in the widgets and comms reference.
+   * The MIME bundle that displaying a value would send, without showing
+   * anything. For plain values `text/plain` holds terminal color codes,
+   * as the notebook shows them.
    *
-   * @see widgets.md#comms
+   * @param obj The value to format.
+   * @returns The bundle, for example `{ "text/plain": "\x1b[33m42\x1b[39m" }`
+   *   for `42`.
+   * @example
+   * ```ts
+   * const bundle = await jupyter.format(jupyter.md`# Weekly report`);
+   * bundle["text/markdown"]; // "# Weekly report"
+   * ```
+   * @see jupyter-api.md#getting-a-bundle-with-format
    */
-  comm: CommApi;
+  format(obj: unknown): Promise<MediaBundle>;
   /**
-   * Create an anywidget-compatible widget model. Display it (or end the
-   * cell with it) to show a view.
+   * Send a raw Jupyter message on the kernel's output channel (IOPub), as a
+   * reply to the running cell. The other helpers are built on it. It does
+   * not check the message: a wrong field is ignored or mishandled by the
+   * frontend.
    *
-   * @param options The view module, its CSS, and the initial state.
-   * @returns The model, synced with every view of it.
-   * @throws {TypeError} `options.esm` is not a string.
-   * @availability The frontend needs the anywidget extension.
+   * @param msgType An IOPub message type, such as `"clear_output"` or
+   *   `"display_data"`.
+   * @param content The message content, as the messaging spec defines it
+   *   for `msgType`.
+   * @param options `metadata` for the message, and binary `buffers`.
    * @example
    * ```ts
-   * const counter = jupyter.widget({
-   *   esm: `export default {
-   *     render({ model, el }) {
-   *       const button = document.createElement("button");
-   *       const update = () => {
-   *         button.textContent = "count is " + model.get("count");
-   *       };
-   *       button.onclick = () => {
-   *         model.set("count", model.get("count") + 1);
-   *         model.save_changes();
-   *       };
-   *       model.on("change:count", update);
-   *       update();
-   *       el.append(button);
-   *     },
-   *   };`,
-   *   state: { count: 0 },
-   * });
-   * counter; // the cell's result: displays the widget
+   * // Count down in place: clear_output with wait avoids a flicker.
+   * for (const n of [3, 2, 1]) {
+   *   jupyter.broadcast("clear_output", { wait: true });
+   *   await jupyter.display(jupyter.md`Launching in **${n}**…`);
+   *   await new Promise((resolve) => setTimeout(resolve, 1000));
+   * }
    * ```
-   * ![A JupyterLab cell that creates a counter widget with jupyter.widget. Below the code, the output is a button reading "count is 3" after three clicks.](https://cdp-kernel.org/images/widgets/counter.png)
-   * @see widgets.md#a-first-widget-a-counter
+   * @see jupyter-api.md#raw-messages-with-broadcast
    */
-  widget(options: WidgetOptions): Widget;
-  /**
-   * An `AbortSignal` that an interrupt aborts, so code waiting on something
-   * only it can end can stop and clean up. Each cell gets its own, as does
-   * a comm handler that starts while no cell runs. Read it once when the
-   * work starts: a later read gets the signal of whatever started last.
-   * The abort reason is a `DOMException` named `AbortError`.
-   *
-   * @example
-   * ```ts
-   * const response = await fetch("https://example.com/large.csv", { signal: jupyter.signal });
-   * ```
-   * @example
-   * ```ts
-   * const signal = jupyter.signal;
-   * const ask = jupyter.comm.open("my.app", { question: "ready?" });
-   * const answer = await new Promise((resolve, reject) => {
-   *   ask.onMsg((m) => resolve(m.data));
-   *   signal.addEventListener("abort", () => { ask.close(); reject(signal.reason); }, { once: true });
-   * });
-   * ```
-   * @see jupyter-api.md#stopping-on-interrupt-jupyter-signal
-   */
-  readonly signal: AbortSignal;
-  /**
-   * The parameters of this run: a frozen object, empty unless whoever
-   * started the kernel passed some, such as `ganymede execute -p
-   * counter="2nd Ave"`. They arrive as a JSON object in the kernel's
-   * `GANYMEDE_PARAMS` environment variable. Take defaults with
-   * destructuring, so the notebook also runs on its own.
-   *
-   * @throws {TypeError} `GANYMEDE_PARAMS` is set but isn't a JSON object.
-   * @availability Node, Deno, Bun, workerd and celld read the kernel's
-   *   environment; the browser target takes `params` from its options.
-   * @example
-   * ```ts
-   * const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string; days?: number };
-   * `${counter}, last ${days} days`;
-   * ```
-   * @see jupyter-api.md#parameters-and-named-results
-   */
-  readonly params: { readonly [name: string]: JsonValue };
-  /**
-   * Publish a value under a name, as an output that a run's caller reads
-   * by name instead of parsing outputs: `ganymede execute --results`, or
-   * another notebook. The output has the MIME type
-   * `application/vnd.ganymede.result+json` holding `{ name, value }`, and
-   * a `text/plain` line `name = value` for frontends that don't know the
-   * type. When a name is published twice, readers take the last one.
-   *
-   * @param name The result's name.
-   * @param value Any value `JSON.stringify` accepts; it is stored as JSON,
-   *   so a `Date` becomes its ISO string.
-   * @throws {TypeError} `name` is empty, or `value` isn't JSON (a
-   *   function, `undefined`, a `BigInt` or a cycle).
-   * @example
-   * ```ts
-   * const counts = [3120, 2890, 2410];
-   * jupyter.result("weekday_drop", (counts[2] - counts[0]) / counts[0]);
-   * jupyter.result("counts", counts);
-   * ```
-   * @see jupyter-api.md#parameters-and-named-results
-   */
-  result(name: string, value: unknown): void;
+  broadcast(
+    msgType: string,
+    content: object,
+    options?: { metadata?: object; buffers?: Uint8Array[] },
+  ): void;
   /**
    * Show rows and columns as a table. The output has Ganymede's table
    * type, `application/vnd.dataresource+json` (Table Schema fields, up to
@@ -456,6 +352,111 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#charts
    */
   chart(chart: object, options?: ChartOptions | Record<string, unknown>): Displayable;
+  /**
+   * An `AbortSignal` that an interrupt aborts, so code waiting on something
+   * only it can end can stop and clean up. Each cell gets its own, as does
+   * a comm handler that starts while no cell runs. Read it once when the
+   * work starts: a later read gets the signal of whatever started last.
+   * The abort reason is a `DOMException` named `AbortError`.
+   *
+   * @example
+   * ```ts
+   * const response = await fetch("https://example.com/large.csv", { signal: jupyter.signal });
+   * ```
+   * @example
+   * ```ts
+   * const signal = jupyter.signal;
+   * const ask = jupyter.comm.open("my.app", { question: "ready?" });
+   * const answer = await new Promise((resolve, reject) => {
+   *   ask.onMsg((m) => resolve(m.data));
+   *   signal.addEventListener("abort", () => { ask.close(); reject(signal.reason); }, { once: true });
+   * });
+   * ```
+   * @see jupyter-api.md#stopping-on-interrupt-jupyter-signal
+   */
+  readonly signal: AbortSignal;
+  /**
+   * Jupyter comms: message channels to the frontend outside cell
+   * execution. Its methods are in the widgets and comms reference.
+   *
+   * @see widgets.md#comms
+   */
+  comm: CommApi;
+  /**
+   * Create an [anywidget](https://anywidget.dev)-compatible [widget
+   * model](widgets-reference.md#widget-model). Display it (or end the
+   * cell with it) to show a view.
+   *
+   * @param options The view module, its CSS, and the initial state.
+   * @returns The model, synced with every view of it.
+   * @throws {TypeError} `options.esm` is not a string.
+   * @availability The frontend needs the [anywidget](https://anywidget.dev) extension.
+   * @example
+   * ```ts
+   * const counter = jupyter.widget({
+   *   esm: `export default {
+   *     render({ model, el }) {
+   *       const button = document.createElement("button");
+   *       const update = () => {
+   *         button.textContent = "count is " + model.get("count");
+   *       };
+   *       button.onclick = () => {
+   *         model.set("count", model.get("count") + 1);
+   *         model.save_changes();
+   *       };
+   *       model.on("change:count", update);
+   *       update();
+   *       el.append(button);
+   *     },
+   *   };`,
+   *   state: { count: 0 },
+   * });
+   * counter; // the cell's result: displays the widget
+   * ```
+   * ![A JupyterLab cell that creates a counter widget with jupyter.widget. Below the code, the output is a button reading "count is 3" after three clicks.](https://cdp-kernel.org/images/widgets/counter.png)
+   * @see widgets.md#a-first-widget-a-counter
+   */
+  widget(options: WidgetOptions): Widget;
+  /**
+   * The parameters of this run: a frozen object, empty unless whoever
+   * started the kernel passed some, such as `ganymede execute -p
+   * counter="2nd Ave"`. They arrive as a JSON object in the kernel's
+   * `GANYMEDE_PARAMS` environment variable. Take defaults with
+   * destructuring, so the notebook also runs on its own.
+   *
+   * @throws {TypeError} `GANYMEDE_PARAMS` is set but isn't a JSON object.
+   * @availability Node, Deno, Bun, workerd and celld read the kernel's
+   *   environment; the browser target takes `params` from its options.
+   * @example
+   * ```ts
+   * const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string; days?: number };
+   * `${counter}, last ${days} days`;
+   * ```
+   * @see jupyter-api.md#parameters-and-named-results
+   */
+  readonly params: { readonly [name: string]: JsonValue };
+  /**
+   * Publish a value under a name, as an output that a run's caller reads
+   * by name instead of parsing outputs: `ganymede execute --results`, or
+   * another notebook. The output has the MIME type
+   * `application/vnd.ganymede.result+json` holding `{ name, value }`, and
+   * a `text/plain` line `name = value` for frontends that don't know the
+   * type. When a name is published twice, readers take the last one.
+   *
+   * @param name The result's name.
+   * @param value Any value `JSON.stringify` accepts; it is stored as JSON,
+   *   so a `Date` becomes its ISO string.
+   * @throws {TypeError} `name` is empty, or `value` isn't JSON (a
+   *   function, `undefined`, a `BigInt` or a cycle).
+   * @example
+   * ```ts
+   * const counts = [3120, 2890, 2410];
+   * jupyter.result("weekday_drop", (counts[2] - counts[0]) / counts[0]);
+   * jupyter.result("counts", counts);
+   * ```
+   * @see jupyter-api.md#parameters-and-named-results
+   */
+  result(name: string, value: unknown): void;
   /**
    * The Ganymede server running this kernel, through its host API: read,
    * search and (when granted) run other notebooks under its root. The

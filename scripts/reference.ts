@@ -36,6 +36,19 @@ interface Page {
   globals?: string[];
   /** Option and value types, as property tables. */
   types: { name: string; file: string }[];
+  /**
+   * The index at the top, split into tables by topic. A member belongs to
+   * the first group with a name that is its own or a prefix of it
+   * (`jupyter.sql` takes `jupyter.sql.query`), and the tables list members
+   * in the order of `members`. Without groups, one table in page order.
+   */
+  groups?: { title: string; members: string[] }[];
+}
+
+/** A row of a page's index, and the member name it is filed under. */
+interface IndexRow {
+  name: string;
+  row: string;
 }
 
 /** Where the site publishes docs/images/ (pages.yml), for images in doc comments. */
@@ -60,6 +73,13 @@ reference](widgets-reference.md).`,
     sections: [
       { iface: "JupyterNamespace", file: DISPLAY, prefix: "jupyter.", heading: "jupyter" },
       {
+        iface: "Sql",
+        file: SQL,
+        prefix: "jupyter.sql.",
+        heading: "Sql",
+        intro: "Methods of [`jupyter.sql`](#jupyter-sql), beside the tag itself.",
+      },
+      {
         iface: "Host",
         file: HOST,
         prefix: "host.",
@@ -68,13 +88,6 @@ reference](widgets-reference.md).`,
       },
       { iface: "HostNotebooks", file: HOST, prefix: "host.notebooks.", heading: "host.notebooks" },
       { iface: "HostSelf", file: HOST, prefix: "host.self.", heading: "host.self" },
-      {
-        iface: "Sql",
-        file: SQL,
-        prefix: "jupyter.sql.",
-        heading: "Sql",
-        intro: "Methods of [`jupyter.sql`](#jupyter-sql), beside the tag itself.",
-      },
     ],
     globals: ["prompt", "confirm"],
     types: [
@@ -84,6 +97,15 @@ reference](widgets-reference.md).`,
       { name: "PromptOptions", file: GLOBALS },
       { name: "MediaBundle", file: DISPLAY },
       { name: "Displayable", file: DISPLAY },
+    ],
+    groups: [
+      {
+        title: "Showing output",
+        members: ["jupyter.display", "jupyter.md", "jupyter.html", "jupyter.svg", "jupyter.image", "jupyter.$display", "jupyter.format", "jupyter.broadcast"],
+      },
+      { title: "Data", members: ["jupyter.table", "jupyter.sql", "jupyter.chart"] },
+      { title: "Asking and interrupting", members: ["prompt", "confirm", "jupyter.signal", "jupyter.comm", "jupyter.widget"] },
+      { title: "Notebooks as programs", members: ["jupyter.params", "jupyter.result", "jupyter.host", "host"] },
     ],
   },
   {
@@ -303,7 +325,7 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
   if (doc.see) out.push(seeLink(doc.see, where, r), "");
 }
 
-function renderSection(out: string[], index: string[], section: Section, sf: ts.SourceFile, r: Result) {
+function renderSection(out: string[], index: IndexRow[], section: Section, sf: ts.SourceFile, r: Result) {
   const decl = sf.statements.find((s): s is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(s) && s.name.text === section.iface);
   if (!decl) {
     r.problems.push(`${section.file}: no interface ${section.iface}`);
@@ -342,7 +364,7 @@ function renderSection(out: string[], index: string[], section: Section, sf: ts.
     const full = `${section.prefix}${name}`;
     const title = sigs.length === 0 ? full : isTemplateTag(sigs[0]) ? `${full}\`…\`` : `${full}(${callShape(sigs[0])})`;
     const id = slugify(code(title));
-    index.push(`| [${code(title)}](#${id}) | ${cell(oneLine(doc.summary.split(/(?<=\.)\s/)[0]))} |`);
+    index.push({ name: full, row: `| [${code(title)}](#${id}) | ${cell(oneLine(doc.summary.split(/(?<=\.)\s/)[0]))} |` });
     out.push(`### ${code(title)}`, "");
     out.push("```ts", ...members.map((m) => source(m, sf)), "```", "");
     if (sigs.length > 0 && doc.examples.length === 0) r.problems.push(`${where}: no @example`);
@@ -353,7 +375,7 @@ function renderSection(out: string[], index: string[], section: Section, sf: ts.
   }
 }
 
-function renderGlobal(out: string[], index: string[], name: string, sf: ts.SourceFile, r: Result) {
+function renderGlobal(out: string[], index: IndexRow[], name: string, sf: ts.SourceFile, r: Result) {
   let fn: ts.FunctionDeclaration | undefined;
   sf.forEachChild(function visit(node) {
     if (ts.isFunctionDeclaration(node) && node.name?.text === name) fn = node;
@@ -365,7 +387,7 @@ function renderGlobal(out: string[], index: string[], name: string, sf: ts.Sourc
     return;
   }
   const title = `${name}(${callShape(fn)})`;
-  index.push(`| [\`${title}\`](#${slugify(title)}) | ${cell(oneLine(doc.summary.split(/(?<=\.)\s/)[0]))} |`);
+  index.push({ name, row: `| [\`${title}\`](#${slugify(title)}) | ${cell(oneLine(doc.summary.split(/(?<=\.)\s/)[0]))} |` });
   out.push(`### \`${title}\``, "");
   out.push("```ts", `function ${fn.getText(sf).replace(/^function\s+/, "")}`, "```", "");
   if (doc.examples.length === 0) r.problems.push(`${name}: no @example`);
@@ -400,6 +422,32 @@ function renderType(out: string[], name: string, sf: ts.SourceFile, r: Result) {
   out.push("");
 }
 
+const TABLE_HEAD = ["| Member | What it does |", "| --- | --- |"];
+
+function renderIndex(page: Page, index: IndexRow[], r: Result): string[] {
+  if (!page.groups) return [...TABLE_HEAD, ...index.map((i) => i.row), ""];
+  const groups = page.groups;
+  // Where a name is filed: its group, and its place among that group's members.
+  const place = (name: string) => {
+    for (const [g, group] of groups.entries()) {
+      const m = group.members.findIndex((p) => name === p || name.startsWith(`${p}.`));
+      if (m >= 0) return { g, m };
+    }
+    return undefined;
+  };
+  const out: string[] = [];
+  for (const i of index) if (!place(i.name)) r.problems.push(`${page.file}: ${i.name} is in no group`);
+  for (const [g, group] of groups.entries()) {
+    const rows = index
+      .map((i, n) => ({ ...i, n, at: place(i.name) }))
+      .filter((i) => i.at?.g === g)
+      .sort((a, b) => a.at!.m - b.at!.m || a.n - b.n);
+    if (rows.length === 0) r.problems.push(`${page.file}: group "${group.title}" has no members`);
+    out.push(`**${group.title}**`, "", ...TABLE_HEAD, ...rows.map((i) => i.row), "");
+  }
+  return out;
+}
+
 export function generate(): Result {
   const r: Result = { files: new Map(), problems: [], examples: [] };
   const files = new Map<string, ts.SourceFile>();
@@ -413,7 +461,7 @@ export function generate(): Result {
   };
   for (const page of pages) {
     const body: string[] = [];
-    const index: string[] = [];
+    const index: IndexRow[] = [];
     for (const section of page.sections) renderSection(body, index, section, source(section.file), r);
     if (page.globals) {
       body.push("## Globals", "");
@@ -434,10 +482,7 @@ export function generate(): Result {
       "",
       page.intro,
       "",
-      "| Member | What it does |",
-      "| --- | --- |",
-      ...index,
-      "",
+      ...renderIndex(page, index, r),
       ...body,
     ];
     r.files.set(page.file, `${out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`);

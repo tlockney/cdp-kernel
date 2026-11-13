@@ -4,6 +4,13 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- The `jupyter` namespace guide and the `jupyter` reference group their
+  members by topic: showing output, data, asking and interrupting, and
+  notebooks as programs. Mentions of anywidget link to the widget model
+  ([#486](https://github.com/tlockney/cdp-kernel/issues/486)).
+
 ## 0.11.0 (2026-11-13)
 
 - `jupyter.table(value, options?)` shows rows as a table: an array of

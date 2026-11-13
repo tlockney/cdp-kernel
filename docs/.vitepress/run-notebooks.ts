@@ -45,7 +45,8 @@ export function cellsOf(markdown: string, page: string): Cell[] {
     if (text) cells.push({ cell_type: "markdown", source: absoluteLinks(text, page), metadata: {} });
     prose = [];
   };
-  const lines = markdown.replace(markerRE, "").split("\n");
+  // Frontmatter configures the page, not the notebook.
+  const lines = markdown.replace(/^---\n[\s\S]*?\n---\n/, "").replace(markerRE, "").split("\n");
   for (let i = 0; i < lines.length; i++) {
     const open = lines[i].match(/^(\s*)(`{3,}|~{3,})(.*)$/);
     if (!open) {

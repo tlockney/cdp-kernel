@@ -1,3 +1,7 @@
+---
+outline: [2, 4]
+---
+
 # The `jupyter` namespace
 
 Every cell can use a global named `jupyter`. It decides how values appear in
@@ -13,6 +17,8 @@ at the end.
 
 <!-- notebook: public/notebooks/jupyter-api.ipynb -->
 
+**Showing output**
+
 | Member | What it does |
 | --- | --- |
 | [`jupyter.display(value, options?)`](#showing-output-with-display) | Show a value now, in the middle of a cell, or update one shown earlier. |
@@ -21,19 +27,38 @@ at the end.
 | [`jupyter.$display`](#custom-display-for-your-own-classes) | The symbol a class implements to choose how its instances appear. |
 | [`jupyter.format(value)`](#getting-a-bundle-with-format) | Compute the output for a value without showing it. |
 | [`jupyter.broadcast(type, content)`](#raw-messages-with-broadcast) | Send a raw Jupyter message, for things the helpers don't cover. |
-| `jupyter.comm`, `jupyter.widget` | Comms and interactive widgets: see [Widgets and comms](widgets.md). Not in Deno. |
-| [`jupyter.signal`](#stopping-on-interrupt-jupyter-signal) | An `AbortSignal` that an interrupt aborts, so a waiting cell can stop. Not in Deno. |
-| [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
+
+**Data**
+
+| Member | What it does |
+| --- | --- |
 | [`jupyter.table(value, options?)`](#tables) | Show rows as a table that every frontend can display, with a text summary for agents. Not in Deno. |
 | [`` jupyter.sql`...` ``](#sql-with-duckdb) | Run SQL on an in-memory DuckDB database; results show as tables. Not in Deno. |
 | [`jupyter.chart(chart, options?)`](#charts) | Draw a Vega-Lite spec or an Observable Plot chart as one SVG, with a text summary. Not in Deno. |
 
-`prompt()` and `confirm()` are globals rather than members, and are covered
-[below](#asking-for-input-prompt-and-confirm). The [`jupyter`
-reference](jupyter-reference.md) lists every member's arguments and
-return value.
+**Asking and interrupting**
 
-## How cell output works
+| Member | What it does |
+| --- | --- |
+| [`jupyter.signal`](#stopping-on-interrupt-jupyter-signal) | An `AbortSignal` that an interrupt aborts, so a waiting cell can stop. Not in Deno. |
+| [`prompt()`, `confirm()`](#asking-for-input-prompt-and-confirm) | Globals, not members: ask for a line of input or a yes/no answer, and wait for it. |
+| `jupyter.comm`, `jupyter.widget` | Comms, and interactive [anywidget](https://anywidget.dev) widgets: see [Widgets and comms](widgets.md) and the [widget model](widgets-reference.md#widget-model). Not in Deno. |
+
+**Notebooks as programs**
+
+| Member | What it does |
+| --- | --- |
+| [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
+| [`jupyter.host(options?)`](#other-notebooks-jupyter-host) | Read, search and run other notebooks through the Ganymede server running this kernel. Not in Deno. |
+
+The [`jupyter` reference](jupyter-reference.md) lists every member's
+arguments and return value.
+
+## Showing output
+
+Everything that decides how a value appears in the notebook.
+
+### How cell output works
 
 A cell can produce output three ways:
 
@@ -61,7 +86,7 @@ those bundles. For an ordinary value such as a number, array or plain
 object, the bundle has only `text/plain`, the same text `console.log`
 would print.
 
-## Markdown, HTML and SVG
+### Markdown, HTML and SVG
 
 `jupyter.md`, `jupyter.html` and `jupyter.svg` are
 [tagged templates](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals#tagged_templates):
@@ -69,7 +94,7 @@ write them directly before a template literal, with no parentheses. The
 result is an object that renders as that media type, either as the cell's
 result or passed to `jupyter.display`.
 
-### Markdown
+#### Markdown
 
 Use Markdown for reports built from data: headings, tables, emphasis,
 lists and links.
@@ -96,7 +121,7 @@ This renders a heading, a three-row table, and the average in bold.
 JupyterLab and VS Code also render LaTeX math in Markdown output, such as
 `` jupyter.md`$e^{i\pi} + 1 = 0$` ``.
 
-### HTML
+#### HTML
 
 HTML output can use any element and inline styles. Interpolated values
 are inserted **as is, without escaping**, so text from users, files or the
@@ -114,7 +139,7 @@ jupyter.html`<p>Unsafe: ${comment}</p>
 The second paragraph shows the comment as literal text. The same applies
 to `jupyter.md` and `jupyter.svg`.
 
-### SVG
+#### SVG
 
 SVG is useful for small charts and diagrams drawn from data, with no
 library:
@@ -134,7 +159,7 @@ jupyter.svg`<svg xmlns="http://www.w3.org/2000/svg" width="180" height="130">${b
 This draws a labeled bar chart. Include the `xmlns` attribute: some
 frontends render SVG output as an image, which requires it.
 
-## Showing output with display
+### Showing output with display
 
 `await jupyter.display(value, options?)` shows `value` immediately. Use it
 to show more than one thing from a cell, or to show progress while a cell
@@ -156,7 +181,7 @@ or a plain value, which shows as text.
 but output written later in the cell, such as a `console.log`, can appear
 before it.
 
-### Updating output in place
+#### Updating output in place
 
 Give a display a `display_id`, then display again with the same id and
 `update: true` to replace it instead of adding a new output. This makes
@@ -179,7 +204,7 @@ output with that id, including one shown by an earlier cell, so a later
 cell can change what an earlier one displayed. Pick ids that won't collide,
 such as `crypto.randomUUID()`.
 
-### Sending a MIME bundle directly
+#### Sending a MIME bundle directly
 
 With `raw: true`, a plain object is sent as the MIME bundle itself rather
 than being formatted. Use it for media types the helpers don't produce:
@@ -204,7 +229,7 @@ Without `raw: true`, the same object is formatted like any other value, so
 `jupyter.display({ "text/html": "<b>hi</b>" })` shows the object's text,
 not bold text.
 
-## Images
+### Images
 
 `jupyter.image` shows a PNG or JPEG. Pass a file path, relative to the
 notebook's directory:
@@ -228,7 +253,7 @@ workerd and celld there is no file system, so pass bytes.
 A `Uint8Array` holding a PNG or JPEG is shown as an image without
 `jupyter.image` too (see [Values shown richly](#values-shown-richly-without-any-code)).
 
-## Custom display for your own classes
+### Custom display for your own classes
 
 A class can choose how its instances appear by implementing a method keyed
 by the `jupyter.$display` symbol. The method returns a MIME bundle:
@@ -281,7 +306,7 @@ class Weather {
 new Weather("Portland");
 ```
 
-### In a library
+#### In a library
 
 `jupyter.$display` is `Symbol.for("Jupyter.display")`. Code in a module,
 which might also run outside a notebook, should use that form, so it
@@ -307,7 +332,7 @@ displays the same in `deno jupyter`.
 For type checking, see [Editor types](editor-types.md): only
 `jupyter.$display` carries the precise method type.
 
-## Values shown richly without any code
+### Values shown richly without any code
 
 A cell's result, or a value passed to `jupyter.display`, gets a rich
 output when it looks like one of the objects below. The checks are by
@@ -407,7 +432,65 @@ can't be bundled for workerd, and linkedom fails on an optional import of
 `canvas`. Deno's `deno jupyter` can also display WebGPU textures and
 buffers; that is not supported here.
 
-## Tables
+### Getting a bundle with format
+
+`await jupyter.format(value)` returns the MIME bundle that displaying
+`value` would send, without showing anything. Use it to check a custom
+display, or to reuse the rendered output elsewhere:
+
+```ts cell
+const bundle = await jupyter.format(new Temperature(12));
+Object.keys(bundle);  // [ 'text/plain', 'text/html' ]
+```
+
+```ts
+import { writeFileSync } from "node:fs";
+
+const report = await jupyter.format(jupyter.md`# Weekly report`);
+writeFileSync("report.md", report["text/markdown"] as string);
+```
+
+For plain values the `text/plain` entry contains terminal color codes,
+as the notebook shows them: `await jupyter.format(42)` returns
+`{ "text/plain": "\x1b[33m42\x1b[39m" }`.
+
+### Raw messages with broadcast
+
+`jupyter.broadcast(msgType, content, { metadata?, buffers? })` sends a
+message of any type on the kernel's output channel (IOPub), as a reply to
+the running cell. The helpers above are built on it. Use it for message
+types they don't cover; the [Jupyter messaging spec](https://jupyter-client.readthedocs.io/en/stable/messaging.html#messages-on-the-iopub-pub-sub-channel)
+lists them.
+
+The most useful is `clear_output`, which clears the cell's output. With
+`wait: true` the old output stays until new output arrives, so it doesn't
+flicker:
+
+```ts cell
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+for (const n of [3, 2, 1]) {
+  jupyter.broadcast("clear_output", { wait: true });
+  await jupyter.display(jupyter.md`Launching in **${n}**…`);
+  await sleep(1000);
+}
+jupyter.broadcast("clear_output", { wait: true });
+"🚀";
+```
+
+The cell counts down in place and ends showing only the result. Unlike a
+`display_id` update, this clears everything the cell has printed so far,
+including `console.log` output.
+
+`broadcast` sends what you give it without checking it, so a message
+with the wrong fields is silently ignored or mishandled by the frontend.
+Prefer the helpers when one fits.
+
+## Data
+
+Tables, SQL and charts, each with a text summary that agents and consoles read. None of these are in Deno.
+
+### Tables
 
 `jupyter.table(value, options?)` shows rows and columns as a table. It
 takes an array of row objects, an array of arrays (named with
@@ -470,7 +553,7 @@ shows as a table without the call when it is a cell's value. For DuckDB,
 that is a reader from `runAndReadAll()`: a `run()` result loads its rows
 asynchronously, so `jupyter.table` refuses it.
 
-## SQL with DuckDB
+### SQL with DuckDB
 
 `jupyter.sql` runs SQL on an in-memory [DuckDB](https://duckdb.org)
 database, as a tagged template. The result shows as a [table](#tables):
@@ -527,7 +610,7 @@ or `await jupyter.sql.close()`. Interrupting the kernel stops a running
 query. `await jupyter.sql.connection()` returns DuckDB's own connection
 for anything the tag doesn't cover. workerd and celld have no DuckDB.
 
-## Charts
+### Charts
 
 `jupyter.chart` draws a chart in the kernel and shows it as one SVG, with
 its title and legend inside, plus a text summary for readers that can't
@@ -599,61 +682,11 @@ or sample the data first, for example with `jupyter.sql`. workerd and
 celld bundle a cell's imports before it runs, so `jupyter.chart` isn't
 available there.
 
-## Getting a bundle with format
+## Asking and interrupting
 
-`await jupyter.format(value)` returns the MIME bundle that displaying
-`value` would send, without showing anything. Use it to check a custom
-display, or to reuse the rendered output elsewhere:
+Cells that wait on the person running them, and stop cleanly when interrupted. For comms and interactive widgets, see [Widgets and comms](widgets.md).
 
-```ts cell
-const bundle = await jupyter.format(new Temperature(12));
-Object.keys(bundle);  // [ 'text/plain', 'text/html' ]
-```
-
-```ts
-import { writeFileSync } from "node:fs";
-
-const report = await jupyter.format(jupyter.md`# Weekly report`);
-writeFileSync("report.md", report["text/markdown"] as string);
-```
-
-For plain values the `text/plain` entry contains terminal color codes,
-as the notebook shows them: `await jupyter.format(42)` returns
-`{ "text/plain": "\x1b[33m42\x1b[39m" }`.
-
-## Raw messages with broadcast
-
-`jupyter.broadcast(msgType, content, { metadata?, buffers? })` sends a
-message of any type on the kernel's output channel (IOPub), as a reply to
-the running cell. The helpers above are built on it. Use it for message
-types they don't cover; the [Jupyter messaging spec](https://jupyter-client.readthedocs.io/en/stable/messaging.html#messages-on-the-iopub-pub-sub-channel)
-lists them.
-
-The most useful is `clear_output`, which clears the cell's output. With
-`wait: true` the old output stays until new output arrives, so it doesn't
-flicker:
-
-```ts cell
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-for (const n of [3, 2, 1]) {
-  jupyter.broadcast("clear_output", { wait: true });
-  await jupyter.display(jupyter.md`Launching in **${n}**…`);
-  await sleep(1000);
-}
-jupyter.broadcast("clear_output", { wait: true });
-"🚀";
-```
-
-The cell counts down in place and ends showing only the result. Unlike a
-`display_id` update, this clears everything the cell has printed so far,
-including `console.log` output.
-
-`broadcast` sends what you give it without checking it, so a message
-with the wrong fields is silently ignored or mishandled by the frontend.
-Prefer the helpers when one fits.
-
-## Asking for input: `prompt` and `confirm`
+### Asking for input: `prompt` and `confirm`
 
 `prompt()` and `confirm()` work as in a browser, but ask in the notebook:
 the frontend shows an input box under the cell, and the cell waits for
@@ -682,7 +715,7 @@ When nothing can answer, `prompt` returns `null` and `confirm` returns
 headless runners, such as `nbconvert --execute`), and always on workerd and
 celld. Code meant to run unattended should handle `null`.
 
-## Stopping on interrupt: `jupyter.signal`
+### Stopping on interrupt: `jupyter.signal`
 
 An interrupt ends the running cell, but it can't settle a promise the cell
 is waiting on. The kernel stops waiting for the cell; the cell's own
@@ -722,7 +755,11 @@ accept it as is: `fetch(url, { signal: jupyter.signal })`,
   celld and the browser target, where an interrupted cell's pending work
   keeps running.
 
-## Parameters and named results
+## Notebooks as programs
+
+A notebook run with parameters, publishing results by name, and reading or running other notebooks. Not in Deno.
+
+### Parameters and named results
 
 A notebook can run as a program: parameters in, named results out.
 Whoever starts the kernel passes the parameters, and reads the results
@@ -760,7 +797,7 @@ jupyter.result("weekday_drop", -0.19);
 - When a name is published more than once, readers take the last output,
   as Python's scrapbook does. Ganymede also reads scrapbook's own outputs.
 
-## Other notebooks: `jupyter.host()`
+### Other notebooks: `jupyter.host()`
 
 Under a [Ganymede](https://ganymede-server.com) server, a cell can read
 and search the other notebooks under the server's root, through the
@@ -804,7 +841,9 @@ if (host) {
 - Other notebooks' outputs are data someone else wrote: don't run code
   found in them.
 
-## Notebooks written for Deno
+## Deno and other runtimes
+
+### Notebooks written for Deno
 
 Notebooks written for `deno jupyter` use `Deno.jupyter` rather than
 `jupyter`. Both names refer to the same object where `Deno` exists:
@@ -847,7 +886,7 @@ shim doesn't cover.
 
 New notebooks should use `jupyter`, which works on every kernel.
 
-## Differences by runtime
+### Differences by runtime
 
 Everything on this page works on every runtime, except:
 
