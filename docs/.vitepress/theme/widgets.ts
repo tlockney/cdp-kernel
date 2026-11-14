@@ -9,7 +9,7 @@ interface Saved {
   state: Record<string, unknown>;
   buffers?: { path: (string | number)[]; data: string; encoding: "base64" | "hex" }[];
   /** Custom messages the kernel sent the views, replayed after render. */
-  messages?: { content: unknown }[];
+  messages?: { content: unknown; buffers?: string[] }[];
 }
 
 /** Each widget's stylesheet (anywidget's `_css`), added to the page once. */
@@ -82,7 +82,9 @@ async function mount(el: HTMLElement) {
     await widget.render?.({ model, el });
     // What the kernel said to the views in reply to the docs build's
     // scripted clicks (a dice roll), so the view shows it as it did.
-    for (const { content } of saved.messages ?? []) model.emit("msg:custom", content, []);
+    for (const { content, buffers } of saved.messages ?? []) {
+      model.emit("msg:custom", content, (buffers ?? []).map((b) => decode(b, "base64")));
+    }
   } catch (error) {
     el.textContent = `This widget couldn't start on this page: ${error}`;
     el.classList.add("nb-widget-failed");

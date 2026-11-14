@@ -20,6 +20,7 @@ kernels are left alone. The notebook's directory is its working directory.
 """
 
 import asyncio
+import base64
 import copy
 import os
 import subprocess
@@ -48,7 +49,10 @@ class DocsClient(NotebookClient):
         super().handle_comm_msg(outs, msg, cell_index)
         data = msg["content"].get("data") or {}
         if msg["msg_type"] == "comm_msg" and data.get("method") == "custom":
-            self.custom.setdefault(msg["content"]["comm_id"], []).append({"content": data.get("content")})
+            entry = {"content": data.get("content")}
+            if msg.get("buffers"):
+                entry["buffers"] = [base64.b64encode(bytes(b)).decode() for b in msg["buffers"]]
+            self.custom.setdefault(msg["content"]["comm_id"], []).append(entry)
 
     async def async_execute_cell(self, cell, cell_index, execution_count=None, store_history=True):
         self.custom = {}
@@ -70,10 +74,11 @@ class DocsClient(NotebookClient):
             # The view module, stylesheet and id don't change; the page takes
             # them from the notebook's saved state.
             state = {k: v for k, v in self.widget_state[model_id].items() if k not in FIXED}
-            snapshot = {"state": copy.deepcopy(state)}
-            buffers = self.widget_buffers.get(model_id)
-            if buffers:
-                snapshot["buffers"] = copy.deepcopy(list(buffers.values()))
+            # Buffers are always listed, even none, since the page otherwise
+            # takes the saved ones; drop_final_buffers removes them again
+            # where they match the saved ones.
+            buffers = self.widget_buffers.get(model_id) or {}
+            snapshot = {"state": copy.deepcopy(state), "buffers": copy.deepcopy(list(buffers.values()))}
             if self.custom.get(model_id):
                 snapshot["messages"] = self.custom[model_id]
             if sends and model_id == models[0]:
@@ -109,6 +114,23 @@ class DocsClient(NotebookClient):
                 raise RuntimeError(f"the kernel wrote to stderr handling a view message: {reply['content']['text']}")
 
 
+def drop_final_buffers(nb):
+    """Leaves out a snapshot's buffers where they equal the model's saved
+    ones, so the bytes aren't stored twice; the page then takes the saved
+    buffers."""
+    saved = nb.metadata.get("widgets", {}).get("application/vnd.jupyter.widget-state+json", {}).get("state", {})
+    for cell in nb.cells:
+        for output in cell.get("outputs", []):
+            snapshot = output.get("metadata", {}).get("docs")
+            model_id = output.get("data", {}).get(VIEW, {}).get("model_id")
+            if snapshot is None or model_id not in saved:
+                continue
+            key = lambda b: tuple(b["path"])
+            final = sorted(saved[model_id].get("buffers", []), key=key)
+            if sorted(snapshot["buffers"], key=key) == final:
+                del snapshot["buffers"]
+
+
 def main():
     path = Path(sys.argv[1]).resolve()
     with tempfile.TemporaryDirectory() as data_dir:
@@ -119,6 +141,7 @@ def main():
         client = DocsClient(nb, kernel_name="cdp-node", timeout=180, store_widget_state=True,
                             resources={"metadata": {"path": str(path.parent)}})
         client.execute()
+        drop_final_buffers(nb)
         nbformat.write(nb, path)
 
 

@@ -68,3 +68,16 @@ test("cellsOf() reads a view sends comment into the cell's metadata", () => {
   });
   assert.ok(!JSON.stringify(cells[2].source).includes("view sends"));
 });
+
+test("cellsOf() rejects a view sends comment it can't use", () => {
+  const cell = ["```ts cell", "w;", "```", ""];
+  // Not after a cell block, over two lines, an object, and invalid JSON.
+  for (const comment of [
+    ['Prose.', '<!-- view sends for a click: [{"method": "custom"}] -->'],
+    [...cell, '<!-- view sends for a click:', '[{"method": "custom"}] -->'],
+    [...cell, '<!-- view sends for a click: {"method": "custom"} -->'],
+    [...cell, '<!-- view sends for a click: [{method: "custom"}] -->'],
+  ]) {
+    assert.throws(() => cellsOf(comment.join("\n"), "/docs/page.md"), /page\.md: .*view sends/);
+  }
+});

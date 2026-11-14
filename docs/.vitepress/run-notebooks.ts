@@ -62,6 +62,12 @@ export function cellsOf(markdown: string, page: string): Cell[] {
   for (let i = 0; i < lines.length; i++) {
     const open = lines[i].match(/^(\s*)(`{3,}|~{3,})(.*)$/);
     if (!open) {
+      // One that didn't follow a cell block, or that viewSendsRE doesn't
+      // match (indented, over two lines, not a list), would otherwise end up
+      // as a hidden comment with nothing sent.
+      if (/^\s*<!--\s*view sends\b/.test(lines[i])) {
+        throw new Error(`${page}: a view sends comment must directly follow a cell block, on one line, as <!-- view sends for <words>: [...] -->: ${lines[i].trim()}`);
+      }
       prose.push(lines[i]);
       continue;
     }
@@ -78,7 +84,13 @@ export function cellsOf(markdown: string, page: string): Cell[] {
       while (k < lines.length && !lines[k].trim()) k++;
       const sends = lines[k]?.match(viewSendsRE);
       if (sends) {
-        metadata.docs = { view_sent: sends[1].trim(), view_sends: JSON.parse(sends[2]) };
+        let view_sends: unknown;
+        try {
+          view_sends = JSON.parse(sends[2]);
+        } catch (error) {
+          throw new Error(`${page}: the view sends comment isn't valid JSON (${error}): ${lines[k].trim()}`);
+        }
+        metadata.docs = { view_sent: sends[1].trim(), view_sends };
         lines.splice(k, 1);
       }
       cells.push({ cell_type: "code", source: body.join("\n"), metadata, outputs: [], execution_count: null });

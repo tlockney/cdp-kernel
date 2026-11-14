@@ -68,9 +68,14 @@ export interface Notebook {
 export interface WidgetSnapshot {
   state: Record<string, unknown>;
   buffers?: WidgetModel["buffers"];
-  messages?: { content: unknown }[];
+  messages?: { content: unknown; buffers?: string[] }[];
   view_sent?: string;
 }
+
+/** State keys a model never changes, which the docs runner leaves out of
+ * each output's snapshot (FIXED in run_notebook.py). */
+const fixedKeys = new Set(["_esm", "_css", "_anywidget_id", "_model_name", "_model_module",
+  "_model_module_version", "_view_name", "_view_module", "_view_module_version"]);
 
 /** A notebook's saved widget models, by model id. */
 const widgetModels = (notebook: Notebook) =>
@@ -165,10 +170,20 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown, widge
     // cell's change doesn't show in an earlier output.
     const snapshot = (output.metadata as { docs?: WidgetSnapshot } | undefined)?.docs;
     // The snapshot leaves out keys a model never changes (its module, CSS
-    // and id), so those come from the saved state; its buffers replace the
-    // saved ones, even when it has none.
+    // and id), so only those come from the saved state: a key a later cell
+    // adds stays out of an earlier output. Its buffers replace the saved
+    // ones, even when it has none; it leaves them out only when they equal
+    // the saved ones.
     const model = saved && snapshot
-      ? { ...saved, ...snapshot, state: { ...saved.state, ...snapshot.state }, buffers: snapshot.buffers }
+      ? {
+        ...saved,
+        ...snapshot,
+        state: {
+          ...Object.fromEntries(Object.entries(saved.state).filter(([k]) => fixedKeys.has(k))),
+          ...snapshot.state,
+        },
+        buffers: "buffers" in snapshot ? snapshot.buffers : saved.buffers,
+      }
       : saved;
     // An anywidget saved with its state runs on the page (theme/widgets.ts),
     // with no kernel behind it.
