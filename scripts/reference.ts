@@ -13,11 +13,13 @@
 // An example written as ```ts cell runs when the docs' notebooks are built
 // (npm run docs:notebooks), and the site shows its output under it: the
 // page names its notebook (Page.notebook), and docs/.vitepress/notebook.ts
-// matches each such block to a cell.
+// matches each such block to a cell. A `<!-- view sends for ...: [...] -->`
+// line after the block scripts a widget's view (run-notebooks.ts).
 
 import ts from "typescript";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { viewSendsRE } from "../docs/.vitepress/notebook.ts";
 import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -151,7 +153,9 @@ reference](widgets-reference.md).`,
     intro: `The widget model that \`jupyter.widget(options)\` returns, and the comm
 API under \`jupyter.comm\`, with their arguments, return values and an
 example. [Widgets and comms](widgets.md) explains them with a full
-walk-through, including the view module.`,
+walk-through, including the view module. Examples that can run on their
+own show the output they produced; widgets run on the page.`,
+    notebook: "public/notebooks/widgets-reference.ipynb",
     overview: `A **widget** is an [anywidget](https://anywidget.dev) model: state that
 the kernel and its views share, and a view module that draws it. Use one
 for interactive output: controls, progress, a chart that updates.
@@ -357,14 +361,19 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
   if (doc.availability) out.push(`**Availability**: ${doc.availability}`, "");
   for (const example of doc.examples) {
     // A ```ts block, then optionally screenshots of its output.
-    const m = /^```ts( cell)?\n([\s\S]*?)\n```((?:\n!\[[^\]]+\]\([^)]+\))*)$/.exec(example);
+    const m = /^```ts( cell)?\n([\s\S]*?)\n```(\n<!-- view sends for [^\n]* -->)?((?:\n!\[[^\]]+\]\([^)]+\))*)$/.exec(example);
     if (!m) {
       r.problems.push(`${where}: an @example is not a \`\`\`ts block, optionally followed by images`);
       continue;
     }
-    const [, runs, code, images] = m;
+    const [, runs, code, sends, images] = m;
+    if (sends && !runs) r.problems.push(`${where}: a <!-- view sends --> comment follows an example that isn't a \`ts cell\``);
+    if (sends && !viewSendsRE.test(sends.trim())) {
+      r.problems.push(`${where}: a <!-- view sends --> comment the docs runner can't read: it needs "for <words>:" and a JSON array`);
+    }
     r.examples.push({ where, code });
     out.push(`\`\`\`ts${runs ?? ""}`, code, "```", "");
+    if (sends) out.push(sends.trim(), "");
     for (const [, alt, url] of images.matchAll(/!\[([^\]]+)\]\(([^)]+)\)/g)) {
       // Hovers need an absolute URL; the pages use the copy in docs/images/.
       if (!url.startsWith(IMAGES)) {
@@ -373,11 +382,6 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
       }
       const file = `images/${url.slice(IMAGES.length)}`;
       if (!existsSync(join(root, "docs", file))) r.problems.push(`${where}: docs/${file} doesn't exist`);
-      // The guide's examples are what `npm run docs:widgets` screenshots,
-      // so an example shown with one must be the guide's code, verbatim.
-      if (file.startsWith("images/widgets/") && !readFileSync(join(root, "docs", "widgets.md"), "utf8").includes(`\n${code}\n\`\`\``)) {
-        r.problems.push(`${where}: the example shown with ${file} is not one of widgets.md's examples`);
-      }
       out.push(`![${alt}](${file})`, "");
     }
   }

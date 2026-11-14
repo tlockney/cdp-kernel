@@ -142,6 +142,9 @@
 .nb-markdown > :last-child, .nb-html > :last-child { margin-bottom: 0; }
 .nb-image { max-width: 100%; }
 .dark .nb-svg { background: #fff; padding: 0.5rem; border-radius: 4px; }
+/* Widget views bring their own colors for a light notebook, as in the
+   JupyterLab light theme, so dark mode gives them a light card too. */
+.dark .nb-widget { background: #fff; color: #1b1f24; color-scheme: light; padding: 0.5rem; border-radius: 4px; display: inline-block; }
 .ansi-b { font-weight: 600; }
 .ansi-dim, .ansi-gray { color: var(--vp-c-text-3); }
 .ansi-i { font-style: italic; }

@@ -9,11 +9,23 @@
 // (run_notebook.py, through uv) on this checkout's cdp-node kernel, which
 // saves the outputs the site shows and the state of any widgets. A cell
 // that fails stops the run.
+//
+// A cell that shows a widget can be followed by a comment scripting what
+// its view sends the kernel, as a click or a slider would:
+//
+//   <!-- view sends for a slider move to 30: [{"method": "update", "state": {"celsius": 30}}] -->
+//
+// The words before the colon say what a person would have done, for the
+// note under the widget. Each entry is the data of one comm message from
+// the view (an anywidget state update, or {"method": "custom", "content":
+// ...}). The runner sends them after the cell runs and saves the kernel's
+// replies with the output, so the page shows the widget as the kernel
+// left it.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { isCell, markerRE, type Cell, type Notebook } from "./notebook.ts";
+import { isCell, markerRE, viewSendsRE, type Cell, type Notebook } from "./notebook.ts";
 
 const docsDir = path.resolve(import.meta.dirname, "..");
 const site = "https://cdp-kernel.org";
@@ -50,6 +62,12 @@ export function cellsOf(markdown: string, page: string): Cell[] {
   for (let i = 0; i < lines.length; i++) {
     const open = lines[i].match(/^(\s*)(`{3,}|~{3,})(.*)$/);
     if (!open) {
+      // One that didn't follow a cell block, or that viewSendsRE doesn't
+      // match (indented, over two lines, not a list), would otherwise end up
+      // as a hidden comment with nothing sent.
+      if (/^\s*<!--\s*view sends\b/.test(lines[i])) {
+        throw new Error(`${page}: a view sends comment must directly follow a cell block, on one line, as <!-- view sends for <words>: [...] -->: ${lines[i].trim()}`);
+      }
       prose.push(lines[i]);
       continue;
     }
@@ -59,7 +77,23 @@ export function cellsOf(markdown: string, page: string): Cell[] {
     while (j < lines.length && !lines[j].trimStart().startsWith(fence)) body.push(lines[j++].slice(indent.length));
     if (isCell(info) && !indent) {
       flush();
-      cells.push({ cell_type: "code", source: body.join("\n"), metadata: {}, outputs: [], execution_count: null });
+      const metadata: Record<string, unknown> = {};
+      // A <!-- view sends for …: --> comment after the block, past blank lines,
+      // scripts what a widget's view sends the kernel once the cell has run.
+      let k = j + 1;
+      while (k < lines.length && !lines[k].trim()) k++;
+      const sends = lines[k]?.match(viewSendsRE);
+      if (sends) {
+        let view_sends: unknown;
+        try {
+          view_sends = JSON.parse(sends[2]);
+        } catch (error) {
+          throw new Error(`${page}: the view sends comment isn't valid JSON (${error}): ${lines[k].trim()}`);
+        }
+        metadata.docs = { view_sent: sends[1].trim(), view_sends };
+        lines.splice(k, 1);
+      }
+      cells.push({ cell_type: "code", source: body.join("\n"), metadata, outputs: [], execution_count: null });
     } else {
       prose.push(...lines.slice(i, j + 1));
     }
@@ -122,16 +156,18 @@ export function stable(json: string): string {
   return JSON.stringify({ cells, metadata, nbformat: nb.nbformat, nbformat_minor: nb.nbformat_minor }, null, 1) + "\n";
 }
 
-const pages = process.argv.length > 2
-  ? process.argv.slice(2).map((p) => path.resolve(p))
-  : fs.readdirSync(docsDir).filter((f) => f.endsWith(".md")).map((f) => path.join(docsDir, f));
+if (import.meta.main) {
+  const pages = process.argv.length > 2
+    ? process.argv.slice(2).map((p) => path.resolve(p))
+    : fs.readdirSync(docsDir).filter((f) => f.endsWith(".md")).map((f) => path.join(docsDir, f));
 
-for (const page of pages) {
-  const file = build(page);
-  if (!file) continue;
-  console.log(`running ${path.relative(process.cwd(), file)}`);
-  execFileSync("uv", ["run", "-q", "--with", "nbclient", "--with", "nbformat", "python", runner, file], {
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  fs.writeFileSync(file, stable(fs.readFileSync(file, "utf8")));
+  for (const page of pages) {
+    const file = build(page);
+    if (!file) continue;
+    console.log(`running ${path.relative(process.cwd(), file)}`);
+    execFileSync("uv", ["run", "-q", "--with", "nbclient", "--with", "nbformat", "python", runner, file], {
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    fs.writeFileSync(file, stable(fs.readFileSync(file, "utf8")));
+  }
 }

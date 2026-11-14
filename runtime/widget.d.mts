@@ -39,7 +39,7 @@ export interface Widget {
    * @param key The state key.
    * @returns Its value, or `undefined`.
    * @example
-   * ```ts
+   * ```ts cell
    * const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
    * w.get("count"); // 0
    * ```
@@ -61,7 +61,7 @@ export interface Widget {
    * w.set({ count: 2, label: "two" });
    * ```
    * @example
-   * ```ts
+   * ```ts cell
    * const progress = jupyter.widget({
    *   esm: `export default {
    *     render({ model, el }) {
@@ -96,7 +96,6 @@ export interface Widget {
    * }
    * progress.set({ message: "Done", value: 1 });
    * ```
-   * ![A progress bar three fifths full, labelled "Processing april.csv (60%)", captured while the cell was still running.](https://cdp-kernel.org/images/widgets/progress.png)
    */
   set(key: string, value: unknown): void;
   set(changes: WidgetState): void;
@@ -114,7 +113,7 @@ export interface Widget {
    * w.on("msg:custom", (content) => console.log("view sent", content));
    * ```
    * @example
-   * ```ts
+   * ```ts cell
    * const temperature = jupyter.widget({
    *   esm: `export default {
    *     render({ model, el }) {
@@ -146,7 +145,7 @@ export interface Widget {
    *
    * temperature;
    * ```
-   * ![A range slider moved to 30, labelled "30 °C is 86 °F".](https://cdp-kernel.org/images/widgets/temperature.png)
+   * <!-- view sends for a slider move to 30: [{"method": "update", "state": {"celsius": 30}}] -->
    */
   on(event: `change:${string}`, listener: (value: unknown, previous: unknown) => void | Promise<void>): void;
   on(event: "change", listener: (changes: WidgetState) => void | Promise<void>): void;
@@ -176,7 +175,7 @@ export interface Widget {
    * w.send({ type: "reset" });
    * ```
    * @example
-   * ```ts
+   * ```ts cell
    * const dice = jupyter.widget({
    *   esm: `export default {
    *     render({ model, el }) {
@@ -205,7 +204,7 @@ export interface Widget {
    *
    * dice;
    * ```
-   * ![A "Roll 3 dice" button next to three die faces and their total, the kernel's answer to a click.](https://cdp-kernel.org/images/widgets/dice.png)
+   * <!-- view sends for a click: [{"method": "custom", "content": {"count": 3}}] -->
    */
   send(content: unknown, buffers?: Uint8Array[]): void;
   /**
@@ -224,7 +223,7 @@ export interface Widget {
    *
    * @returns Every state key and its value.
    * @example
-   * ```ts
+   * ```ts cell
    * const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
    * w.fullState(); // { _model_name: "AnyModel", _model_module: "anywidget", ..., count: 0 }
    * ```

@@ -1,6 +1,3 @@
-<!-- The examples marked widget-example below are run in JupyterLab, and the
-screenshots in images/widgets/ captured, by `npm run docs:widgets`. -->
-
 # Widgets and comms
 
 A **widget** is a small piece of user interface (a button, a slider, a
@@ -9,17 +6,21 @@ kernel. Click the button and code in the kernel can react; change a value
 in the kernel and the button updates. Ordinary output is a one-way
 snapshot; a widget is live.
 
-<img src="./images/widgets/counter.png" width="650" alt="A JupyterLab cell that creates a counter widget with jupyter.widget. Below the code, the output is a button reading &quot;count is 3&quot; after three clicks.">
-
 `deno jupyter` has no widgets. cdp-kernel supports them on every runtime
 (Node, Deno, Bun, workerd and celld) through `jupyter.widget`, which
 follows the [anywidget](https://anywidget.dev) format: you write the view
 as a small JavaScript module, and the kernel and the frontend keep a shared
 state object in sync.
 
-This page assumes no experience with Jupyter widgets. Every example below
-was run in JupyterLab against the kernel on Node, Deno, Bun and workerd,
-and each picture is a screenshot of the Node run.
+This page assumes no experience with Jupyter widgets. It is also a
+notebook: its examples ran on the `cdp-node` kernel when the docs were
+built, and each widget below runs in your browser from the state the
+kernel left it in. Where an example needs a click or a slider move, the
+build sent the kernel what the view would, so the widget shows the
+kernel's real reply. With no kernel behind this page, your own clicks
+change only the view.
+
+<!-- notebook: public/notebooks/widgets.ipynb -->
 
 ## Before you start
 
@@ -91,7 +92,7 @@ and each change after that is one `comm_msg` carrying the changed keys:
 
 ## A first widget: a counter
 
-```ts
+```ts cell
 const counter = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -113,7 +114,7 @@ const counter = jupyter.widget({
 counter; // the cell's result: displays the widget
 ```
 
-<!-- widget-example: counter -->
+<!-- view sends for three clicks: [{"method": "update", "state": {"count": 1}}, {"method": "update", "state": {"count": 2}}, {"method": "update", "state": {"count": 3}}] -->
 
 Reading the view module from top to bottom:
 
@@ -127,19 +128,15 @@ Reading the view module from top to bottom:
 
 Click the button three times, then ask the kernel:
 
-```ts
+```ts cell
 counter.get("count"); // 3
 ```
 
-<!-- widget-example: counter-get -->
-
 And set it from the kernel; the button follows:
 
-```ts
+```ts cell
 counter.set("count", 10);
 ```
-
-<!-- widget-example: counter-set -->
 
 The view module is a string, written here as a template literal. The
 examples on this page build their text with `+` rather than nested
@@ -154,7 +151,7 @@ computes `fahrenheit` and sets it back. The view only displays what the
 kernel sends, so any logic you can write in a cell can sit behind a
 control.
 
-```ts
+```ts cell
 const temperature = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -187,9 +184,7 @@ temperature.on("change:celsius", (celsius) => {
 temperature;
 ```
 
-<!-- widget-example: temperature -->
-
-<img src="./images/widgets/temperature.png" width="251" alt="A range slider moved to 30, labelled &quot;30 °C is 86 °F&quot;.">
+<!-- view sends for a slider move to 30: [{"method": "update", "state": {"celsius": 30}}] -->
 
 A kernel listener gets the new value and the previous one:
 `on("change:celsius", (value, previous) => ...)`. To hear about every key,
@@ -211,7 +206,7 @@ as here.
 cell, so a widget makes a good progress indicator. This one also passes
 `css`, a stylesheet for the view.
 
-```ts
+```ts cell
 const progress = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -247,10 +242,6 @@ for (const [i, file] of files.entries()) {
 progress.set({ message: "Done", value: 1 });
 ```
 
-<!-- widget-example: progress -->
-
-<img src="./images/widgets/progress.png" width="348" alt="A progress bar three fifths full, labelled &quot;Processing april.csv (60%)&quot;, captured while the cell was still running.">
-
 `await jupyter.display(progress)` shows the widget straight away, rather
 than as the cell's result at the end. `set({ ... })` changes several keys
 in one message.
@@ -265,7 +256,7 @@ State can hold any JSON value, such as an array of records. This bar chart
 redraws whenever the kernel sets `data`, so the same widget can show the
 result of each new computation.
 
-```ts
+```ts cell
 const chart = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -310,14 +301,10 @@ chart.set(
 chart;
 ```
 
-<!-- widget-example: chart -->
-
-<img src="./images/widgets/chart.png" width="356" alt="The chart widget's output, a live view: a horizontal bar chart of fruit votes, apple 5, pear 3, fig 2, plum 1, kiwi 1.">
-
 The chart is a live view of the model, not a picture. Count some more votes
 in a later cell and set `data` again:
 
-```ts
+```ts cell
 for (const vote of ["kiwi", "kiwi", "kiwi", "kiwi", "kiwi", "fig"]) {
   counts.set(vote, (counts.get(vote) ?? 0) + 1);
 }
@@ -327,12 +314,10 @@ chart.set(
 );
 ```
 
-<!-- widget-example: chart-update -->
-
-This cell has no output of its own. The chart under the earlier cell
-redraws in place:
-
-<img src="./images/widgets/chart-update.png" width="357" alt="The same chart output after the later cell, redrawn in place: kiwi 6, apple 5, pear 3, fig 3, plum 1.">
+This cell has no output of its own. In the notebook, the chart under the
+earlier cell redraws in place, to kiwi 6, apple 5, pear 3, fig 3 and
+plum 1. This page shows each output as it was when its own cell ran, so
+the chart above keeps the first counts.
 
 ## Binary data
 
@@ -343,7 +328,7 @@ In the view, a binary value arrives as a `DataView`.
 This example computes an image's pixels in the kernel and draws them on a
 `<canvas>`:
 
-```ts
+```ts cell
 const size = 160;
 
 function pattern(t: number): Uint8Array {
@@ -383,20 +368,14 @@ const canvas = jupyter.widget({
 canvas;
 ```
 
-<!-- widget-example: canvas -->
-
-<img src="./images/widgets/canvas.png" width="188" alt="A 160 by 160 pixel canvas showing a smooth interference pattern in blue and pale yellow, computed in the kernel.">
-
 Setting new pixels from the kernel animates it:
 
-```ts
+```ts cell
 for (let t = 0; t < 6; t += 0.1) {
   canvas.set("pixels", pattern(t));
   await new Promise((resolve) => setTimeout(resolve, 30));
 }
 ```
-
-<!-- widget-example: canvas-animate -->
 
 ## Messages instead of state
 
@@ -406,7 +385,7 @@ the view, `model.send(content)` goes to the kernel's `on("msg:custom")`;
 in the kernel, `widget.send(content)` goes to the view's
 `model.on("msg:custom")`.
 
-```ts
+```ts cell
 const dice = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -436,9 +415,7 @@ dice.on("msg:custom", (content) => {
 dice;
 ```
 
-<!-- widget-example: dice -->
-
-<img src="./images/widgets/dice.png" width="293" alt="A &quot;Roll 3 dice&quot; button next to three die faces and their total, the kernel's answer to a click.">
+<!-- view sends for a click: [{"method": "custom", "content": {"count": 3}}] -->
 
 Both directions of `send` take an optional list of binary buffers as a
 second argument.
@@ -448,18 +425,15 @@ second argument.
 Displaying the same widget twice gives two views of one model. A change in
 either view, or from the kernel, shows in both:
 
-```ts
+```ts cell
 await jupyter.display(counter);
 await jupyter.display(counter);
 ```
 
-<!-- widget-example: views -->
-
-<img src="./images/widgets/views.png" width="112" alt="Two buttons, one above the other, both reading &quot;count is 10&quot;: two views of the counter from earlier.">
-
 Here both read 10 because of the earlier `counter.set("count", 10)`.
-Clicking either one updates the other, and the original view higher up in
-the notebook.
+In a notebook, clicking either one updates the other, and the original
+view higher up. On this page each view runs on its own copy of the model,
+with no kernel to share it, so they don't follow each other.
 
 ## Writing the view module
 

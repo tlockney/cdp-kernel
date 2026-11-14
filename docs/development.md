@@ -173,6 +173,19 @@ data, are the notebook's working directory and are published with it. If a
 `cell` block no longer matches the notebook, the docs build fails until the
 notebook is re-run.
 
+A cell that shows a widget can script what its view sends the kernel,
+as a click or slider move would, with a comment after the block:
+
+```md
+<!-- view sends for a slider move to 30: [{"method": "update", "state": {"celsius": 30}}] -->
+```
+
+The runner sends those messages once the cell has run and saves the
+kernel's replies with the output, so the page shows the widget as the
+kernel left it, with a note naming what was sent. Each widget output keeps
+the state its model had when its own cell ran, so a later cell's change
+doesn't show in an earlier output.
+
 The reference pages are generated (`node scripts/reference.ts --write`),
 so their runnable examples are marked in the doc comments: an `@example`
 written as a ```` ```ts cell ```` block runs in the page's notebook. Leave
