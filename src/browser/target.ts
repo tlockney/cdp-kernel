@@ -32,9 +32,10 @@ export interface BrowserTargetOptions {
   cdn?: string;
   /**
    * Specifiers, as written, mapped to URLs the page serves (resolved
-   * against `base`), which win over `cdn`: a cell's import and
-   * `jupyter.chart`'s and `jupyter.sql`'s libraries load from there, so
-   * they work offline. `CHART_MODULES` names jupyter.chart's.
+   * against `base`), which win over `cdn`: a cell's imports and the
+   * libraries `jupyter.chart` and `jupyter.sql` import load from there.
+   * Mapping `CHART_MODULES` makes charts draw offline; `jupyter.sql` still
+   * loads DuckDB's worker and .wasm from jsDelivr.
    */
   modules?: { readonly [specifier: string]: string };
   /**
