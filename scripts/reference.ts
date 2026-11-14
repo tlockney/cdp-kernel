@@ -9,6 +9,11 @@
 // type-checks each one; it may be followed by screenshots of its output,
 // as ![alt](https://cdp-kernel.org/images/...) of a file in docs/images/),
 // and @see <guide page>#<anchor>.
+//
+// An example written as ```ts cell runs when the docs' notebooks are built
+// (npm run docs:notebooks), and the site shows its output under it: the
+// page names its notebook (Page.notebook), and docs/.vitepress/notebook.ts
+// matches each such block to a cell.
 
 import ts from "typescript";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -68,6 +73,11 @@ interface Page {
    * in the order of `members`. Without groups, one table in page order.
    */
   groups?: { title: string; members: string[] }[];
+  /**
+   * The notebook the page's ```ts cell examples run in, under docs/:
+   * the page names it in a <!-- notebook: --> comment.
+   */
+  notebook?: string;
 }
 
 /** A row of a page's index, and the member name it is filed under. */
@@ -91,10 +101,12 @@ export const pages: Page[] = [
     file: "docs/jupyter-reference.md",
     title: "`jupyter` reference",
     intro: `Every member of the \`jupyter\` global and the \`prompt\` and \`confirm\`
-globals, with their arguments, return values and an example. [The
-\`jupyter\` namespace](jupyter-api.md) explains them with longer examples
-and their output. Widgets and comms are in the [widgets
+globals, with their arguments, return values and an example. Examples
+that can run on their own show the output they produced. [The
+\`jupyter\` namespace](jupyter-api.md) explains the members with longer
+examples. Widgets and comms are in the [widgets
 reference](widgets-reference.md).`,
+    notebook: "public/notebooks/jupyter-reference.ipynb",
     sections: [
       { iface: "JupyterNamespace", file: DISPLAY, prefix: "jupyter.", heading: "jupyter" },
       {
@@ -345,14 +357,15 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
   if (doc.availability) out.push(`**Availability**: ${doc.availability}`, "");
   for (const example of doc.examples) {
     // A ```ts block, then optionally screenshots of its output.
-    const m = /^```ts\n([\s\S]*?)\n```((?:\n!\[[^\]]+\]\([^)]+\))*)$/.exec(example);
+    const m = /^```ts( cell)?\n([\s\S]*?)\n```((?:\n!\[[^\]]+\]\([^)]+\))*)$/.exec(example);
     if (!m) {
       r.problems.push(`${where}: an @example is not a \`\`\`ts block, optionally followed by images`);
       continue;
     }
-    r.examples.push({ where, code: m[1] });
-    out.push("```ts", m[1], "```", "");
-    for (const [, alt, url] of m[2].matchAll(/!\[([^\]]+)\]\(([^)]+)\)/g)) {
+    const [, runs, code, images] = m;
+    r.examples.push({ where, code });
+    out.push(`\`\`\`ts${runs ?? ""}`, code, "```", "");
+    for (const [, alt, url] of images.matchAll(/!\[([^\]]+)\]\(([^)]+)\)/g)) {
       // Hovers need an absolute URL; the pages use the copy in docs/images/.
       if (!url.startsWith(IMAGES)) {
         r.problems.push(`${where}: image ${url} is not under ${IMAGES}`);
@@ -362,7 +375,7 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
       if (!existsSync(join(root, "docs", file))) r.problems.push(`${where}: docs/${file} doesn't exist`);
       // The guide's examples are what `npm run docs:widgets` screenshots,
       // so an example shown with one must be the guide's code, verbatim.
-      if (file.startsWith("images/widgets/") && !readFileSync(join(root, "docs", "widgets.md"), "utf8").includes(`\`\`\`ts\n${m[1]}\n\`\`\``)) {
+      if (file.startsWith("images/widgets/") && !readFileSync(join(root, "docs", "widgets.md"), "utf8").includes(`\n${code}\n\`\`\``)) {
         r.problems.push(`${where}: the example shown with ${file} is not one of widgets.md's examples`);
       }
       out.push(`![${alt}](${file})`, "");
@@ -560,6 +573,9 @@ export function generate(): Result {
     }
     body.push("## Types", "");
     for (const t of page.types) renderType(body, t.name, source(t.file), r);
+    if (!page.notebook && body.includes("```ts cell")) {
+      r.problems.push(`${page.file}: has \`ts cell\` examples but no notebook`);
+    }
     // Links and the outline use VitePress's heading slugs, so a member's
     // must be unique on its page ("Properties" repeats, and isn't linked).
     const slugs = body
@@ -580,6 +596,7 @@ export function generate(): Result {
       "",
       page.intro,
       "",
+      ...(page.notebook ? [`<!-- notebook: ${page.notebook} -->`, ""] : []),
       ...(page.overview ? ["## Overview", "", page.overview, ""] : []),
       ...renderIndex(page, index, r),
       ...body,

@@ -163,9 +163,18 @@ greeting + ", notebook"
 ````
 
 `npm run docs:notebooks` builds that notebook from the page (code blocks
-become cells, the prose around them Markdown cells) and runs it on the
-`cdp-node` kernel with [nb-cli](https://github.com/jupyter-ai-contrib/nb-cli),
-which saves the outputs. Commit the notebook with the page. Files beside it
-in `docs/public/notebooks/`, such as sample data, are the notebook's working
-directory and are published with it. If a `cell` block no longer matches
-the notebook, the docs build fails until the notebook is re-run.
+become cells, the prose around them Markdown cells) and runs it on this
+checkout's `cdp-node` kernel with
+[nbclient](https://github.com/jupyter/nbclient) (through `uv`), which saves
+the outputs and the state of any widgets, so a widget runs on the page
+from its saved state. A cell that fails stops the run. Commit the notebook
+with the page. Files beside it in `docs/public/notebooks/`, such as sample
+data, are the notebook's working directory and are published with it. If a
+`cell` block no longer matches the notebook, the docs build fails until the
+notebook is re-run.
+
+The reference pages are generated (`node scripts/reference.ts --write`),
+so their runnable examples are marked in the doc comments: an `@example`
+written as a ```` ```ts cell ```` block runs in the page's notebook. Leave
+an example as plain `ts` when it can't run on its own, such as one that
+needs a Ganymede server, input or an interrupt.
