@@ -57,7 +57,7 @@ export interface Sql {
    * Run the query, with each `${value}` as a bound parameter.
    *
    * @example
-   * ```ts
+   * ```ts cell
    * await jupyter.sql`select ${"Ganymede"} as moon`;
    * ```
    */
@@ -69,7 +69,7 @@ export interface Sql {
    * @param text The SQL.
    * @param params Values for its `?` placeholders, in order.
    * @example
-   * ```ts
+   * ```ts cell
    * const op = ">";
    * await jupyter.sql.query(`select 2 ${op} ? as answer`, [1]);
    * ```
@@ -99,7 +99,7 @@ export interface Sql {
    * @param source A path or URL, rows, an Arrow table or a DataFrame.
    * @throws {TypeError} `name` is empty, or the rows have no columns.
    * @example
-   * ```ts
+   * ```ts cell
    * await jupyter.sql.load("moons", [
    *   { moon: "Io", radius_km: 1821.6 },
    *   { moon: "Ganymede", radius_km: 2634.1 },

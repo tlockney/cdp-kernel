@@ -497,7 +497,7 @@ takes an array of row objects, an array of arrays (named with
 `columns`), an Arrow table, a Polars DataFrame or a `@duckdb/node-api`
 result:
 
-```ts
+```ts cell
 const moons = [
   { moon: "Io", radius_km: 1821.6, discovered: new Date("1610-01-08") },
   { moon: "Europa", radius_km: 1560.8, discovered: new Date("1610-01-08") },
@@ -575,7 +575,7 @@ asynchronously, so `jupyter.table` refuses it.
 `jupyter.sql` runs SQL on an in-memory [DuckDB](https://duckdb.org)
 database, as a tagged template. The result shows as a [table](#tables):
 
-```ts
+```ts cell
 const min = 2000;
 await jupyter.sql`
   select moon, radius_km
@@ -594,7 +594,7 @@ and never with text from outside the notebook.
 The result has `columns` (name and DuckDB type) and `rows` (plain
 objects), for code that goes on with the data:
 
-```ts
+```ts cell
 const { rows } = await jupyter.sql`select range as n from range(3)`;
 rows.map((r) => r.n);  // [ 0, 1, 2 ]
 ```
@@ -610,7 +610,7 @@ HTTP in ranges, fetching only the columns a query needs.
 data the notebook already has: an array of row objects, an Arrow table
 or a Polars DataFrame. Rows go in whole; bytes become base64 text.
 
-```ts
+```ts cell
 await jupyter.sql.load("weather", "https://raw.githubusercontent.com/vega/vega-datasets/v2.11.0/data/seattle-weather.csv");
 await jupyter.sql.load("moons", [
   { moon: "Io", radius_km: 1821.6, discovered: new Date("1610-01-08") },
@@ -641,7 +641,7 @@ as a plain image, such as JupyterLab, draws them black.
 
 Pass a [Vega-Lite](https://vega.github.io/vega-lite/) spec:
 
-```ts
+```ts cell
 jupyter.chart({
   title: "Galilean moons",
   data: { values: [
@@ -667,7 +667,7 @@ itself.
 Or pass the [Observable Plot](https://observablehq.com/plot/) module and
 the options you would give `Plot.plot`:
 
-```ts
+```ts cell
 import * as Plot from "npm:@observablehq/plot@0.6";
 
 const moons = [
@@ -791,13 +791,13 @@ ganymede execute fremont.ipynb -p counter="2nd Ave" -p days=7 --results
 `jupyter.params` holds the parameters, a frozen object. Take defaults with
 destructuring, so the notebook still runs on its own:
 
-```ts
+```ts cell
 const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string; days?: number };
 ```
 
 `jupyter.result(name, value)` publishes a value under a name:
 
-```ts
+```ts cell
 jupyter.result("weekday_drop", -0.19);
 ```
 

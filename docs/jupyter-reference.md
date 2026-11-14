@@ -3,10 +3,13 @@
 # `jupyter` reference
 
 Every member of the `jupyter` global and the `prompt` and `confirm`
-globals, with their arguments, return values and an example. [The
-`jupyter` namespace](jupyter-api.md) explains them with longer examples
-and their output. Widgets and comms are in the [widgets
+globals, with their arguments, return values and an example. Examples
+that can run on their own show the output they produced. [The
+`jupyter` namespace](jupyter-api.md) explains the members with longer
+examples. Widgets and comms are in the [widgets
 reference](widgets-reference.md).
+
+<!-- notebook: public/notebooks/jupyter-reference.ipynb -->
 
 **Showing output**
 
@@ -85,7 +88,7 @@ from `md`, `html` or `svg`, an image, a widget, an object with a
 
 **Returns** `Promise<void>`: Resolves once the output is sent. Without `await` the output still appears, but later output in the cell can appear before it.
 
-```ts
+```ts cell
 const bar = (pct: number) => jupyter.html`<progress value="${pct}" max="100"></progress>`;
 await jupyter.display(bar(0), { display_id: "download" });
 for (let pct = 25; pct <= 100; pct += 25) {
@@ -94,7 +97,7 @@ for (let pct = 25; pct <= 100; pct += 25) {
 }
 ```
 
-```ts
+```ts cell
 // A MIME bundle sent as is: JupyterLab renders it as a JSON tree.
 const user = { name: "Ada", active: true };
 await jupyter.display(
@@ -116,7 +119,7 @@ inserted as is, without escaping.
 
 **Returns** `Displayable`: A value that shows as `text/markdown` as a cell's result or through `display`.
 
-```ts
+```ts cell
 const scores = { Ada: 92, Grace: 88 };
 const rows = Object.entries(scores).map(([n, s]) => `| ${n} | ${s} |`).join("\n");
 jupyter.md`| Name | Score |
@@ -138,7 +141,7 @@ the network yourself.
 
 **Returns** `Displayable`: A value that shows as `text/html`.
 
-```ts
+```ts cell
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const comment = "<script>alert(1)</script>";
 jupyter.html`<p>${escape(comment)}</p>`;
@@ -157,7 +160,7 @@ Interpolated values are inserted as is, without escaping.
 
 **Returns** `Displayable`: A value that shows as `image/svg+xml`.
 
-```ts
+```ts cell
 const data = [4, 8, 15, 16];
 const bars = data.map((v, i) => `<rect x="${i * 20}" y="${40 - v * 2}" width="16" height="${v * 2}"/>`).join("");
 jupyter.svg`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40">${bars}</svg>`;
@@ -188,7 +191,7 @@ name.
 jupyter.image("./chart.png");
 ```
 
-```ts
+```ts cell
 const response = await fetch("https://www.python.org/static/img/python-logo.png");
 jupyter.image(new Uint8Array(await response.arrayBuffer()));
 ```
@@ -206,7 +209,7 @@ method returns a MIME bundle, or a promise of one. It is used for a
 cell's result, `display` and `format`, but not for objects nested in
 other values. At runtime it is `Symbol.for("Jupyter.display")`.
 
-```ts
+```ts cell
 class Temperature {
   celsius: number;
   constructor(celsius: number) {
@@ -237,7 +240,7 @@ as the notebook shows them.
 
 **Returns** `Promise<MediaBundle>`: The bundle, for example `{ "text/plain": "\x1b[33m42\x1b[39m" }` for `42`.
 
-```ts
+```ts cell
 const bundle = await jupyter.format(jupyter.md`# Weekly report`);
 bundle["text/markdown"]; // "# Weekly report"
 ```
@@ -265,7 +268,7 @@ frontend.
 | `content` | `object` | yes | The message content, as the messaging spec defines it for `msgType`. |
 | `options` | `{ metadata?: object; buffers?: Uint8Array[] }` | no | `metadata` for the message, and binary `buffers`. |
 
-```ts
+```ts cell
 // Count down in place: clear_output with wait avoids a flicker.
 for (const n of [3, 2, 1]) {
   jupyter.broadcast("clear_output", { wait: true });
@@ -302,7 +305,7 @@ way when it is a cell's value; pass one here to set `limit`,
 
 **Throws** `TypeError`: `value` isn't one of those, or `limit` isn't a whole number.
 
-```ts
+```ts cell
 const moons = [
   { moon: "Io", radius_km: 1821.6, discovered: new Date("1610-01-08") },
   { moon: "Europa", radius_km: 1560.8, discovered: new Date("1610-01-08") },
@@ -333,7 +336,7 @@ notebook already has. An interrupt stops a running query.
 
 **Availability**: Node, Deno and Bun use `@duckdb/node-api`; the browser target (the Ganymede apps) uses duckdb-wasm from a CDN. Not on workerd or celld.
 
-```ts
+```ts cell
 const min = 2000;
 await jupyter.sql`
   select moon, radius_km
@@ -377,7 +380,7 @@ no DOM, load through the cell's import on first use. A chart past
 
 **Throws** `TypeError`: `chart` is none of those, or Plot comes without options.
 
-```ts
+```ts cell
 jupyter.chart({
   title: "Galilean moons",
   data: { values: [
@@ -454,7 +457,7 @@ cell with it) to show a view.
 
 **Availability**: The frontend needs the [anywidget](https://anywidget.dev) extension.
 
-```ts
+```ts cell
 const counter = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -476,8 +479,6 @@ const counter = jupyter.widget({
 counter; // the cell's result: displays the widget
 ```
 
-![A JupyterLab cell that creates a counter widget with jupyter.widget. Below the code, the output is a button reading "count is 3" after three clicks.](images/widgets/counter.png)
-
 Guide: [Widgets and comms](widgets.md#a-first-widget-a-counter)
 
 ### `jupyter.params`
@@ -496,7 +497,7 @@ destructuring, so the notebook also runs on its own.
 
 **Availability**: Node, Deno, Bun, workerd and celld read the kernel's environment; the browser target takes `params` from its options.
 
-```ts
+```ts cell
 const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string; days?: number };
 `${counter}, last ${days} days`;
 ```
@@ -523,7 +524,7 @@ type. When a name is published twice, readers take the last one.
 
 **Throws** `TypeError`: `name` is empty, or `value` isn't JSON (a function, `undefined`, a `BigInt` or a cycle).
 
-```ts
+```ts cell
 const counts = [3120, 2890, 2410];
 jupyter.result("weekday_drop", (counts[2] - counts[0]) / counts[0]);
 jupyter.result("counts", counts);
@@ -589,7 +590,7 @@ query built at run time; prefer the tag otherwise.
 
 **Returns** `Promise<SqlResult>`
 
-```ts
+```ts cell
 const op = ">";
 await jupyter.sql.query(`select 2 ${op} ? as answer`, [1]);
 ```
@@ -636,7 +637,7 @@ parameter, typed from the values: integers as `BIGINT`, numbers as
 
 **Throws** `TypeError`: `name` is empty, or the rows have no columns.
 
-```ts
+```ts cell
 await jupyter.sql.load("moons", [
   { moon: "Io", radius_km: 1821.6 },
   { moon: "Ganymede", radius_km: 2634.1 },

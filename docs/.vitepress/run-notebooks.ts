@@ -5,10 +5,10 @@
 // A page names its notebook with <!-- notebook: notebooks/name.ipynb --> and
 // marks its cells as ```ts cell (see notebook.ts). Each marked block becomes
 // a code cell; the prose around it becomes Markdown cells, so the downloaded
-// notebook reads like the page. The notebook is then run with nb-cli
-// (https://github.com/jupyter-ai-contrib/nb-cli) on the cdp-node kernel,
-// which saves the outputs the site shows. Install a kernelspec first, from
-// this checkout (npm run install:node) or a release.
+// notebook reads like the page. The notebook is then run with nbclient
+// (run_notebook.py, through uv) on this checkout's cdp-node kernel, which
+// saves the outputs the site shows and the state of any widgets. A cell
+// that fails stops the run.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -89,6 +89,39 @@ function build(page: string): string | undefined {
   return file;
 }
 
+const runner = path.join(import.meta.dirname, "run_notebook.py");
+
+/**
+ * The executed notebook in a form that a re-run with the same results
+ * leaves unchanged: no execution timing, widget model ids numbered in
+ * order of appearance rather than random, and each cell's keys in one
+ * order with its source as one string.
+ */
+export function stable(json: string): string {
+  const saved = JSON.parse(json).metadata.widgets?.["application/vnd.jupyter.widget-state+json"]?.state ?? {};
+  const ids = new Map<string, string>();
+  // Model ids appear in outputs, in the saved state and in references
+  // between models; renaming them in the text catches all three.
+  json = json.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32}/g, (id) => {
+    if (!(id in saved)) return id;
+    if (!ids.has(id)) ids.set(id, `widget-${ids.size + 1}`);
+    return ids.get(id)!;
+  });
+  const nb = JSON.parse(json);
+  const { language_info: _, ...metadata } = nb.metadata;
+  const cells = nb.cells.map((cell: Cell & { id: string }) => {
+    const { execution: __, ...cellMetadata } = cell.metadata ?? {};
+    return {
+      id: cell.id,
+      cell_type: cell.cell_type,
+      source: Array.isArray(cell.source) ? cell.source.join("") : cell.source,
+      metadata: cellMetadata,
+      ...(cell.cell_type === "code" ? { outputs: cell.outputs, execution_count: cell.execution_count } : {}),
+    };
+  });
+  return JSON.stringify({ cells, metadata, nbformat: nb.nbformat, nbformat_minor: nb.nbformat_minor }, null, 1) + "\n";
+}
+
 const pages = process.argv.length > 2
   ? process.argv.slice(2).map((p) => path.resolve(p))
   : fs.readdirSync(docsDir).filter((f) => f.endsWith(".md")).map((f) => path.join(docsDir, f));
@@ -97,11 +130,8 @@ for (const page of pages) {
   const file = build(page);
   if (!file) continue;
   console.log(`running ${path.relative(process.cwd(), file)}`);
-  // nb runs the notebook in its own directory and saves the outputs into it.
-  execFileSync("nb", ["execute", file, "--timeout", "180"], { stdio: ["ignore", "ignore", "inherit"] });
-  // Outputs are only as stable as the code: drop execution timing metadata
-  // so a re-run with the same results leaves the file unchanged.
-  const notebook = JSON.parse(fs.readFileSync(file, "utf8"));
-  for (const cell of notebook.cells) delete cell.metadata?.execution;
-  fs.writeFileSync(file, JSON.stringify(notebook, null, 1) + "\n");
+  execFileSync("uv", ["run", "-q", "--with", "nbclient", "--with", "nbformat", "python", runner, file], {
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  fs.writeFileSync(file, stable(fs.readFileSync(file, "utf8")));
 }

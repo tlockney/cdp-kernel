@@ -4,6 +4,15 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- The docs show the real output of more examples: the tables, SQL
+  results and charts in the `jupyter` namespace guide, and every example
+  in the `jupyter` reference that runs on its own, including a counter
+  widget that runs on the page. Docs notebooks now run with nbclient,
+  which saves widget state
+  ([#499](https://github.com/tlockney/cdp-kernel/issues/499)).
+
 ## 0.12.1 (2026-11-14)
 
 - `SQL_MODULES` names what `jupyter.sql` loads in the browser target:
