@@ -4,7 +4,7 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.12.0 (2026-11-14)
 
 - The browser kernel's `modules` option maps import specifiers to URLs
   the page serves, ahead of the CDN, and `CHART_MODULES` names the
