@@ -622,7 +622,8 @@ await jupyter.sql`select year(date) as year, round(avg(temp_max), 1) as avg_high
 The database opens on the first query, which loads DuckDB: the
 `@duckdb/node-api` package on Node, Deno and Bun (installed on first use
 like any `npm:` import), and DuckDB's WebAssembly build from a CDN in the
-browser target and the Ganymede apps. It lasts until the kernel restarts
+browser target and the Ganymede apps, unless the page serves its own
+copies ([`SQL_MODULES`](integration-browser.md)). It lasts until the kernel restarts
 or `await jupyter.sql.close()`. Interrupting the kernel stops a running
 query. `await jupyter.sql.connection()` returns DuckDB's own connection
 for anything the tag doesn't cover. workerd and celld have no DuckDB.
