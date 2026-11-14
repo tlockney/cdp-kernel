@@ -32,6 +32,9 @@ from nbclient import NotebookClient
 
 ROOT = Path(__file__).resolve().parents[2]
 VIEW = "application/vnd.jupyter.widget-view+json"
+# State keys a model never changes, left out of the per-output snapshots.
+FIXED = {"_esm", "_css", "_anywidget_id", "_model_name", "_model_module", "_model_module_version",
+         "_view_name", "_view_module", "_view_module_version"}
 
 
 class DocsClient(NotebookClient):
@@ -64,7 +67,10 @@ class DocsClient(NotebookClient):
             model_id = output.get("data", {}).get(VIEW, {}).get("model_id")
             if model_id not in self.widget_state:
                 continue
-            snapshot = {"state": copy.deepcopy(self.widget_state[model_id])}
+            # The view module, stylesheet and id don't change; the page takes
+            # them from the notebook's saved state.
+            state = {k: v for k, v in self.widget_state[model_id].items() if k not in FIXED}
+            snapshot = {"state": copy.deepcopy(state)}
             buffers = self.widget_buffers.get(model_id)
             if buffers:
                 snapshot["buffers"] = copy.deepcopy(list(buffers.values()))
@@ -87,6 +93,8 @@ class DocsClient(NotebookClient):
         msg_id = msg["header"]["msg_id"]
         while True:
             reply = await asyncio.wait_for(self.kc.iopub_channel.get_msg(timeout=None), 60)
+            # Only the replies to this message count: a late update from
+            # earlier async work isn't part of this widget's snapshot.
             if reply["parent_header"].get("msg_id") != msg_id:
                 continue
             kind = reply["msg_type"]
@@ -96,6 +104,9 @@ class DocsClient(NotebookClient):
                 self.handle_comm_msg([], reply, cell_index)
             elif kind == "error":
                 raise RuntimeError(f"the kernel failed handling a view message: {reply['content']['evalue']}")
+            elif kind == "stream" and reply["content"]["name"] == "stderr":
+                # A comm listener that throws is reported as stderr, not as an error.
+                raise RuntimeError(f"the kernel wrote to stderr handling a view message: {reply['content']['text']}")
 
 
 def main():

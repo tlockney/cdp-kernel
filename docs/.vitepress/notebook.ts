@@ -164,7 +164,12 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown, widge
     // once its own cell (and any scripted view messages) ran, so a later
     // cell's change doesn't show in an earlier output.
     const snapshot = (output.metadata as { docs?: WidgetSnapshot } | undefined)?.docs;
-    const model = saved && snapshot ? { ...saved, ...snapshot } : saved;
+    // The snapshot leaves out keys a model never changes (its module, CSS
+    // and id), so those come from the saved state; its buffers replace the
+    // saved ones, even when it has none.
+    const model = saved && snapshot
+      ? { ...saved, ...snapshot, state: { ...saved.state, ...snapshot.state }, buffers: snapshot.buffers }
+      : saved;
     // An anywidget saved with its state runs on the page (theme/widgets.ts),
     // with no kernel behind it.
     if (model?.model_module === "anywidget" && typeof model.state._esm === "string") {

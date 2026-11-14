@@ -431,8 +431,9 @@ await jupyter.display(counter);
 ```
 
 Here both read 10 because of the earlier `counter.set("count", 10)`.
-Clicking either one updates the other, and the original view higher up in
-the notebook.
+In a notebook, clicking either one updates the other, and the original
+view higher up. On this page each view runs on its own copy of the model,
+with no kernel to share it, so they don't follow each other.
 
 ## Writing the view module
 

@@ -19,6 +19,7 @@
 import ts from "typescript";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { viewSendsRE } from "../docs/.vitepress/notebook.ts";
 import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -367,6 +368,9 @@ function renderDoc(out: string[], doc: Doc, sigs: ts.SignatureDeclarationBase[] 
     }
     const [, runs, code, sends, images] = m;
     if (sends && !runs) r.problems.push(`${where}: a <!-- view sends --> comment follows an example that isn't a \`ts cell\``);
+    if (sends && !viewSendsRE.test(sends.trim())) {
+      r.problems.push(`${where}: a <!-- view sends --> comment the docs runner can't read: it needs "for <words>:" and a JSON array`);
+    }
     r.examples.push({ where, code });
     out.push(`\`\`\`ts${runs ?? ""}`, code, "```", "");
     if (sends) out.push(sends.trim(), "");

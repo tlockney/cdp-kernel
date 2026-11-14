@@ -42,6 +42,8 @@ while IFS= read -r f; do
     # What test/reference.test.ts also reads: the guides' headings (@see
     # anchors).
     docs/jupyter-api.md | docs/widgets.md) code=true ;;
+    # The docs runner, which test/docs-notebooks.test.ts imports.
+    docs/.vitepress/*.ts | docs/.vitepress/*.py) code=true ;;
     *.md | docs/* | site/* | LICENSE) ;;
     *) code=true ;;
   esac
