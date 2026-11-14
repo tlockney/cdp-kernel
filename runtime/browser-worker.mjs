@@ -163,6 +163,9 @@ function install({ base, cdn: cdnBase, modules: moduleMap, params }) {
   globalThis.__cdpk = {
     import: (specifier, options) => import(resolveSpecifier(specifier, url, cdn, modules), options),
     meta: { url, resolve: (specifier) => resolveSpecifier(specifier, url, cdn, modules) },
+    // The URL `modules` maps a specifier to, or null: jupyter.sql's DuckDB
+    // files load from the page this way.
+    mapped: (specifier) => (modules && Object.hasOwn(modules, specifier) ? new URL(modules[specifier], url).href : null),
     // inspect_request (#10): by descriptor, so nothing runs.
     describeForInspect: (value, detail) => describeValue(value, { inspect: (v) => inspect(v, { depth: 2 }), detail }),
     inspectPath: (path, detail) => inspectPath(path, { inspect: (v) => inspect(v, { depth: 2 }), detail }),

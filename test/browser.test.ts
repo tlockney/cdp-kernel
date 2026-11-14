@@ -42,7 +42,13 @@ const kernel = startBrowserKernel({
   createWorker: () => new Worker("./worker.js", { type: "module" }),
   cdn: location.origin + "/cdn/",
   // Specifiers the page serves itself, ahead of the CDN.
-  modules: { "npm:vega@6": "./mapped-vega.mjs" },
+  modules: {
+    "npm:vega@6": "./mapped-vega.mjs",
+    // jupyter.sql's DuckDB files (SQL_MODULES), the eh pair only.
+    "npm:@duckdb/duckdb-wasm@1.29.0": "./fake-duckdb.mjs",
+    "npm:@duckdb/duckdb-wasm@1.29.0/dist/duckdb-eh.wasm": "./duckdb/eh.wasm",
+    "npm:@duckdb/duckdb-wasm@1.29.0/dist/duckdb-browser-eh.worker.js": "./duckdb/eh.worker.js",
+  },
   log: () => {},
   // A host page's own features (#384).
   preload: ["./broken.mjs", "./preload.mjs"],
@@ -98,6 +104,15 @@ const FILES: Record<string, { type: string; body: string }> = {
   "/broken.mjs": { type: "text/javascript", body: "throw new Error('broken preload');" },
   "/local.mjs": { type: "text/javascript", body: "export const where = 'local';" },
   "/mapped-vega.mjs": { type: "text/javascript", body: "export const where = 'mapped';" },
+  // Stops at selectBundle and reports what it was given.
+  "/fake-duckdb.mjs": {
+    type: "text/javascript",
+    body: `export const getJsDelivrBundles = () => ({
+  mvp: { mainModule: "https://cdn.example/mvp.wasm", mainWorker: "https://cdn.example/mvp.js" },
+  eh: { mainModule: "https://cdn.example/eh.wasm", mainWorker: "https://cdn.example/eh.js" },
+});
+export const selectBundle = async (bundles) => { throw new Error("bundles " + JSON.stringify(bundles)); };`,
+  },
   "/cdn/left-pad@1": { type: "text/javascript", body: "export default (s, n) => String(s).padStart(n);" },
 };
 
@@ -181,6 +196,13 @@ test("cells run in a browser Worker, with types stripped and state kept", { skip
   // A mapped specifier loads from the page, not the CDN; others still go to the CDN.
   r = await execute(`import { where as mapped } from "npm:vega@6";\nmapped`);
   assert.equal(result(r), "'mapped'");
+
+  // jupyter.sql takes the DuckDB files the page maps; the rest stay on jsDelivr.
+  r = await execute("await jupyter.sql`select 1`");
+  const bundles = JSON.parse(String(of(r, "error")[0]?.evalue).replace(/^.*?bundles /, ""));
+  assert.deepEqual(bundles.mvp, { mainModule: "https://cdn.example/mvp.wasm", mainWorker: "https://cdn.example/mvp.js" });
+  assert.match(bundles.eh.mainModule, /^http:\/\/127\.0\.0\.1:\d+\/duckdb\/eh\.wasm$/);
+  assert.match(bundles.eh.mainWorker, /^http:\/\/127\.0\.0\.1:\d+\/duckdb\/eh\.worker\.js$/);
 
   const completions = of(await request("shell", "complete_request", { code: "Mat", cursor_pos: 3 }), "complete_reply")[0];
   assert.ok((completions.matches as string[]).includes("Math"), String(completions.matches));

@@ -462,7 +462,11 @@ export function createJupyter(host) {
 
   // jupyter.sql (#477): DuckDB, loaded on the first query; an interrupt
   // (jupyter.signal) interrupts the query.
-  const sql = createSql({ importModule: cellImport("jupyter.sql"), signal: () => current.signal });
+  const sql = createSql({
+    importModule: cellImport("jupyter.sql"),
+    mapped: (specifier) => globalThis.__cdpk?.mapped?.(specifier) ?? null,
+    signal: () => current.signal,
+  });
 
   // jupyter.chart (#479): vega, vega-lite or linkedom, loaded on first use.
   const chart = createChart({ importModule: cellImport("jupyter.chart"), summarizeSpec: summarizeChart });

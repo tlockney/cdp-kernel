@@ -4,6 +4,14 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- `SQL_MODULES` names what `jupyter.sql` loads in the browser target:
+  DuckDB's module and its wasm and worker files. A page that maps them
+  in `modules` runs SQL offline; a variant left unmapped still loads
+  from jsDelivr
+  ([#495](https://github.com/tlockney/cdp-kernel/issues/495)).
+
 ## 0.12.0 (2026-11-14)
 
 - The browser kernel's `modules` option maps import specifiers to URLs

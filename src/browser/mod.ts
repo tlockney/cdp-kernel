@@ -33,6 +33,23 @@ export const CHART_MODULES = {
   linkedom: "npm:linkedom@0.18",
 } as const;
 
+/**
+ * What `jupyter.sql` loads, as it writes them: map them in `modules` to
+ * copies the page serves, and SQL runs offline. `duckdb` is an ES module
+ * that exports what @duckdb/duckdb-wasm does; the others are that
+ * package's own dist files, served as they are. A page may map only the
+ * `eh` pair (every current browser runs it); a variant left unmapped
+ * loads from jsDelivr. Same as runtime/sql.mjs's DUCKDB_WASM and
+ * DUCKDB_FILES.
+ */
+export const SQL_MODULES = {
+  duckdb: "npm:@duckdb/duckdb-wasm@1.29.0",
+  ehWasm: "npm:@duckdb/duckdb-wasm@1.29.0/dist/duckdb-eh.wasm",
+  ehWorker: "npm:@duckdb/duckdb-wasm@1.29.0/dist/duckdb-browser-eh.worker.js",
+  mvpWasm: "npm:@duckdb/duckdb-wasm@1.29.0/dist/duckdb-mvp.wasm",
+  mvpWorker: "npm:@duckdb/duckdb-wasm@1.29.0/dist/duckdb-browser-mvp.worker.js",
+} as const;
+
 export interface BrowserKernelOptions extends BrowserTargetOptions {
   /** What strips cells' types; sucrase by default, since esbuild's native binary can't run in a page. */
   typeStrip?: TypeStripperName | TypeStripper;

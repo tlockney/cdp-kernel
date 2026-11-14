@@ -2,6 +2,19 @@ import type { Displayable } from "./display.d.mts";
 
 export const NODE_API: string;
 export const DUCKDB_WASM: string;
+export interface DuckDBBundle {
+  mainModule: string;
+  mainWorker: string;
+  pthreadWorker?: string | null;
+}
+export const DUCKDB_FILES: {
+  readonly mvp: { readonly mainModule: string; readonly mainWorker: string };
+  readonly eh: { readonly mainModule: string; readonly mainWorker: string };
+};
+export function duckdbBundles(
+  jsDelivr: Record<string, DuckDBBundle>,
+  mapped?: (specifier: string) => string | null | undefined,
+): Record<string, DuckDBBundle>;
 
 /** One column of a query's result. */
 export interface SqlColumn {
@@ -142,6 +155,7 @@ export interface SqlEngine {
 
 export function createSql(options: {
   importModule: (specifier: string) => Promise<any>;
+  mapped?: (specifier: string) => string | null | undefined;
   signal?: () => AbortSignal | undefined;
   openEngine?: () => Promise<SqlEngine>;
 }): Sql;
