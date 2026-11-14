@@ -21,6 +21,18 @@ import { BrowserTarget, type BrowserTargetOptions } from "./target.ts";
 export type { Channel, JupyterMessage, MessageListener } from "./channels.ts";
 export { BrowserTarget, type BrowserTargetOptions, type HostHandler, type HostRequest, type WorkerLike } from "./target.ts";
 
+/**
+ * The packages `jupyter.chart` imports, as it writes them: map them in
+ * `modules` to copies the page serves, and charts draw offline. The page
+ * serves ES modules that export what the packages do. Same as
+ * runtime/chart.mjs's VEGA, VEGA_LITE and LINKEDOM.
+ */
+export const CHART_MODULES = {
+  vega: "npm:vega@6",
+  vegaLite: "npm:vega-lite@6",
+  linkedom: "npm:linkedom@0.18",
+} as const;
+
 export interface BrowserKernelOptions extends BrowserTargetOptions {
   /** What strips cells' types; sucrase by default, since esbuild's native binary can't run in a page. */
   typeStrip?: TypeStripperName | TypeStripper;

@@ -6,8 +6,13 @@
 
 export const DEFAULT_CDN = "https://esm.sh/";
 
-/** The URL `specifier`, imported from `base`, loads from. */
-export function resolveSpecifier(specifier, base, cdn = DEFAULT_CDN) {
+/**
+ * The URL `specifier`, imported from `base`, loads from. `modules` maps
+ * specifiers, as written, to URLs (resolved against `base`) that win over
+ * the CDN: an app ships the packages it needs offline this way.
+ */
+export function resolveSpecifier(specifier, base, cdn = DEFAULT_CDN, modules = undefined) {
+  if (modules && Object.hasOwn(modules, specifier)) return new URL(modules[specifier], base).href;
   if (/^(?:https?|data|blob):/.test(specifier)) return specifier;
   if (/^\.{0,2}\//.test(specifier)) return new URL(specifier, base).href;
   if (specifier.startsWith("npm:")) return cdn + specifier.slice(4);

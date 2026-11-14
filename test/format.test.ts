@@ -43,3 +43,13 @@ test("resolveSpecifier sends packages to the CDN and resolves the rest as URLs",
   assert.equal(resolveSpecifier("../x.mjs", base, cdn), "https://example.com/x.mjs");
   assert.equal(resolveSpecifier("https://cdn.example/m.js", base, cdn), "https://cdn.example/m.js");
 });
+
+test("resolveSpecifier sends a mapped specifier to its URL, as written only", () => {
+  const base = "https://app.example/nb/$cdpk$repl.mjs";
+  const modules = { "npm:vega@6": "https://app.example/kernel-modules/vega.mjs", "npm:linkedom@0.18": "../lib/linkedom.mjs" };
+  assert.equal(resolveSpecifier("npm:vega@6", base, "https://esm.sh/", modules), "https://app.example/kernel-modules/vega.mjs");
+  assert.equal(resolveSpecifier("npm:linkedom@0.18", base, "https://esm.sh/", modules), "https://app.example/lib/linkedom.mjs");
+  // Another version, or an inherited key, still goes to the CDN.
+  assert.equal(resolveSpecifier("npm:vega@5", base, "https://esm.sh/", modules), "https://esm.sh/vega@5");
+  assert.equal(resolveSpecifier("toString", base, "https://esm.sh/", modules), "https://esm.sh/toString");
+});

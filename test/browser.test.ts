@@ -41,6 +41,8 @@ import { startBrowserKernel } from "./kernel.js";
 const kernel = startBrowserKernel({
   createWorker: () => new Worker("./worker.js", { type: "module" }),
   cdn: location.origin + "/cdn/",
+  // Specifiers the page serves itself, ahead of the CDN.
+  modules: { "npm:vega@6": "./mapped-vega.mjs" },
   log: () => {},
   // A host page's own features (#384).
   preload: ["./broken.mjs", "./preload.mjs"],
@@ -95,6 +97,7 @@ const FILES: Record<string, { type: string; body: string }> = {
   "/preload.mjs": { type: "text/javascript", body: PRELOAD },
   "/broken.mjs": { type: "text/javascript", body: "throw new Error('broken preload');" },
   "/local.mjs": { type: "text/javascript", body: "export const where = 'local';" },
+  "/mapped-vega.mjs": { type: "text/javascript", body: "export const where = 'mapped';" },
   "/cdn/left-pad@1": { type: "text/javascript", body: "export default (s, n) => String(s).padStart(n);" },
 };
 
@@ -174,6 +177,10 @@ test("cells run in a browser Worker, with types stripped and state kept", { skip
 
   r = await execute(`import pad from "npm:left-pad@1";\nimport { where } from "./local.mjs";\npad(where, 7)`);
   assert.equal(result(r), "'  local'");
+
+  // A mapped specifier loads from the page, not the CDN; others still go to the CDN.
+  r = await execute(`import { where as mapped } from "npm:vega@6";\nmapped`);
+  assert.equal(result(r), "'mapped'");
 
   const completions = of(await request("shell", "complete_request", { code: "Mat", cursor_pos: 3 }), "complete_reply")[0];
   assert.ok((completions.matches as string[]).includes("Math"), String(completions.matches));

@@ -133,6 +133,25 @@ const kernel = startBrowserKernel({
   bare package names load from a CDN, esm.sh by default (the `cdn`
   option): `npm:date-fns@4` becomes `https://esm.sh/date-fns@4`, and
   `jsr:@std/path` becomes `https://esm.sh/jsr/@std/path`.
+- Imports the page serves itself. The `modules` option maps specifiers,
+  exactly as written, to URLs, and they win over the CDN. A page can ship
+  the packages [`jupyter.chart`](jupyter-api.md#charts) loads, named by
+  `CHART_MODULES`, so charts draw offline:
+
+  ```js
+  import { CHART_MODULES, startBrowserKernel } from "@tlockney/cdp-kernel/browser";
+  const kernel = startBrowserKernel({
+    createWorker: () => new Worker(workerUrl, { type: "module" }),
+    modules: {
+      [CHART_MODULES.vega]: new URL("./vendor/vega.mjs", location.href).href,
+      [CHART_MODULES.vegaLite]: new URL("./vendor/vega-lite.mjs", location.href).href,
+      [CHART_MODULES.linkedom]: new URL("./vendor/linkedom.mjs", location.href).href,
+    },
+  });
+  ```
+
+  Each URL serves an ES module that exports what the package does. A
+  cell's own `import "npm:vega@6"` loads the mapped copy too.
 - Interrupt. A cell waiting on a promise is abandoned and the Worker keeps
   its state, as on workerd, and
   [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal)

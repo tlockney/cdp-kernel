@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The browser kernel's `modules` option maps import specifiers to URLs
+  the page serves, ahead of the CDN, and `CHART_MODULES` names the
+  packages `jupyter.chart` loads, so a page can ship them and draw
+  charts offline
+  ([#491](https://github.com/tlockney/cdp-kernel/issues/491)).
 - A table bigger than its output pages through the kernel: the output
   names it as `ganymede.page`, and a frontend asks for more rows, sorted
   by a column if it likes, over the `ganymede.table.v1` comm. The kernel

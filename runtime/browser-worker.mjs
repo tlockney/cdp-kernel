@@ -72,6 +72,8 @@ let paramsText;
 
 // --- Modules ----------------------------------------------------------------
 let cdn = DEFAULT_CDN;
+/** Specifiers the page serves itself, such as jupyter.chart's libraries in the Ganymede apps. */
+let modules;
 
 
 // --- The host page (#384) -----------------------------------------------------
@@ -153,13 +155,14 @@ async function preload(urls, base) {
 // --- The shim cells and the evaluator use -----------------------------------
 let handle = null;
 
-function install({ base, cdn: cdnBase, params }) {
+function install({ base, cdn: cdnBase, modules: moduleMap, params }) {
   if (typeof params === "string") paramsText = params;
   if (typeof cdnBase === "string") cdn = cdnBase.endsWith("/") ? cdnBase : cdnBase + "/";
+  if (moduleMap !== null && typeof moduleMap === "object") modules = { ...moduleMap };
   const url = new URL("$cdpk$repl.mjs", base).href;
   globalThis.__cdpk = {
-    import: (specifier, options) => import(resolveSpecifier(specifier, url, cdn), options),
-    meta: { url, resolve: (specifier) => resolveSpecifier(specifier, url, cdn) },
+    import: (specifier, options) => import(resolveSpecifier(specifier, url, cdn, modules), options),
+    meta: { url, resolve: (specifier) => resolveSpecifier(specifier, url, cdn, modules) },
     // inspect_request (#10): by descriptor, so nothing runs.
     describeForInspect: (value, detail) => describeValue(value, { inspect: (v) => inspect(v, { depth: 2 }), detail }),
     inspectPath: (path, detail) => inspectPath(path, { inspect: (v) => inspect(v, { depth: 2 }), detail }),

@@ -252,3 +252,8 @@ test("SVG helpers", () => {
   assert.equal(isPlotModule({ plot() {} }), false);
   assert.equal(summarizePlot({}, { marks: [] }), "Plot chart");
 });
+
+test("the browser kernel's CHART_MODULES name what jupyter.chart imports", async () => {
+  const { CHART_MODULES } = await import("../src/browser/mod.ts");
+  assert.deepEqual(CHART_MODULES, { vega: VEGA, vegaLite: VEGA_LITE, linkedom: LINKEDOM });
+});
