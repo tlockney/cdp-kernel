@@ -4,7 +4,7 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
-## Unreleased
+## 0.12.1 (2026-11-14)
 
 - `SQL_MODULES` names what `jupyter.sql` loads in the browser target:
   DuckDB's module and its wasm and worker files. A page that maps them
