@@ -11,6 +11,11 @@ Issue and pull request numbers refer to
   packages `jupyter.chart` loads, so a page can ship them and draw
   charts offline
   ([#491](https://github.com/tlockney/cdp-kernel/issues/491)).
+- A table bigger than its output pages through the kernel: the output
+  names it as `ganymede.page`, and a frontend asks for more rows, sorted
+  by a column if it likes, over the `ganymede.table.v1` comm. The kernel
+  keeps the last 16 such tables
+  ([#489](https://github.com/tlockney/cdp-kernel/issues/489)).
 - The `jupyter` namespace guide and the `jupyter` reference group their
   members by topic: showing output, data, asking and interrupting, and
   notebooks as programs. Mentions of anywidget link to the widget model

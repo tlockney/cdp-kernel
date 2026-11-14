@@ -387,9 +387,33 @@ function textTable(fields, numbered) {
   return cells.map((row) => `  ${row.map((c, i) => c.padEnd(widths[i])).join(" | ").trimEnd()}`);
 }
 
+/** A cut table's source and fields, on its resource, for `pageTable` to register when the table is shown. */
+const PAGEABLE = Symbol("cdpk.table.pageable");
+
+/** A row as the output encodes it: one value a field, in field order. */
+export function encodeRow(source, fields, row) {
+  return fields.map((f, i) => encodeValue(row[i], f.type, source.columns[i].declared));
+}
+
+/**
+ * Keeps a cut table in `bundle` for paging (table-paging.mjs) and names it
+ * as `ganymede.page`. The jupyter namespace calls this as it sends an
+ * output, so a table that is built but never shown (the debugger's
+ * variable viewer, an unshown `jupyter.table()`) takes no slot. `key` (a
+ * display id) keeps one id for every update of a display.
+ */
+export function pageTable(bundle, pager, key) {
+  const resource = bundle?.[TABLE_MIME];
+  const pending = resource?.[PAGEABLE];
+  if (!pending || !pager || resource.ganymede?.page !== undefined) return bundle;
+  resource.ganymede.page = pager.register(pending.source, pending.fields, key);
+  return bundle;
+}
+
 /**
  * The MIME bundle for a table: Table Schema JSON with up to `limit` rows,
- * an HTML table and a text summary.
+ * an HTML table and a text summary. A table cut by the cap can be kept
+ * for paging: by `options.pager` now, or by `pageTable` when it is shown.
  */
 export function tableBundle(source, options = {}) {
   const requested = options.limit ?? DEFAULT_LIMIT;
@@ -400,7 +424,7 @@ export function tableBundle(source, options = {}) {
 
   const raw = source.read(0, Math.min(limit, total));
   const fields = fieldsOf(source, raw);
-  const encode = (r) => fields.map((f, i) => encodeValue(r[i], f.type, source.columns[i].declared));
+  const encode = (r) => encodeRow(source, fields, r);
   const utf8 = new TextEncoder();
 
   // Rows as JSON, stopping at MAX_BYTES.
@@ -458,6 +482,11 @@ export function tableBundle(source, options = {}) {
   /** @type {Record<string, unknown>} */
   const resource = { schema: { fields }, data, ganymede: { rows: total, shown } };
   if (title) resource.ganymede.title = title;
+  if (shown < total) {
+    // Not enumerable, so it never reaches the message.
+    Object.defineProperty(resource, PAGEABLE, { value: { source, fields } });
+    if (options.pager) pageTable({ [TABLE_MIME]: resource }, options.pager);
+  }
   return {
     [TABLE_MIME]: resource,
     "text/html": htmlTable(fields, htmlHead, htmlTail, total, title),

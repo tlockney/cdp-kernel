@@ -37,7 +37,7 @@ import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
 import { ensureInstalledAsync, findLockFile, jsrToNpm, parsePackageSpecifier } from "../runtime/node-hooks.mjs";
 
 /** The driver Worker's modules; the first is its main module. */
-export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "host.mjs", "widget.mjs", "table.mjs", "sql.mjs", "chart.mjs", "evaluator.mjs", "introspect.mjs"];
+export const WORKER_MODULES = ["workerd-worker.mjs", "display.mjs", "comm.mjs", "host.mjs", "widget.mjs", "table.mjs", "table-paging.mjs", "sql.mjs", "chart.mjs", "evaluator.mjs", "introspect.mjs"];
 
 /** See BunTarget: how long an interrupted cell has to show it isn't busy. */
 export const INTERRUPT_GRACE_MS = 500;
