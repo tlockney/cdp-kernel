@@ -21,6 +21,35 @@ export { timeText, uniqueNames };
 export const NODE_API = "npm:@duckdb/node-api@1.5.6-r.2";
 export const DUCKDB_WASM = "npm:@duckdb/duckdb-wasm@1.29.0";
 
+/**
+ * The files duckdb-wasm runs from besides its module, by the specifier a
+ * browser kernel's `modules` option maps to a URL the page serves. A
+ * variant whose wasm and worker are both mapped loads from those URLs;
+ * the others load from jsDelivr, as duckdb-wasm's own list has them.
+ */
+export const DUCKDB_FILES = {
+  mvp: { mainModule: `${DUCKDB_WASM}/dist/duckdb-mvp.wasm`, mainWorker: `${DUCKDB_WASM}/dist/duckdb-browser-mvp.worker.js` },
+  eh: { mainModule: `${DUCKDB_WASM}/dist/duckdb-eh.wasm`, mainWorker: `${DUCKDB_WASM}/dist/duckdb-browser-eh.worker.js` },
+};
+
+/**
+ * duckdb-wasm's bundles: jsDelivr's, with each variant `mapped` gives
+ * both files for in their place.
+ *
+ * @param {Record<string, { mainModule: string, mainWorker: string, pthreadWorker?: string | null }>} jsDelivr
+ * @param {(specifier: string) => string | null | undefined} [mapped]
+ */
+export function duckdbBundles(jsDelivr, mapped) {
+  const bundles = { ...jsDelivr };
+  if (!mapped) return bundles;
+  for (const [variant, files] of Object.entries(DUCKDB_FILES)) {
+    const mainModule = mapped(files.mainModule);
+    const mainWorker = mapped(files.mainWorker);
+    if (mainModule && mainWorker) bundles[variant] = { mainModule, mainWorker, pthreadWorker: null };
+  }
+  return bundles;
+}
+
 const $display = Symbol.for("Jupyter.display");
 const RAW = Symbol("cdpk.sql.raw");
 
@@ -190,6 +219,7 @@ const DUCK_TYPES = {
 /**
  * @param {{
  *   importModule: (specifier: string) => Promise<any>,
+ *   mapped?: (specifier: string) => string | null | undefined,
  *   signal?: () => AbortSignal | undefined,
  *   openEngine?: () => Promise<Engine>,
  * }} options
@@ -201,9 +231,9 @@ const DUCK_TYPES = {
  *   connection: unknown,
  * }} Engine
  */
-export function createSql({ importModule, signal, openEngine }) {
+export function createSql({ importModule, mapped, signal, openEngine }) {
   let engine = null;
-  const open = () => (engine ??= (openEngine ?? (() => defaultEngine(importModule)))().catch((err) => {
+  const open = () => (engine ??= (openEngine ?? (() => defaultEngine(importModule, mapped)))().catch((err) => {
     engine = null;
     throw err;
   }));
@@ -321,9 +351,9 @@ function hasNativeRuntime() {
     typeof globalThis.process?.versions?.node === "string" && !inWorker();
 }
 
-async function defaultEngine(importModule) {
+async function defaultEngine(importModule, mapped) {
   if (hasNativeRuntime()) return nativeEngine(importModule);
-  if (inWorker() && typeof Worker === "function") return wasmEngine(importModule);
+  if (inWorker() && typeof Worker === "function") return wasmEngine(importModule, mapped);
   throw new Error("jupyter.sql needs Node, Deno, Bun or the browser target; workerd and celld have no DuckDB");
 }
 
@@ -355,9 +385,10 @@ async function nativeEngine(importModule) {
   };
 }
 
-async function wasmEngine(importModule) {
+async function wasmEngine(importModule, mapped) {
   const duckdb = await importModule(DUCKDB_WASM);
-  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+  // An app that serves the files (DUCKDB_FILES) runs SQL offline.
+  const bundle = await duckdb.selectBundle(duckdbBundles(duckdb.getJsDelivrBundles(), mapped));
   // A Worker can only start from its own origin's scripts, so a Blob
   // script loads DuckDB's.
   const loader = URL.createObjectURL(new Blob([`importScripts(${JSON.stringify(bundle.mainWorker)});`], { type: "text/javascript" }));

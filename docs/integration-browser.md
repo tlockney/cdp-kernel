@@ -152,6 +152,14 @@ const kernel = startBrowserKernel({
 
   Each URL serves an ES module that exports what the package does. A
   cell's own `import "npm:vega@6"` loads the mapped copy too.
+
+  `SQL_MODULES` does the same for [`jupyter.sql`](jupyter-api.md#sql-with-duckdb):
+  `duckdb` is an ES module of @duckdb/duckdb-wasm, and the `eh` and
+  `mvp` pairs are that package's `dist/` wasm and worker files, served
+  as they are, the wasm as `application/wasm`. A pair counts only when
+  both of its files are mapped; one left out, or half mapped, loads from
+  jsDelivr. Current browsers all run `eh`, so mapping `eh` is enough,
+  and `mvp` alone never takes effect there.
 - Interrupt. A cell waiting on a promise is abandoned and the Worker keeps
   its state, as on workerd, and
   [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal)

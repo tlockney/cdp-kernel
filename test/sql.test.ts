@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compose, createSql, decimalValue, inlineParams, quoteIdent, quoteString, rowsAsJson, SqlResult, timeText, toParam, uniqueNames, type SqlEngine } from "../runtime/sql.mjs";
+import { compose, createSql, decimalValue, DUCKDB_FILES, DUCKDB_WASM, duckdbBundles, inlineParams, quoteIdent, quoteString, rowsAsJson, SqlResult, timeText, toParam, uniqueNames, type SqlEngine } from "../runtime/sql.mjs";
 import { TABLE_MIME } from "../runtime/table.mjs";
 
 function fake(rows: Record<string, unknown>[] = [{ n: 1 }]) {
@@ -172,4 +172,33 @@ test("decimalValue: Arrow's 128-bit words, signed and scaled", () => {
   assert.equal(decimalValue(new Uint32Array([0xeb1f0ad2, 0xab54a98c, 0, 0]), 0), 12345678901234567890n);
   assert.equal(decimalValue(new Uint32Array([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]), 2), -0.01);
   assert.equal(decimalValue(125, 2), 1.25);
+});
+
+test("duckdbBundles: a variant whose wasm and worker are both mapped loads from the page", () => {
+  const jsDelivr = {
+    mvp: { mainModule: "https://cdn/mvp.wasm", mainWorker: "https://cdn/mvp.js" },
+    eh: { mainModule: "https://cdn/eh.wasm", mainWorker: "https://cdn/eh.js" },
+  };
+  assert.deepEqual(duckdbBundles(jsDelivr), jsDelivr);
+  const served: Record<string, string> = {
+    [DUCKDB_FILES.eh.mainModule]: "https://app/eh.wasm",
+    [DUCKDB_FILES.eh.mainWorker]: "https://app/eh.js",
+    // Half a pair is left on jsDelivr.
+    [DUCKDB_FILES.mvp.mainModule]: "https://app/mvp.wasm",
+  };
+  assert.deepEqual(duckdbBundles(jsDelivr, (s) => served[s] ?? null), {
+    mvp: jsDelivr.mvp,
+    eh: { mainModule: "https://app/eh.wasm", mainWorker: "https://app/eh.js", pthreadWorker: null },
+  });
+});
+
+test("the browser kernel's SQL_MODULES name what jupyter.sql loads", async () => {
+  const { SQL_MODULES } = await import("../src/browser/mod.ts");
+  assert.deepEqual(SQL_MODULES, {
+    duckdb: DUCKDB_WASM,
+    ehWasm: DUCKDB_FILES.eh.mainModule,
+    ehWorker: DUCKDB_FILES.eh.mainWorker,
+    mvpWasm: DUCKDB_FILES.mvp.mainModule,
+    mvpWorker: DUCKDB_FILES.mvp.mainWorker,
+  });
 });
