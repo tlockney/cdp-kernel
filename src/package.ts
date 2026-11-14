@@ -50,6 +50,7 @@ export const RUNTIME_FILES = [
   "host.mjs",
   "widget.mjs",
   "table.mjs",
+  "table-paging.mjs",
   "sql.mjs",
   "chart.mjs",
   "node-hooks.mjs",

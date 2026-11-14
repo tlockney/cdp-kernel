@@ -512,7 +512,8 @@ The output has three parts, so each frontend shows what it can:
 - `application/vnd.dataresource+json`: each column's name and
   [Table Schema](https://specs.frictionlessdata.io/table-schema/) type,
   the rows as JSON, and `ganymede: { rows, shown }` with the total row
-  count and how many rows the output holds. The
+  count and how many rows the output holds (plus `page` when it holds
+  fewer, described below). The
   [Ganymede](https://ganymede-server.com) apps show this part as a table
   with sorting and paging.
 - `text/html`: a plain table with each column's type under its name, up
@@ -543,6 +544,22 @@ JSON: integers past 2^53 as strings, dates as ISO 8601 strings, times
 of day as `HH:MM:SS`, `NaN` and
 infinities as the strings `"NaN"`, `"Infinity"` and `"-Infinity"`, and
 binary data as its length.
+
+A table bigger than the output keeps the rest in the kernel, for the
+frontend to page through. The kernel keeps the last 16 such tables
+shown as outputs (an update of a display keeps its place), and the
+output names its table as `ganymede.page`. A frontend opens a comm
+to `ganymede.table.v1` with `{ id }`, the output's `ganymede.page`, and sends
+`{ request, offset, limit, sort }`, where `sort` is optional and takes the form
+`{ column, descending }`. The kernel answers `{ request, offset, total, rows }`: up to
+1,000 rows, as arrays in the output's field order, encoded as the
+output's rows are. A sort covers the whole table, up to a million rows,
+in the order the Ganymede apps sort the embedded rows. If the kernel no
+longer has the table (it restarted, or the table is one of the older
+ones), it sends `{ error }` and closes the comm, and the frontend keeps
+to the embedded rows. The kernel pages the value itself, not a copy: if
+a later cell changes it, run the table's cell again so the output and
+its pages agree.
 
 `columns` picks columns (and, for rows given as objects or arrays, their
 order), and `title` adds a caption. A column name that repeats, as from
