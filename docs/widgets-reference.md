@@ -9,7 +9,10 @@ outline: [2, 4]
 The widget model that `jupyter.widget(options)` returns, and the comm
 API under `jupyter.comm`, with their arguments, return values and an
 example. [Widgets and comms](widgets.md) explains them with a full
-walk-through, including the view module.
+walk-through, including the view module. Examples that can run on their
+own show the output they produced; widgets run on the page.
+
+<!-- notebook: public/notebooks/widgets-reference.ipynb -->
 
 ## Overview
 
@@ -71,7 +74,7 @@ The current value of a state key.
 
 **Returns** `unknown`: Its value, or `undefined`.
 
-```ts
+```ts cell
 const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
 w.get("count"); // 0
 ```
@@ -99,7 +102,7 @@ w.set("count", 1);
 w.set({ count: 2, label: "two" });
 ```
 
-```ts
+```ts cell
 const progress = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -135,8 +138,6 @@ for (const [i, file] of files.entries()) {
 progress.set({ message: "Done", value: 1 });
 ```
 
-![A progress bar three fifths full, labelled "Processing april.csv (60%)", captured while the cell was still running.](images/widgets/progress.png)
-
 #### `widget.fullState()`
 
 ```ts
@@ -148,7 +149,7 @@ The full state, as the frontend sees it: [anywidget](https://anywidget.dev)'s mo
 
 **Returns** `WidgetState`: Every state key and its value.
 
-```ts
+```ts cell
 const w = jupyter.widget({ esm: "export default {}", state: { count: 0 } });
 w.fullState(); // { _model_name: "AnyModel", _model_module: "anywidget", ..., count: 0 }
 ```
@@ -180,7 +181,7 @@ w.on("change:count", (value, previous) => console.log(previous, "->", value));
 w.on("msg:custom", (content) => console.log("view sent", content));
 ```
 
-```ts
+```ts cell
 const temperature = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -213,7 +214,7 @@ temperature.on("change:celsius", (celsius) => {
 temperature;
 ```
 
-![A range slider moved to 30, labelled "30 °C is 86 °F".](images/widgets/temperature.png)
+<!-- view sends for a slider move to 30: [{"method": "update", "state": {"celsius": 30}}] -->
 
 #### `widget.off(event, listener)`
 
@@ -257,7 +258,7 @@ const w = jupyter.widget({ esm: "export default {}" });
 w.send({ type: "reset" });
 ```
 
-```ts
+```ts cell
 const dice = jupyter.widget({
   esm: `export default {
     render({ model, el }) {
@@ -287,7 +288,7 @@ dice.on("msg:custom", (content) => {
 dice;
 ```
 
-![A "Roll 3 dice" button next to three die faces and their total, the kernel's answer to a click.](images/widgets/dice.png)
+<!-- view sends for a click: [{"method": "custom", "content": {"count": 3}}] -->
 
 ### Closing
 

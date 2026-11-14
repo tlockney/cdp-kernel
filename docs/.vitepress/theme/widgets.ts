@@ -8,7 +8,12 @@ type Callback = (...args: unknown[]) => void;
 interface Saved {
   state: Record<string, unknown>;
   buffers?: { path: (string | number)[]; data: string; encoding: "base64" | "hex" }[];
+  /** Custom messages the kernel sent the views, replayed after render. */
+  messages?: { content: unknown }[];
 }
+
+/** Each widget's stylesheet (anywidget's `_css`), added to the page once. */
+const styles = new Set<string>();
 
 function decode(data: string, encoding: "base64" | "hex"): DataView {
   const bytes = encoding === "hex"
@@ -52,6 +57,7 @@ function localModel(saved: Saved) {
     },
     send() {},
     widget_manager: { get_model: () => Promise.reject(new Error("no other models on this page")) },
+    emit,
   };
   return model;
 }
@@ -64,9 +70,19 @@ async function mount(el: HTMLElement) {
     // As anywidget does: a default-exported function is a factory, called with
     // no arguments, that returns { initialize, render }.
     const widget = typeof mod.default === "function" ? await mod.default() : (mod.default ?? mod);
+    const css = saved.state._css;
+    if (typeof css === "string" && css && !styles.has(css)) {
+      styles.add(css);
+      const style = document.createElement("style");
+      style.textContent = css;
+      document.head.append(style);
+    }
     const model = localModel(saved);
     await widget.initialize?.({ model });
     await widget.render?.({ model, el });
+    // What the kernel said to the views in reply to the docs build's
+    // scripted clicks (a dice roll), so the view shows it as it did.
+    for (const { content } of saved.messages ?? []) model.emit("msg:custom", content, []);
   } catch (error) {
     el.textContent = `This widget couldn't start on this page: ${error}`;
     el.classList.add("nb-widget-failed");

@@ -12,6 +12,12 @@ Issue and pull request numbers refer to
   widget that runs on the page. Docs notebooks now run with nbclient,
   which saves widget state
   ([#499](https://github.com/tlockney/cdp-kernel/issues/499)).
+- The widgets guide and reference show live widgets instead of
+  screenshots. The docs build runs each example, sends the clicks and
+  slider moves the screenshots showed as the view would, and saves the
+  kernel's replies, so each widget runs on the page as the kernel left it.
+  `npm run docs:widgets` and its screenshots are gone
+  ([#501](https://github.com/tlockney/cdp-kernel/issues/501)).
 
 ## 0.12.1 (2026-11-14)
 

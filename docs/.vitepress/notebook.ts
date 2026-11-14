@@ -28,6 +28,7 @@ export interface Output {
   name?: string;
   text?: string | string[];
   data?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   execution_count?: number | null;
   ename?: string;
   evalue?: string;
@@ -58,11 +59,27 @@ export interface Notebook {
   };
 }
 
+/**
+ * A widget output's model as of its own cell, which the docs runner saves
+ * in the output's metadata (run_notebook.py): its state and binary
+ * buffers, the custom messages the kernel sent its views, and what the
+ * runner sent as the view, in words.
+ */
+export interface WidgetSnapshot {
+  state: Record<string, unknown>;
+  buffers?: WidgetModel["buffers"];
+  messages?: { content: unknown }[];
+  view_sent?: string;
+}
+
 /** A notebook's saved widget models, by model id. */
 const widgetModels = (notebook: Notebook) =>
   notebook.metadata.widgets?.["application/vnd.jupyter.widget-state+json"]?.state ?? {};
 
 export const markerRE = /^<!--\s*notebook:\s*(\S+\.ipynb)\s*-->\s*$/m;
+
+/** A comment scripting what a widget's view sends (run-notebooks.ts). */
+export const viewSendsRE = /^<!--\s*view sends for ([^:]+):\s*(\[[\s\S]*\])\s*-->\s*$/;
 
 export const join = (s: string | string[] | undefined) => (Array.isArray(s) ? s.join("") : (s ?? ""));
 
@@ -142,12 +159,20 @@ export function renderOutput(md: MarkdownIt, output: Output, env: unknown, widge
   }
   const view = get("application/vnd.jupyter.widget-view+json") as { model_id?: string } | undefined;
   if (view !== undefined) {
-    const model = view.model_id ? widgets[view.model_id] : undefined;
+    const saved = view.model_id ? widgets[view.model_id] : undefined;
+    // The docs runner saves each widget output with the state the model had
+    // once its own cell (and any scripted view messages) ran, so a later
+    // cell's change doesn't show in an earlier output.
+    const snapshot = (output.metadata as { docs?: WidgetSnapshot } | undefined)?.docs;
+    const model = saved && snapshot ? { ...saved, ...snapshot } : saved;
     // An anywidget saved with its state runs on the page (theme/widgets.ts),
     // with no kernel behind it.
     if (model?.model_module === "anywidget" && typeof model.state._esm === "string") {
+      const sent = snapshot?.view_sent
+        ? `As the kernel left it after the docs build sent ${escapeHTML(snapshot.view_sent)} from the view. `
+        : "";
       return `<div class="nb-widget" data-model="${escapeHTML(JSON.stringify(model))}"></div>
-<p class="nb-note">Running in your browser from the saved notebook. With no kernel here, anything the kernel would do in reply doesn't happen.</p>`;
+<p class="nb-note">${sent}Running from the saved notebook, with no kernel behind this page.</p>`;
     }
     return `<p class="nb-note">An interactive widget. It runs in JupyterLab, Notebook 7 or VS Code, not on this page.</p>`;
   }

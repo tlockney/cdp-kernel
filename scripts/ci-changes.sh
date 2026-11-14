@@ -39,9 +39,9 @@ while IFS= read -r f; do
     CHANGELOG.md) code=true ;;
     # Generated from the doc comments; test/reference.test.ts checks them.
     docs/*-reference.md) code=true ;;
-    # What test/reference.test.ts also reads: the guides' headings and
-    # examples (@see anchors, verbatim widget examples) and the screenshots.
-    docs/jupyter-api.md | docs/widgets.md | docs/images/widgets/*) code=true ;;
+    # What test/reference.test.ts also reads: the guides' headings (@see
+    # anchors).
+    docs/jupyter-api.md | docs/widgets.md) code=true ;;
     *.md | docs/* | site/* | LICENSE) ;;
     *) code=true ;;
   esac
