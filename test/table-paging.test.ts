@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createComms } from "../runtime/comm.mjs";
 import { compareEncoded, createTablePager, MAX_PAGE, PAGE_TARGET } from "../runtime/table-paging.mjs";
-import { setTablePager, tableBundle, tableSource, TABLE_MIME } from "../runtime/table.mjs";
+import { createJupyter, type DisplayHost } from "../runtime/display.mjs";
+import { pageTable, tableBundle, tableSource, TABLE_MIME } from "../runtime/table.mjs";
 
 type Reply = { request?: unknown; offset?: number; total?: number; rows?: unknown[][]; error?: string };
 
@@ -100,13 +101,56 @@ test("integers past 2^53 compare exactly; NaN sorts last in a numeric column", (
   assert.ok(compareEncoded(true, false, "boolean") > 0);
 });
 
-test("the jupyter namespace's tables page by default", async () => {
+test("a table is kept when it is shown, not when it is built; a display keeps its id", () => {
   const { pager } = harness();
-  setTablePager(pager);
-  try {
-    const b = tableBundle(tableSource(rows));
-    assert.equal((b[TABLE_MIME] as { ganymede: { page?: string } }).ganymede.page, "t1");
-  } finally {
-    setTablePager(null);
-  }
+  const built = tableBundle(tableSource(rows));
+  assert.equal((built[TABLE_MIME] as { ganymede: { page?: string } }).ganymede.page, undefined);
+  assert.equal(pager.size(), 0);
+  pageTable(built, pager, "d1");
+  assert.equal((built[TABLE_MIME] as { ganymede: { page?: string } }).ganymede.page, "t1");
+  // Shown again, the same output keeps its id.
+  pageTable(built, pager, "d1");
+  // An update of display d1 with a new table reuses d1's id.
+  const updated = pageTable(tableBundle(tableSource(rows.slice(0, 1500))), pager, "d1");
+  assert.equal((updated[TABLE_MIME] as { ganymede: { page?: string } }).ganymede.page, "t1");
+  assert.equal(pager.size(), 1);
+});
+
+test("a table evicted while its comm is open answers an error and closes", async () => {
+  const { pager, sent, open } = harness(1);
+  const ask = await open(bundle(rows, pager).ganymede.page);
+  assert.equal((await ask({ request: 1, offset: 0, limit: 1 })).rows!.length, 1);
+  bundle(rows, pager);
+  const before = sent.length;
+  await ask({ request: 2, offset: 0, limit: 1 }).catch(() => undefined);
+  const reply = sent[before];
+  assert.equal((reply.content.data as Reply).request, 2);
+  assert.match(String((reply.content.data as Reply).error), /no longer has this table/);
+  assert.equal(sent[before + 1].msgType, "comm_close");
+});
+
+test("the jupyter namespace pages the tables it shows, and only those", async () => {
+  const sent: { msgType: string; content: Record<string, unknown> }[] = [];
+  const host: DisplayHost = {
+    inspect: (value) => String(value),
+    base64: () => "",
+    readFile: () => new Uint8Array(),
+    send: (msgType, content) => void sent.push({ msgType, content: content as Record<string, unknown> }),
+    input: () => null,
+  };
+  const jupyter = createJupyter(host);
+  // Formatting alone (the debugger's variable viewer) keeps nothing.
+  const formatted = jupyter.formatNow(jupyter.namespace.table(rows)) as Record<string, { ganymede: { page?: string } }>;
+  assert.equal(formatted[TABLE_MIME].ganymede.page, undefined);
+  await jupyter.namespace.display(jupyter.namespace.table(rows));
+  const shown = sent.at(-1)!.content.data as Record<string, { ganymede: { page?: string } }>;
+  const id = shown[TABLE_MIME].ganymede.page;
+  assert.equal(typeof id, "string");
+  await jupyter.commDispatch("comm_open", { comm_id: "c1", target_name: PAGE_TARGET, data: { id } }, {}, []);
+  await jupyter.commDispatch("comm_msg", { comm_id: "c1", data: { request: 1, offset: 2000, limit: 2 } }, {}, []);
+  const reply = sent.at(-1)!.content.data as Reply;
+  assert.deepEqual(reply.rows, [
+    [2000, "row 2000", null],
+    [2001, "row 2001", 2001],
+  ]);
 });

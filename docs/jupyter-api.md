@@ -546,8 +546,9 @@ infinities as the strings `"NaN"`, `"Infinity"` and `"-Infinity"`, and
 binary data as its length.
 
 A table bigger than the output keeps the rest in the kernel, for the
-frontend to page through. The kernel keeps the last 16 such tables, and
-the output names its table as `ganymede.page`. A frontend opens a comm
+frontend to page through. The kernel keeps the last 16 such tables
+shown as outputs (an update of a display keeps its place), and the
+output names its table as `ganymede.page`. A frontend opens a comm
 to `ganymede.table.v1` with `{ id }`, the output's `ganymede.page`, and sends
 `{ request, offset, limit, sort }`, where `sort` is optional and takes the form
 `{ column, descending }`. The kernel answers `{ request, offset, total, rows }`: up to
@@ -556,7 +557,9 @@ output's rows are. A sort covers the whole table, up to a million rows,
 in the order the Ganymede apps sort the embedded rows. If the kernel no
 longer has the table (it restarted, or the table is one of the older
 ones), it sends `{ error }` and closes the comm, and the frontend keeps
-to the embedded rows.
+to the embedded rows. The kernel pages the value itself, not a copy: if
+a later cell changes it, run the table's cell again so the output and
+its pages agree.
 
 `columns` picks columns (and, for rows given as objects or arrays, their
 order), and `title` adds a caption. A column name that repeats, as from

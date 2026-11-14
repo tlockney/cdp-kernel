@@ -23,7 +23,7 @@ import { createHost } from "./host.mjs";
 import { createWidgetFactory } from "./widget.mjs";
 import { createSql } from "./sql.mjs";
 import { createChart } from "./chart.mjs";
-import { isTableLike, setTablePager, tableBundle, tableSource } from "./table.mjs";
+import { isTableLike, pageTable, tableBundle, tableSource } from "./table.mjs";
 import { createTablePager } from "./table-paging.mjs";
 
 export const $display = Symbol.for("Jupyter.display");
@@ -369,10 +369,14 @@ export function createJupyter(host) {
     host.send(msgType, content, metadata, buffers);
   }
 
+  // Set below, once the comms are: a table cut by the cap is kept for
+  // paging when it is sent as an output, not when it is formatted.
+  let pager;
+
   async function display(obj, options = { raw: false, update: false }) {
     const bundle = options.raw && isMediaBundle(obj) ? obj : await format(obj);
     broadcast(options.update ? "update_display_data" : "display_data", {
-      data: bundle,
+      data: pageTable(bundle, pager, options.display_id),
       metadata: {},
       transient: options.display_id ? { display_id: options.display_id } : {},
     });
@@ -383,7 +387,7 @@ export function createJupyter(host) {
     try {
       broadcast("execute_result", {
         execution_count: executionCount,
-        data: await format(result),
+        data: pageTable(await format(result), pager),
         metadata: {},
         // nbclient crashes on a null `transient`; Deno learned this too.
         transient: {},
@@ -465,7 +469,7 @@ export function createJupyter(host) {
 
   const comms = createComms((msgType, content, metadata, buffers) => host.send(msgType, content, metadata, buffers));
   // Tables cut by the cap page through the kernel over a comm (ganymede#747).
-  setTablePager(createTablePager(comms.api));
+  pager = createTablePager(comms.api);
 
   // jupyter.signal (#418): aborted when the kernel is interrupted, so cell
   // code can stop waiting on what the interrupt can't reach, such as a comm

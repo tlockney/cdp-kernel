@@ -12,17 +12,24 @@
 // `{ error }` and the comm closes, and the frontend keeps to the rows the
 // output embeds.
 //
-// The kernel keeps the last KEEP tables, so a notebook that draws many
-// doesn't hold every one. Sorting reads the whole column, so it is offered
-// up to MAX_SORT rows.
+// The kernel keeps the last KEEP tables shown, so a notebook that draws
+// many doesn't hold every one; an update of a display keeps its id. Each
+// request looks its table up again, so an open comm doesn't keep an
+// evicted table alive. Sorting reads the whole column, so it is offered up
+// to MAX_SORT rows; the last SORTS orders are kept, so flipping a column's
+// direction doesn't sort again.
+//
+// A table is the live value, not a copy: change it in a later cell and
+// its pages show the change (run the cell again to match).
 
-import { encodeValue } from "./table.mjs";
+import { encodeRow, encodeValue } from "./table.mjs";
 
 export const PAGE_TARGET = "ganymede.table.v1";
 export const KEEP = 16;
 export const MAX_PAGE = 1000;
 export const MAX_SORT = 1_000_000;
 const CHUNK = 10_000;
+const SORTS = 2;
 
 const NUMERIC = new Set(["integer", "number"]);
 const INTEGER_TEXT = /^-?\d+$/;
@@ -73,25 +80,34 @@ export function compareEncoded(a, b, type, descending = false) {
  * @param {{ keep?: number, newId?: () => string }} [options]
  */
 export function createTablePager(commApi, { keep = KEEP, newId = () => crypto.randomUUID() } = {}) {
-  /** id -> { source, fields, order?: { key, index } } */
+  /** id -> { source, fields, key?, orders: Map<sortKey, index> } */
   const tables = new Map();
+  /** display id -> table id */
+  const keyed = new Map();
 
-  function register(source, fields) {
-    const id = newId();
-    tables.set(id, { source, fields });
-    while (tables.size > keep) tables.delete(tables.keys().next().value);
+  function register(source, fields, key) {
+    let id = key === undefined ? undefined : keyed.get(key);
+    if (id === undefined || !tables.has(id)) id = newId();
+    if (key !== undefined) keyed.set(key, id);
+    tables.delete(id);
+    tables.set(id, { source, fields, key, orders: new Map() });
+    while (tables.size > keep) {
+      const [oldest, entry] = tables.entries().next().value;
+      tables.delete(oldest);
+      if (entry.key !== undefined && keyed.get(entry.key) === oldest) keyed.delete(entry.key);
+    }
     return id;
   }
 
   function encodeRows(entry, raw) {
-    const { source, fields } = entry;
-    return raw.map((r) => fields.map((f, i) => encodeValue(r[i], f.type, source.columns[i].declared)));
+    return raw.map((r) => encodeRow(entry.source, entry.fields, r));
   }
 
-  /** Row indexes in sorted order, kept for the last sort asked for. */
+  /** Row indexes in sorted order, kept for the last SORTS sorts asked for. */
   function orderFor(entry, column, descending) {
     const key = `${column}\u0000${descending}`;
-    if (entry.order?.key === key) return entry.order.index;
+    const kept = entry.orders.get(key);
+    if (kept) return kept;
     const { source, fields } = entry;
     const c = fields.findIndex((f) => f.name === column);
     if (c < 0) throw new Error(`no column ${JSON.stringify(column)}`);
@@ -106,7 +122,8 @@ export function createTablePager(commApi, { keep = KEEP, newId = () => crypto.ra
     const index = Array.from({ length: source.total }, (_, i) => i);
     // Array sort is stable: ties keep the source's order.
     index.sort((i, j) => compareEncoded(values[i], values[j], type, descending));
-    entry.order = { key, index };
+    entry.orders.set(key, index);
+    while (entry.orders.size > SORTS) entry.orders.delete(entry.orders.keys().next().value);
     return index;
   }
 
@@ -116,20 +133,37 @@ export function createTablePager(commApi, { keep = KEEP, newId = () => crypto.ra
     const end = Math.min(source.total, start + Math.min(limit, MAX_PAGE));
     if (!sort) return encodeRows(entry, source.read(start, end));
     const index = orderFor(entry, String(sort.column), sort.descending === true).slice(start, end);
-    // Sorted rows are scattered in the source: read each on its own.
-    return index.map((i) => encodeRows(entry, source.read(i, i + 1))[0]);
+    // Sorted rows are scattered in the source: read each run of
+    // neighbouring rows at once (a run is the whole page when the sort
+    // keeps the source's order).
+    const rows = [];
+    for (let i = 0; i < index.length; ) {
+      let j = i + 1;
+      while (j < index.length && index[j] === index[j - 1] + 1) j++;
+      rows.push(...source.read(index[i], index[j - 1] + 1));
+      i = j;
+    }
+    return encodeRows(entry, rows);
   }
+
+  const gone = "The kernel no longer has this table: run the cell again to page through it.";
 
   commApi.registerTarget(PAGE_TARGET, (comm, msg) => {
     const id = msg.data?.id;
-    const entry = typeof id === "string" ? tables.get(id) : undefined;
-    if (!entry) {
-      comm.send({ error: "The kernel no longer has this table: run the cell again to page through it." });
+    if (typeof id !== "string" || !tables.has(id)) {
+      comm.send({ error: gone });
       comm.close();
       return;
     }
     comm.onMsg(({ data }) => {
       const request = data?.request;
+      // Looked up each time: the comm holds the id, not the table.
+      const entry = tables.get(id);
+      if (!entry) {
+        comm.send({ request, error: gone });
+        comm.close();
+        return;
+      }
       const offset = data?.offset;
       const limit = data?.limit ?? MAX_PAGE;
       if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1) {

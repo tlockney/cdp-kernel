@@ -20,16 +20,21 @@ export interface TableSource {
 
 /** Keeps a table cut by the cap for paging through the kernel; returns its id. */
 export interface TablePager {
-  register(source: TableSource, fields: { name: string; type: string }[]): string;
+  /** `key` (a display id) keeps one id for every table registered under it. */
+  register(source: TableSource, fields: { name: string; type: string }[], key?: string): string;
 }
 
-export function setTablePager(pager: TablePager | null): void;
+/** Keeps a cut table in `bundle` for paging and names it as `ganymede.page`; returns `bundle`. */
+export function pageTable<T>(bundle: T, pager: TablePager | null | undefined, key?: string): T;
+
+/** A row as a table output encodes it. */
+export function encodeRow(source: TableSource, fields: { name: string; type: string }[], row: unknown[]): unknown[];
 
 export interface TableBundleOptions {
   limit?: number;
   title?: string;
   columns?: string[];
-  /** Keeps the table if the cap cuts it; the one `setTablePager` set by default, `null` for none. */
+  /** Keeps the table now if the cap cuts it; otherwise `pageTable` keeps it when it is shown. */
   pager?: TablePager | null;
 }
 
