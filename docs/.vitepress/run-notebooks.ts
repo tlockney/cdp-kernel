@@ -144,16 +144,18 @@ export function stable(json: string): string {
   return JSON.stringify({ cells, metadata, nbformat: nb.nbformat, nbformat_minor: nb.nbformat_minor }, null, 1) + "\n";
 }
 
-const pages = process.argv.length > 2
-  ? process.argv.slice(2).map((p) => path.resolve(p))
-  : fs.readdirSync(docsDir).filter((f) => f.endsWith(".md")).map((f) => path.join(docsDir, f));
+if (import.meta.main) {
+  const pages = process.argv.length > 2
+    ? process.argv.slice(2).map((p) => path.resolve(p))
+    : fs.readdirSync(docsDir).filter((f) => f.endsWith(".md")).map((f) => path.join(docsDir, f));
 
-for (const page of pages) {
-  const file = build(page);
-  if (!file) continue;
-  console.log(`running ${path.relative(process.cwd(), file)}`);
-  execFileSync("uv", ["run", "-q", "--with", "nbclient", "--with", "nbformat", "python", runner, file], {
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  fs.writeFileSync(file, stable(fs.readFileSync(file, "utf8")));
+  for (const page of pages) {
+    const file = build(page);
+    if (!file) continue;
+    console.log(`running ${path.relative(process.cwd(), file)}`);
+    execFileSync("uv", ["run", "-q", "--with", "nbclient", "--with", "nbformat", "python", runner, file], {
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+    fs.writeFileSync(file, stable(fs.readFileSync(file, "utf8")));
+  }
 }
