@@ -39,7 +39,7 @@ runtime versions and frontends are supported, and what may change before
 - [Tables, SQL and charts](https://cdp-kernel.org/docs/jupyter-api#data):
   `jupyter.table`, `jupyter.sql` over DuckDB, and `jupyter.chart`, each
   with a text summary agents and consoles can read (SQL and charts on
-  Node, Deno and Bun).
+  every target but workerd and celld).
 - `prompt()` and `confirm()`, interrupt that keeps state, Shift-Tab
   inspection, completion and history.
 
