@@ -9,9 +9,10 @@ Issue and pull request numbers refer to
 - `cdp-kernel install` writes a kernelspec that survives Node upgrades. An
   npm install is copied, with its dependencies, to `cdp-kernel/<version>/`
   in Jupyter's data directory, and the kernelspec runs `node` or `deno`
-  through the version manager's shim (mise, asdf, volta, Homebrew) or by
-  name (fnm, nvm, n), not through the versioned paths that broke when that
-  Node was removed. `install --pin` keeps the exact binary, and `uninstall`
+  through the version manager's shim or link (mise, asdf, volta, Homebrew,
+  fnm's default alias), not through the versioned paths that broke when
+  that Node was removed. nvm and n have no stable path, so their binary is
+  kept and `install` says so. `install --pin` keeps the exact binary, and `uninstall`
   removes package copies no kernelspec runs. Kernelspecs
   written by earlier releases keep their old paths: reinstall cdp-kernel and
   re-run `cdp-kernel install`

@@ -23,7 +23,7 @@ import { Kernel, parseConnectionInfo } from "./kernel.ts";
 import type { RuntimeName } from "./target.ts";
 import { isTypeStripperName, type TypeStripperName } from "./transform.ts";
 import { hostRuntime, kernelArgv, moduleOrigin, VERSION } from "./package.ts";
-import { jupyterDataDir, pruneStableCopies, stableExecPath, stableOrigin } from "./stable-install.ts";
+import { jupyterDataDir, pinnedByManager, pruneStableCopies, stableExecPath, stableOrigin } from "./stable-install.ts";
 
 function isRuntime(value: unknown): value is RuntimeName {
   return value === "node" || value === "deno" || value === "bun" || value === "workerd" || value === "celld";
@@ -85,6 +85,14 @@ function install(
   const program = basename(process.execPath);
   if (exec !== process.execPath) console.log(`runs ${program} via ${exec} (--pin to use ${process.execPath})`);
   else if (pin) console.log(`runs ${program} at ${process.execPath} (pinned)`);
+  else {
+    const manager = pinnedByManager(process.execPath);
+    if (manager) {
+      console.log(
+        `runs ${program} at ${process.execPath}: ${manager} has no stable path for it, so re-run install after removing this version`,
+      );
+    }
+  }
   if (copy) console.log(copy.copied ? `package copied to ${copy.dest}` : `package copy kept at ${copy.dest}`);
 }
 

@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, sep } from "node:path";
 import { createRequire } from "node:module";
 import {
   jupyterDataDir,
+  pinnedByManager,
   pruneStableCopies,
   stableExecPath,
   stableOrigin,
@@ -54,14 +55,35 @@ test("stableExecPath: Homebrew Cellar maps to the prefix's bin", () => {
   );
 });
 
-test("stableExecPath: fnm, nvm and n have no shim, so the bare name", () => {
-  const env = {};
-  const opts = { exists: all, platform: "linux", env };
-  assert.equal(stableExecPath("/Users/x/.local/share/fnm/node-versions/v22.18.0/installation/bin/node", opts), "node");
-  assert.equal(stableExecPath("/run/user/1/fnm_multishells/123_456/bin/node", opts), "node");
-  assert.equal(stableExecPath("/Users/x/.nvm/versions/node/v22.18.0/bin/node", opts), "node");
-  assert.equal(stableExecPath("/x/nvmdir/versions/node/v22/bin/node", { ...opts, env: { NVM_DIR: "/x/nvmdir" } }), "node");
-  assert.equal(stableExecPath("/usr/local/n/versions/node/22.18.0/bin/node", opts), "node");
+test("stableExecPath: fnm uses its default alias; nvm and n keep the exact binary", () => {
+  const opts = { exists: all, platform: "linux", env: {} };
+  assert.equal(
+    stableExecPath("/Users/x/.local/share/fnm/node-versions/v22.18.0/installation/bin/node", opts),
+    "/Users/x/.local/share/fnm/aliases/default/bin/node",
+  );
+  assert.equal(
+    stableExecPath("/run/user/1/fnm_multishells/123_456/bin/node", { ...opts, env: { HOME: "/home/x" } }),
+    "/home/x/.local/share/fnm/aliases/default/bin/node",
+  );
+  assert.equal(
+    stableExecPath("/run/user/1/fnm_multishells/123_456/bin/node", { ...opts, platform: "darwin", env: { HOME: "/Users/x" } }),
+    "/Users/x/Library/Application Support/fnm/aliases/default/bin/node",
+  );
+  assert.equal(
+    stableExecPath("/x/fnmdir/node-versions/v22/installation/bin/node", { ...opts, env: { FNM_DIR: "/x/fnmdir" } }),
+    "/x/fnmdir/aliases/default/bin/node",
+  );
+  // No default alias: keep the binary rather than rely on PATH.
+  const fnmNode = "/Users/x/.local/share/fnm/node-versions/v22.18.0/installation/bin/node";
+  assert.equal(stableExecPath(fnmNode, { ...opts, exists: none }), fnmNode);
+  for (const p of ["/Users/x/.nvm/versions/node/v22.18.0/bin/node", "/usr/local/n/versions/node/22.18.0/bin/node"]) {
+    assert.equal(stableExecPath(p, opts), p);
+  }
+  assert.equal(pinnedByManager("/Users/x/.nvm/versions/node/v22.18.0/bin/node", {}), "nvm");
+  assert.equal(pinnedByManager("/x/nvmdir/versions/node/v22/bin/node", { NVM_DIR: "/x/nvmdir" }), "nvm");
+  assert.equal(pinnedByManager("/usr/local/n/versions/node/22.18.0/bin/node", {}), "n");
+  assert.equal(pinnedByManager(fnmNode, {}), "fnm");
+  assert.equal(pinnedByManager("/usr/bin/node", {}), undefined);
 });
 
 test("stableExecPath: other managers' deno and bun use the same rules", () => {
@@ -71,13 +93,14 @@ test("stableExecPath: other managers' deno and bun use the same rules", () => {
   );
 });
 
-test("stableExecPath: a missing shim falls back to the bare name", () => {
-  assert.equal(
-    stableExecPath("/Users/x/.local/share/mise/installs/node/22.18.0/bin/node", { exists: none, platform: "darwin", env: {} }),
-    "node",
-  );
-  assert.equal(stableExecPath("/opt/homebrew/Cellar/node/22.18.0/bin/node", { exists: none, platform: "darwin", env: {} }), "node");
-  assert.equal(stableExecPath("/Users/x/.volta/tools/image/node/22.18.0/bin/node", { exists: none, platform: "darwin", env: {} }), "node");
+test("stableExecPath: a missing shim keeps the exact binary", () => {
+  for (const p of [
+    "/Users/x/.local/share/mise/installs/node/22.18.0/bin/node",
+    "/opt/homebrew/Cellar/node/22.18.0/bin/node",
+    "/Users/x/.volta/tools/image/node/22.18.0/bin/node",
+  ]) {
+    assert.equal(stableExecPath(p, { exists: none, platform: "darwin", env: {} }), p);
+  }
 });
 
 test("stableExecPath: system paths, Windows and --pin are unchanged", () => {
@@ -273,6 +296,17 @@ test("copy: a complete copy of the same version is kept; an incomplete one is re
   assert.ok(existsSync(join(first.dest, "node_modules", "dep-a", "package.json")));
   assert.deepEqual(readdirSync(join(data, "cdp-kernel")), ["1.0.0"], "no staging or aside directory left");
 
+  // An optional dependency installed in the source but missing from the
+  // copy (made with --omit=optional, say): copy again.
+  const opt = pkg(join(src, "opt", "node_modules", "@tlockney", "cdp-kernel"), NAME, "2.0.0", { optionalDependencies: { "opt-a": "1" } }, mainFiles);
+  const optData = tmp(t);
+  const bare = stablePackage(join(opt, "dist", "main.js"), optData, "2.0.0");
+  assert.ok(bare?.copied);
+  pkg(join(opt, "node_modules", "opt-a"), "opt-a", "1.0.0");
+  const full = stablePackage(join(opt, "dist", "main.js"), optData, "2.0.0");
+  assert.equal(full?.copied, true);
+  assert.ok(existsSync(join(full.dest, "node_modules", "opt-a", "package.json")));
+
   // A different version gets its own directory and leaves this one.
   const next = stablePackage(join(root, "dist", "main.js"), data, "1.1.0");
   assert.equal(next?.copied, true);
@@ -325,15 +359,19 @@ test("stableOrigin: a checkout or JSR install is unchanged; node_modules is copi
 test("prune: removes only unreferenced version directories", (t) => {
   const data = tmp(t);
   const root = join(data, "cdp-kernel");
-  for (const d of ["0.11.0", "0.12.0", "0.12.1-rc.1", "notes", "0.12.2.99.tmp"]) mkdirSync(join(root, d), { recursive: true });
+  const live = `0.12.2.${process.pid}.tmp`;
+  // No process has this pid (above Linux's and macOS's pid limits).
+  const deadTmp = "0.12.2.2147483646.tmp";
+  const deadOld = "0.12.2.old.2147483646";
+  for (const d of ["0.11.0", "0.12.0", "0.12.1-rc.1", "notes", live, deadTmp, deadOld]) mkdirSync(join(root, d), { recursive: true });
   writeFileSync(join(root, "0.9.0"), "a file, not a directory");
   const argvs = [
     ["node", join(root, "0.12.0", "dist", "main.js"), "kernel", "--conn", "{connection_file}"],
     ["deno", "run", join(root, "0.12.1-rc.1", "dist", "main.js")],
   ];
   const removed = pruneStableCopies(data, argvs);
-  assert.deepEqual(removed, [join(root, "0.11.0")]);
-  for (const kept of ["0.12.0", "0.12.1-rc.1", "notes", "0.12.2.99.tmp", "0.9.0"]) assert.ok(existsSync(join(root, kept)), kept);
+  assert.deepEqual(removed.sort(), [join(root, "0.11.0"), join(root, deadTmp), join(root, deadOld)].sort());
+  for (const kept of ["0.12.0", "0.12.1-rc.1", "notes", live, "0.9.0"]) assert.ok(existsSync(join(root, kept)), kept);
   // A path that only shares a prefix doesn't count as a reference.
   assert.deepEqual(pruneStableCopies(data, [["node", join(root, "0.12.00", "x")]]).sort(), [join(root, "0.12.0"), join(root, "0.12.1-rc.1")].sort());
 });

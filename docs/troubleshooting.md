@@ -56,13 +56,14 @@ If the kernel still doesn't start, check these:
   shows the command Jupyter runs. Run it in a terminal with `kernel
   --conn FILE` replaced by `version` (a Node host: `node
   /path/to/dist/main.js version`) to see why it fails.
-- With a shim or plain `node`, the kernel runs the Node that the version
-  manager selects for the notebook's folder, which must be 22.18 or later.
-  A `.node-version` or `.tool-versions` file there can select an older one.
+- With a shim, the kernel runs the Node that the version manager selects
+  for the notebook's folder, which must be 22.18 or later. A
+  `.node-version` or `.tool-versions` file there can select an older one.
   Install a newer Node for it, or re-run `cdp-kernel install --pin` to use
   the exact binary.
-- Plain `node` (fnm, nvm, n) must be on the launcher's `PATH`. If the
-  launcher doesn't find it, re-run `install --pin`.
+- With nvm or n, the kernelspec names the exact Node binary, as these
+  have no stable path. After removing that version, re-run
+  `cdp-kernel install`.
 
 On release day, a JSR install can fail with "blocked by the minimum
 dependency age policy"; see

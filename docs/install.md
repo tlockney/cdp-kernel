@@ -160,9 +160,13 @@ version is removed or upgraded. `install` avoids both:
 - **The program.** For mise, asdf, volta and Homebrew, the kernelspec runs
   the manager's shim or link (`~/.local/share/mise/shims/node`,
   `~/.volta/bin/node`, `/opt/homebrew/opt/node/bin/node`) instead of the versioned
-  binary. For fnm, nvm and n, which have no shims, it runs plain `node`
-  and the launcher's `PATH` picks it. Any other path, such as
-  `/usr/bin/node`, is used as is. Windows isn't affected.
+  binary. For fnm it runs the default alias
+  (`~/.local/share/fnm/aliases/default/bin/node`), which follows
+  `fnm default`. nvm and n have no stable path, so the kernelspec keeps
+  the exact binary and `install` says so: re-run `install` after removing
+  that version. Any other path, such as `/usr/bin/node`, is used as is,
+  and so is a version manager's path whose shim is missing. Windows isn't
+  affected.
 
 `install` prints what it chose:
 
@@ -174,10 +178,8 @@ package copied to /Users/x/Library/Jupyter/cdp-kernel/0.12.2
 
 With a shim, the kernel runs whatever Node the version manager selects for
 the notebook's folder (a `.mise.toml` or `.tool-versions` there applies),
-and that Node must be 22.18 or later. With plain `node`, the launcher's
-`PATH` decides: Ganymede's Mac app uses your login shell's `PATH`, but a
-launcher started some other way may not find `node`. Pass `--pin` to run
-the exact binary that ran `install`. The package copy still applies, so
+and that Node must be 22.18 or later. Pass `--pin` to run the exact
+binary that ran `install`. The package copy still applies, so
 removing that Node breaks the kernelspec but upgrading cdp-kernel's npm
 install doesn't.
 

@@ -5,8 +5,8 @@
 // `node` binary and the npm global directory holding dist/main.js live in a
 // per-version directory, so removing or upgrading that Node broke every
 // kernelspec. Two fixes:
-//   - stableExecPath: name the version manager's shim (or the bare program
-//     name) instead of the versioned binary.
+//   - stableExecPath: name the version manager's shim or stable link
+//     instead of the versioned binary, where it has one.
 //   - stablePackage: copy the installed package, with the dependencies it
 //     resolves at run time, to <jupyter data dir>/cdp-kernel/<version>/.
 
@@ -51,10 +51,10 @@ function under(path: string, prefix: string | undefined, sub: string): boolean {
 /**
  * A path to the same program that stays valid when the version manager
  * removes or replaces this version, or `execPath` itself when it already is.
- * The result is a shim or link when the manager has one, and the bare
- * program name otherwise: the launcher's PATH then picks the version (for
- * the managers that choose it from the notebook's directory, that is the
- * point).
+ * The result is a shim or link when the manager has one (for the managers
+ * that choose the version from the notebook's directory, that is the
+ * point). A missing shim keeps `execPath`. nvm and n have no
+ * stable path, so their binary is kept.
  */
 export function stableExecPath(execPath: string, options: ExecPathOptions = {}): string {
   const { exists = existsSync, platform = process.platform, env = process.env, pin = false } = options;
@@ -62,7 +62,7 @@ export function stableExecPath(execPath: string, options: ExecPathOptions = {}):
   const segs = execPath.split("/");
   const name = segs[segs.length - 1];
   if (!name) return execPath;
-  const shimOrBare = (candidate: string) => (exists(candidate) ? candidate : name);
+  const shimOr = (candidate: string) => (exists(candidate) ? candidate : execPath);
   // `<root>/<dir>/…` where segs[i] is `dir`: the part before it.
   const rootBefore = (i: number) => segs.slice(0, i).join("/");
 
@@ -72,14 +72,14 @@ export function stableExecPath(execPath: string, options: ExecPathOptions = {}):
     const root = rootBefore(i);
     const manager = segs[i - 1] === "mise" || under(execPath, env.MISE_DATA_DIR, "/installs/") ||
       segs[i - 1] === ".asdf" || under(execPath, env.ASDF_DATA_DIR, "/installs/");
-    if (manager) return shimOrBare(`${root}/shims/${name}`);
+    if (manager) return shimOr(`${root}/shims/${name}`);
   }
   // volta: <root>/tools/image/<tool>/<version>/…, launchers in <root>/bin.
   for (let i = 1; i < segs.length - 4; i++) {
     if (segs[i] !== "tools" || segs[i + 1] !== "image") continue;
     const root = rootBefore(i);
     if (segs[i - 1] === ".volta" || segs[i - 1] === "volta" || under(execPath, env.VOLTA_HOME, "/tools/image/")) {
-      return shimOrBare(`${root}/bin/${name}`);
+      return shimOr(`${root}/bin/${name}`);
     }
   }
   // Homebrew: <prefix>/Cellar/<formula>/<version>/bin/<name>. <prefix>/opt/<formula>
@@ -87,15 +87,40 @@ export function stableExecPath(execPath: string, options: ExecPathOptions = {}):
   // (node@22) that <prefix>/bin doesn't link.
   const cellar = segs.length - 5;
   if (cellar >= 1 && segs[cellar] === "Cellar" && segs[segs.length - 2] === "bin") {
-    return shimOrBare(`${rootBefore(cellar)}/opt/${segs[cellar + 1]}/bin/${name}`);
+    return shimOr(`${rootBefore(cellar)}/opt/${segs[cellar + 1]}/bin/${name}`);
   }
-  // fnm, nvm and n have no shims: the version is whatever PATH says.
-  if (
-    execPath.includes("/fnm/node-versions/") || execPath.includes("/fnm_multishells/") ||
-    execPath.includes("/.nvm/versions/") || under(execPath, env.NVM_DIR, "/versions/") ||
-    execPath.includes("/n/versions/")
-  ) return name;
+  // fnm has no shims, but <root>/aliases/default follows `fnm default`.
+  const fnm = fnmRoot(execPath, env, platform);
+  if (fnm !== undefined) {
+    const alias = `${fnm}/aliases/default/bin/${name}`;
+    return exists(alias) ? alias : execPath;
+  }
+  // nvm and n have no stable path. A bare name would depend on the
+  // launcher's PATH, which a GUI app's login shell often doesn't set up
+  // (nvm's setup lives in .zshrc), so keep the exact binary; see
+  // pinnedByManager.
   return execPath;
+}
+
+function fnmRoot(execPath: string, env: Record<string, string | undefined>, platform: string): string | undefined {
+  const at = execPath.indexOf("/node-versions/");
+  if (at > 0 && execPath.slice(0, at).split("/").some((s) => s === "fnm" || s === ".fnm")) return execPath.slice(0, at);
+  if (env.FNM_DIR && execPath.startsWith(env.FNM_DIR.replace(/\/+$/, "") + "/node-versions/")) return env.FNM_DIR.replace(/\/+$/, "");
+  if (!execPath.includes("/fnm_multishells/")) return undefined;
+  if (env.FNM_DIR) return env.FNM_DIR.replace(/\/+$/, "");
+  const home = env.HOME ?? homedir();
+  return platform === "darwin" ? `${home}/Library/Application Support/fnm` : `${env.XDG_DATA_HOME ?? `${home}/.local/share`}/fnm`;
+}
+
+/**
+ * The version manager whose binary `stableExecPath` had to keep as is
+ * (it has no shim or stable link), for `install` to say so.
+ */
+export function pinnedByManager(execPath: string, env: Record<string, string | undefined> = process.env): string | undefined {
+  if (execPath.includes("/.nvm/versions/") || under(execPath, env.NVM_DIR, "/versions/")) return "nvm";
+  if (execPath.includes("/n/versions/")) return "n";
+  if (execPath.includes("/node-versions/") || execPath.includes("/fnm_multishells/")) return "fnm";
+  return undefined;
 }
 
 interface PackageJson {
@@ -199,13 +224,22 @@ function dereferenceTree(dir: string): void {
 }
 
 /** True when `dir` holds this version of the package and every non-optional dependency resolves inside it. */
-function isComplete(dir: string, version: string): boolean {
+function isComplete(dir: string, version: string, source?: string): boolean {
   const json = readPackageJson(dir);
   if (json?.name !== PACKAGE_NAME || json.version !== version) return false;
   try {
     for (const pkg of packagesIn(dir)) {
-      for (const name of Object.keys(readPackageJson(pkg)?.dependencies ?? {})) {
+      const deps = readPackageJson(pkg);
+      for (const name of Object.keys(deps?.dependencies ?? {})) {
         if (lookup(pkg, name, dir) === undefined) return false;
+      }
+      // An optional dependency (esbuild's platform package) missing from the
+      // copy but installed in the source: the copy was made without it.
+      if (source === undefined) continue;
+      const sourcePkg = join(source, relative(dir, pkg));
+      if (!existsSync(sourcePkg)) continue;
+      for (const name of Object.keys(deps?.optionalDependencies ?? {})) {
+        if (lookup(pkg, name, dir) === undefined && lookup(sourcePkg, name) !== undefined) return false;
       }
     }
   } catch {
@@ -296,7 +330,7 @@ export function stablePackage(
     return undefined;
   }
   const result = (copied: boolean): StableCopy => ({ entry: join(dest, relative(pkgRoot, real)), dest, copied });
-  if (isComplete(dest, version)) return result(false);
+  if (isComplete(dest, version, pkgRoot)) return result(false);
   const staging = `${dest}.${process.pid}.tmp`;
   const aside = `${dest}.old.${process.pid}`;
   try {
@@ -345,6 +379,18 @@ export function stableOrigin(
 }
 
 const VERSION_DIR = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+const LEFTOVER_DIR = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\.(?:(\d+)\.tmp|old\.(\d+))$/;
+
+function isRunning(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: it exists but belongs to someone else.
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 /**
  * Remove stable copies no kernelspec runs any more. `argvs` are the argv of
@@ -365,6 +411,14 @@ export function pruneStableCopies(dataDir: string, argvs: string[][]): string[] 
   } catch { /* gone between the two calls */ }
   const removed: string[] = [];
   for (const entry of entries) {
+    // An install killed mid-copy leaves `<version>.<pid>.tmp` or
+    // `<version>.old.<pid>`; remove those whose process is gone.
+    const leftover = LEFTOVER_DIR.exec(entry.name);
+    if (entry.isDirectory() && leftover && !isRunning(Number(leftover[1] ?? leftover[2]))) {
+      rmSync(join(root, entry.name), { recursive: true, force: true });
+      removed.push(join(root, entry.name));
+      continue;
+    }
     if (!entry.isDirectory() || !VERSION_DIR.test(entry.name)) continue;
     const prefixes = roots.map((r) => join(r, entry.name) + sep);
     const used = argvs.some((argv) => argv.some((arg) => isAbsolute(arg) && prefixes.some((p) => resolve(arg).startsWith(p))));
