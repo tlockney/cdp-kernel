@@ -168,6 +168,19 @@ function packagesIn(root: string): string[] {
  * dangling ones and links to an ancestor. cpSync leaves some (node_modules/.bin
  * entries) pointing back into the source prefix.
  */
+/** A symlink whose target is gone. */
+function isDangling(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink() && !existsSync(path);
+  } catch {
+    return false;
+  }
+}
+
+// Node 26's cpSync with `dereference` fails on a dangling symlink (an
+// npm `.bin` entry whose package is missing, say), so leave those out.
+const COPY_OPTIONS = { recursive: true, dereference: true, filter: (src: string) => !isDangling(src) };
+
 function dereferenceTree(dir: string): void {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
@@ -179,7 +192,7 @@ function dereferenceTree(dir: string): void {
       const here = realpathSync(dir);
       rmSync(path, { force: true });
       if (target === undefined || here === target || here.startsWith(target + sep)) continue;
-      cpSync(target, path, { recursive: true, dereference: true });
+      cpSync(target, path, COPY_OPTIONS);
     }
     if (lstatSync(path).isDirectory()) dereferenceTree(path);
   }
@@ -238,7 +251,7 @@ function completeDependencies(copy: string, source: string): void {
         }
         const real = realpathSync(original);
         const target = join(copy, "node_modules", ...name.split("/"));
-        cpSync(real, target, { recursive: true, dereference: true });
+        cpSync(real, target, COPY_OPTIONS);
         dereferenceTree(target);
         origins.set(join(copy, "node_modules", ...name.split("/")), real);
         progress = true;
@@ -289,7 +302,7 @@ export function stablePackage(
   try {
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(stableRoot(dataDir), { recursive: true });
-    cpSync(pkgRoot, staging, { recursive: true, dereference: true });
+    cpSync(pkgRoot, staging, COPY_OPTIONS);
     dereferenceTree(staging);
     completeDependencies(staging, pkgRoot);
     if (existsSync(dest)) renameSync(dest, aside);
