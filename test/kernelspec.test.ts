@@ -3,9 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN = fileURLToPath(new URL("../src/main.ts", import.meta.url));
@@ -160,6 +160,42 @@ test("install keeps other versions' package copies; uninstall prunes unused ones
   assert.equal(u.status, 0, u.stderr);
   assert.ok(!existsSync(join(root, "0.2.0")));
   assert.ok(existsSync(join(root, "keep-me")));
+});
+
+test("install names fnm's default alias, and notes when it is another node", (t) => {
+  if (process.platform === "win32") return t.skip("no fnm aliases on Windows");
+  const tmpRoot = realpathSync(dataDir(t));
+  const fnm = join(tmpRoot, "fnm");
+  const linkNode = (version: string) => {
+    const bin = join(fnm, "node-versions", version, "installation", "bin");
+    mkdirSync(bin, { recursive: true });
+    const node = join(bin, "node");
+    try {
+      linkSync(process.execPath, node);
+    } catch {
+      copyFileSync(process.execPath, node);
+    }
+    return node;
+  };
+  const node = linkNode("v22.0.0");
+  const other = linkNode("v20.0.0");
+  mkdirSync(join(fnm, "aliases"));
+  const alias = join(fnm, "aliases", "default");
+  const data = join(tmpRoot, "data");
+  const run = () => {
+    const r = spawnSync(node, [MAIN, "install"], { encoding: "utf8", env: { ...process.env, JUPYTER_DATA_DIR: data } });
+    assert.equal(r.status, 0, r.stderr);
+    return { argv0: JSON.parse(readFileSync(join(data, "kernels", "cdp-node", "kernel.json"), "utf8")).argv[0], err: r.stderr };
+  };
+  symlinkSync(dirname(dirname(node)), alias);
+  let r = run();
+  assert.equal(r.argv0, join(alias, "bin", "node"));
+  assert.doesNotMatch(r.err, /note:/);
+  rmSync(alias);
+  symlinkSync(dirname(dirname(other)), alias);
+  r = run();
+  assert.equal(r.argv0, join(alias, "bin", "node"));
+  assert.match(r.err, new RegExp(`note: .* is ${other.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} now`));
 });
 
 test("install names a version manager's shim, and --pin the exact node", (t) => {

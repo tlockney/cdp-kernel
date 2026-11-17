@@ -16,7 +16,7 @@
 // keeps the exact binary); see src/stable-install.ts.
 
 import process from "node:process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { Kernel, parseConnectionInfo } from "./kernel.ts";
@@ -31,6 +31,15 @@ function isRuntime(value: unknown): value is RuntimeName {
 
 function kernelsDir(): string {
   return join(jupyterDataDir(), "kernels");
+}
+
+/** `path` with links resolved, or undefined when it doesn't resolve (a shim script resolves to itself). */
+function realTarget(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
 }
 
 // Jupyter's kernel names; anything else could point outside the kernels
@@ -83,13 +92,24 @@ function install(
   writeFileSync(join(dir, "kernel.json"), JSON.stringify(spec, null, 2) + "\n");
   console.log(`installed kernelspec ${name} -> ${dir}`);
   const program = basename(process.execPath);
-  if (exec !== process.execPath) console.log(`runs ${program} via ${exec} (--pin to use ${process.execPath})`);
+  if (exec !== process.execPath) {
+    console.log(`runs ${program} via ${exec} (--pin to use ${process.execPath})`);
+    // fnm's default alias can name another version than the one running
+    // install (after `fnm use`, say). Shims (mise, volta) resolve to the
+    // manager's own binary, so only fnm's link is compared.
+    const target = pinnedByManager(process.execPath) === "fnm" ? realTarget(exec) : undefined;
+    if (target !== undefined && target !== realTarget(process.execPath)) {
+      console.warn(`note: ${exec} is ${target} now, not the ${program} running install; pass --pin to keep this one`);
+    }
+  }
   else if (pin) console.log(`runs ${program} at ${process.execPath} (pinned)`);
   else {
     const manager = pinnedByManager(process.execPath);
     if (manager) {
       console.log(
-        `runs ${program} at ${process.execPath}: ${manager} has no stable path for it, so re-run install after removing this version`,
+        manager === "fnm"
+          ? `runs ${program} at ${process.execPath}: fnm has no default alias; run \`fnm default <version>\` and re-run install`
+          : `runs ${program} at ${process.execPath}: ${manager} has no stable path for it, so re-run install after removing this version`,
       );
     }
   }
