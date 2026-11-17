@@ -3,9 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN = fileURLToPath(new URL("../src/main.ts", import.meta.url));
@@ -118,4 +118,113 @@ test("--help prints the usage; an unknown option says which, without a stack tra
   assert.match(r.stderr, /^cdp-kernel: Unknown option '--bogus'\nusage: cdp-kernel/);
   assert.doesNotMatch(r.stderr, /\n\s+at /);
   assert.ok(!existsSync(join(dir, "kernels")), "nothing was installed");
+});
+
+test("install --pin keeps the exact node; a checkout isn't copied", (t) => {
+  const dir = dataDir(t);
+  const r = cli(dir, "install", "--pin");
+  assert.equal(r.status, 0, r.stderr);
+  const argv = JSON.parse(readFileSync(join(dir, "kernels", "cdp-node", "kernel.json"), "utf8")).argv;
+  assert.equal(argv[0], process.execPath);
+  assert.equal(argv[1], MAIN);
+  assert.ok(!existsSync(join(dir, "cdp-kernel")), "a checkout runs in place");
+});
+
+test("install keeps other versions' package copies; uninstall prunes unused ones and nothing else (#508)", (t) => {
+  const dir = dataDir(t);
+  const root = join(dir, "cdp-kernel");
+  // A spec running 0.2.0's copy, as an npm install writes.
+  cli(dir, "install", "--runtime", "node");
+  for (const d of ["0.1.0", "0.2.0", "keep-me"]) mkdirSync(join(root, d), { recursive: true });
+  const file = join(dir, "kernels", "cdp-node", "kernel.json");
+  const spec = JSON.parse(readFileSync(file, "utf8"));
+  spec.argv[1] = join(root, "0.2.0", "dist", "main.js");
+  writeFileSync(file, JSON.stringify(spec));
+
+  // Installing (here a checkout's version over it) must not remove copies
+  // that running kernels may still use.
+  const r = cli(dir, "install", "--runtime", "bun");
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /removed/);
+  assert.ok(existsSync(join(root, "0.1.0")));
+  assert.ok(existsSync(join(root, "0.2.0")));
+
+  // cdp-bun runs the checkout, so only cdp-node's 0.2.0 is referenced.
+  let u = cli(dir, "uninstall", "cdp-bun");
+  assert.equal(u.status, 0, u.stderr);
+  assert.match(u.stdout, /removed unused package copy .*0\.1\.0/);
+  assert.ok(!existsSync(join(root, "0.1.0")));
+  assert.ok(existsSync(join(root, "0.2.0")));
+
+  u = cli(dir, "uninstall", "--all");
+  assert.equal(u.status, 0, u.stderr);
+  assert.ok(!existsSync(join(root, "0.2.0")));
+  assert.ok(existsSync(join(root, "keep-me")));
+});
+
+test("install names fnm's default alias, and notes when it is another node", (t) => {
+  if (process.platform === "win32") return t.skip("no fnm aliases on Windows");
+  const tmpRoot = realpathSync(dataDir(t));
+  const fnm = join(tmpRoot, "fnm");
+  const linkNode = (version: string) => {
+    const bin = join(fnm, "node-versions", version, "installation", "bin");
+    mkdirSync(bin, { recursive: true });
+    const node = join(bin, "node");
+    try {
+      linkSync(process.execPath, node);
+    } catch {
+      copyFileSync(process.execPath, node);
+    }
+    return node;
+  };
+  const node = linkNode("v22.0.0");
+  const other = linkNode("v20.0.0");
+  mkdirSync(join(fnm, "aliases"));
+  const alias = join(fnm, "aliases", "default");
+  const data = join(tmpRoot, "data");
+  const run = () => {
+    const r = spawnSync(node, [MAIN, "install"], { encoding: "utf8", env: { ...process.env, JUPYTER_DATA_DIR: data } });
+    assert.equal(r.status, 0, r.stderr);
+    return { argv0: JSON.parse(readFileSync(join(data, "kernels", "cdp-node", "kernel.json"), "utf8")).argv[0], err: r.stderr };
+  };
+  symlinkSync(dirname(dirname(node)), alias);
+  let r = run();
+  assert.equal(r.argv0, join(alias, "bin", "node"));
+  assert.doesNotMatch(r.err, /note:/);
+  rmSync(alias);
+  symlinkSync(dirname(dirname(other)), alias);
+  r = run();
+  assert.equal(r.argv0, join(alias, "bin", "node"));
+  assert.match(r.err, new RegExp(`note: .* is ${other.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} now`));
+});
+
+test("install names a version manager's shim, and --pin the exact node", (t) => {
+  if (process.platform === "win32") return t.skip("no shims on Windows");
+  // process.execPath is the real path (macOS's tmpdir is under /private).
+  const tmpRoot = realpathSync(dataDir(t));
+  const bin = join(tmpRoot, "mise", "installs", "node", "22.0.0", "bin");
+  const shims = join(tmpRoot, "mise", "shims");
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(shims, { recursive: true });
+  const node = join(bin, "node");
+  try {
+    linkSync(process.execPath, node);
+  } catch {
+    copyFileSync(process.execPath, node);
+  }
+  const shim = join(shims, "node");
+  writeFileSync(shim, "#!/bin/sh\n");
+  chmodSync(shim, 0o755);
+  const data = join(tmpRoot, "data");
+  const run = (...args: string[]) => {
+    const r = spawnSync(node, [MAIN, "install", ...args], { encoding: "utf8", env: { ...process.env, JUPYTER_DATA_DIR: data } });
+    assert.equal(r.status, 0, r.stderr);
+    return { argv: JSON.parse(readFileSync(join(data, "kernels", "cdp-node", "kernel.json"), "utf8")).argv, out: r.stdout };
+  };
+  let r = run();
+  assert.equal(r.argv[0], shim);
+  assert.match(r.out, new RegExp(`runs node via ${shim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(--pin to use`));
+  r = run("--pin");
+  assert.equal(r.argv[0], node);
+  assert.match(r.out, /\(pinned\)/);
 });

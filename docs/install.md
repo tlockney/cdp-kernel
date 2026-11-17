@@ -24,8 +24,9 @@ cdp-kernel install --runtime workerd
 cdp-kernel install --runtime celld
 ```
 
-The kernelspec records the absolute paths of `node` and the installed
-package. Re-run `install` after upgrading either.
+[What the kernelspec points at](#what-the-kernelspec-points-at) says which
+`node` and package it runs. After upgrading cdp-kernel, re-run `install`
+to switch to the new release.
 
 npm 11 may warn that esbuild's postinstall script is "not yet covered by
 allowScripts". cdp-kernel works without that script, so you can ignore
@@ -102,7 +103,7 @@ Windows build).
 ## Install options
 
 ```sh
-cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [--no-language-service] [--name NAME] [--display NAME]
+cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [--no-language-service] [--pin] [--name NAME] [--display NAME]
 ```
 
 - `--runtime` is `node` (the default), `deno`, `bun`, `workerd` or `celld`.
@@ -120,6 +121,9 @@ cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [
   take about 150 MB while in use. Tab and Shift-Tab then show runtime
   values only. See
   [Inspection and completion](notebooks.md#inspection-completion-and-history).
+- `--pin` makes the kernelspec run the exact `node` (or `deno`) that ran
+  `install`, not a version manager's shim. See
+  [What the kernelspec points at](#what-the-kernelspec-points-at).
 - `--name` sets the kernelspec's directory name, which is also the name
   Jupyter uses for the kernel. The default is `cdp-<runtime>`, or
   `cdp-node-deno` with `--deno-compat`.
@@ -136,6 +140,51 @@ deno run -A jsr:@tlockney/cdp-kernel@0.4.0/cli install --runtime deno \
 ```
 
 `cdp-kernel version` prints the installed version.
+
+## What the kernelspec points at
+
+A version manager keeps each Node in its own directory, and an npm global
+install lives inside it, so a kernelspec naming those paths breaks when the
+version is removed or upgraded. `install` avoids both:
+
+- **The package.** An npm install is copied, with the dependencies it needs,
+  to `<Jupyter data dir>/cdp-kernel/<version>/` (next to `kernels/`; it
+  follows `JUPYTER_DATA_DIR`), and the kernelspec runs
+  `<data dir>/cdp-kernel/<version>/dist/main.js`. Files are hard links
+  where the data dir is on the same volume as the npm install, so the copy
+  takes no extra space until that install is removed (then it keeps the
+  files); across volumes they are copied. Installing the same
+  version again keeps a complete copy, and installing a new version leaves
+  the old copy for kernels still running it. A checkout runs in place, and a JSR
+  install already pins its release. If the dependencies can't be copied
+  consistently, `install` says so and points at the installed package as
+  before. `uninstall` removes the copies that no remaining cdp-kernel
+  kernelspec runs.
+- **The program.** For mise, asdf, volta and Homebrew, the kernelspec runs
+  the manager's shim or link (`~/.local/share/mise/shims/node`,
+  `~/.volta/bin/node`, `/opt/homebrew/opt/node/bin/node`) instead of the versioned
+  binary. For fnm it runs the default alias
+  (`~/.local/share/fnm/aliases/default/bin/node`), which follows
+  `fnm default`. nvm and n have no stable path, so the kernelspec keeps
+  the exact binary and `install` says so: re-run `install` after removing
+  that version. Any other path, such as `/usr/bin/node`, is used as is,
+  and so is a version manager's path whose shim is missing. Windows isn't
+  affected.
+
+`install` prints what it chose:
+
+```text
+installed kernelspec cdp-node -> /Users/x/Library/Jupyter/kernels/cdp-node
+runs node via /Users/x/.local/share/mise/shims/node (--pin to use /Users/x/.local/share/mise/installs/node/22.18.0/bin/node)
+package copied to /Users/x/Library/Jupyter/cdp-kernel/0.12.2
+```
+
+With a shim, the kernel runs whatever Node the version manager selects for
+the notebook's folder (a `.mise.toml` or `.tool-versions` there applies),
+and that Node must be 22.18 or later. Pass `--pin` to run the exact
+binary that ran `install`. The package copy still applies, so
+removing that Node breaks the kernelspec but upgrading cdp-kernel's npm
+install doesn't.
 
 ## Uninstall
 

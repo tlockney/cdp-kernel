@@ -38,12 +38,32 @@ unless noted below.
 
 ## The kernel starts, then dies or never becomes ready
 
-The kernelspec records absolute paths: the `node` or `deno` that ran
-`install`, and where the package was installed. After upgrading Node
-(including switching versions with nvm, fnm or similar), Deno or
-cdp-kernel, those paths can stop existing. Re-run `install` for each
-runtime you use. `cdp-kernel list` shows each kernelspec's
-directory; its `kernel.json` shows the command Jupyter runs.
+A kernelspec made by an older cdp-kernel records the absolute paths of the
+`node` or `deno` that ran `install` and of the package inside that Node's
+global `node_modules`. After upgrading or removing that Node (with mise,
+asdf, volta, fnm, nvm, Homebrew or similar), or uninstalling the package,
+those paths stop existing. Reinstall cdp-kernel (`npm install -g
+@tlockney/cdp-kernel`), then re-run `cdp-kernel install` for each runtime
+you use.
+
+A kernelspec made by a newer one runs a copy of the package kept in
+Jupyter's data directory and names your version manager's shim, so
+upgrading Node doesn't break it; see
+[Install › What the kernelspec points at](install.md#what-the-kernelspec-points-at).
+If the kernel still doesn't start, check these:
+
+- `cdp-kernel list` shows each kernelspec's directory; its `kernel.json`
+  shows the command Jupyter runs. Run it in a terminal with `kernel
+  --conn FILE` replaced by `version` (a Node host: `node
+  /path/to/dist/main.js version`) to see why it fails.
+- With a shim, the kernel runs the Node that the version manager selects
+  for the notebook's folder, which must be 22.18 or later. A
+  `.node-version` or `.tool-versions` file there can select an older one.
+  Install a newer Node for it, or re-run `cdp-kernel install --pin` to use
+  the exact binary.
+- With nvm or n, the kernelspec names the exact Node binary, as these
+  have no stable path. After removing that version, re-run
+  `cdp-kernel install`.
 
 On release day, a JSR install can fail with "blocked by the minimum
 dependency age policy"; see
