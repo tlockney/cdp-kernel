@@ -64,7 +64,13 @@ serve JupyterLab with
 [Ganymede](https://ganymede-server.com/docs/install). Linux and macOS
 are supported; Windows isn't yet. See
 [Install](https://cdp-kernel.org/docs/install) for `--deno-compat`, release-day installs on Deno, target runtime
-requirements, and installing from a checkout.
+requirements, installing from a checkout, and how the kernelspec survives
+Node upgrades (`--pin`).
+
+> [!NOTE]
+> **Unreleased.** Available only from a build of `main` (HEAD), not in
+> the latest release. That includes the kernelspec's copy of the package
+> and `--pin`.
 
 JupyterLab with every runtime and the examples, in a container:
 

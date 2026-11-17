@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // cdp-kernel CLI.
-//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] [--name NAME] [--display NAME]
+//   cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] [--pin] [--name NAME] [--display NAME]
 //   cdp-kernel kernel --runtime node|deno|bun|workerd|celld [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] --conn CONNECTION_FILE
 //   cdp-kernel list
 //   cdp-kernel uninstall [NAME...] [--name NAME] [--all]
@@ -10,27 +10,27 @@
 // `deno jupyter`; see runtime/deno-compat.mjs. --type-strip picks what
 // removes cells' types (src/transform.ts). --no-language-service turns off
 // typed completion (src/language-service.ts), which costs about 150 MB
-// while in use.
+// while in use. install writes a kernelspec that survives Node upgrades
+// (#508): it runs a copy of an npm-installed package kept in the Jupyter data
+// directory, and names the version manager's shim for node or deno (--pin
+// keeps the exact binary); see src/stable-install.ts.
 
 import process from "node:process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { Kernel, parseConnectionInfo } from "./kernel.ts";
 import type { RuntimeName } from "./target.ts";
 import { isTypeStripperName, type TypeStripperName } from "./transform.ts";
 import { hostRuntime, kernelArgv, moduleOrigin, VERSION } from "./package.ts";
+import { jupyterDataDir, pruneStableCopies, stableExecPath, stableOrigin } from "./stable-install.ts";
 
 function isRuntime(value: unknown): value is RuntimeName {
   return value === "node" || value === "deno" || value === "bun" || value === "workerd" || value === "celld";
 }
 
 function kernelsDir(): string {
-  if (process.env.JUPYTER_DATA_DIR) return join(process.env.JUPYTER_DATA_DIR, "kernels");
-  if (platform() === "darwin") return join(homedir(), "Library", "Jupyter", "kernels");
-  if (platform() === "win32") return join(process.env.APPDATA ?? homedir(), "jupyter", "kernels");
-  return join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "jupyter", "kernels");
+  return join(jupyterDataDir(), "kernels");
 }
 
 // Jupyter's kernel names; anything else could point outside the kernels
@@ -48,15 +48,20 @@ function install(
   languageService: boolean,
   name: string,
   display: string,
+  pin: boolean,
 ): void {
   if (!isKernelName(name)) {
     console.error(`install: invalid kernelspec name ${JSON.stringify(name)}; use letters, digits, '.', '_' and '-'`);
     process.exit(2);
   }
   const dir = join(kernelsDir(), name);
+  // The kernelspec must outlive this Node: run a copy of the package kept
+  // with the Jupyter data, and name the version manager's shim (#508).
+  const { origin, copy } = stableOrigin(moduleOrigin(import.meta.url), import.meta.url, jupyterDataDir(), VERSION);
+  const exec = stableExecPath(process.execPath, { pin });
   mkdirSync(dir, { recursive: true });
   const spec = {
-    argv: kernelArgv(hostRuntime(), process.execPath, moduleOrigin(import.meta.url), [
+    argv: kernelArgv(hostRuntime(), exec, origin, [
       "kernel",
       "--runtime",
       runtime,
@@ -77,6 +82,19 @@ function install(
   };
   writeFileSync(join(dir, "kernel.json"), JSON.stringify(spec, null, 2) + "\n");
   console.log(`installed kernelspec ${name} -> ${dir}`);
+  const program = basename(process.execPath);
+  if (exec !== process.execPath) console.log(`runs ${program} via ${exec} (--pin to use ${process.execPath})`);
+  else if (pin) console.log(`runs ${program} at ${process.execPath} (pinned)`);
+  if (copy?.copied) console.log(`package copied to ${copy.dest}`);
+  else if (copy) console.log(`package runs from ${copy.dest}`);
+  prune();
+}
+
+// Remove stable package copies that no remaining kernelspec runs.
+function prune(): void {
+  for (const dir of pruneStableCopies(jupyterDataDir(), installedSpecs().map((s) => s.argv))) {
+    console.log(`removed unused package copy ${dir}`);
+  }
 }
 
 interface InstalledSpec {
@@ -84,6 +102,7 @@ interface InstalledSpec {
   dir: string;
   runtime: RuntimeName;
   version?: string;
+  argv: string[];
 }
 
 // A kernelspec this package wrote: install() always records the runtime in
@@ -101,7 +120,7 @@ function readOwnSpec(name: string): InstalledSpec | undefined {
   const runtime = spec.metadata?.runtime;
   if (!isRuntime(runtime) || !argv.includes("kernel") || !argv.includes("{connection_file}")) return undefined;
   const version = typeof spec.metadata?.version === "string" ? spec.metadata.version : undefined;
-  return { name, dir, runtime, version };
+  return { name, dir, runtime, version, argv: argv.filter((a) => typeof a === "string") };
 }
 
 function installedSpecs(): InstalledSpec[] {
@@ -150,12 +169,13 @@ function uninstall(names: string[], all: boolean): void {
     rmSync(spec.dir, { recursive: true, force: true });
     console.log(`removed kernelspec ${name} (${spec.dir})`);
   }
+  prune();
   if (all && names.length === 0) console.log(`no cdp-kernel kernelspecs in ${kernelsDir()}`);
   if (failed) process.exit(1);
 }
 
 const USAGE =
-  "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version";
+  "usage: cdp-kernel install [--runtime node|deno|bun|workerd|celld] [--deno-compat] [--type-strip esbuild|sucrase] [--no-language-service] [--pin] | list | uninstall [NAME...] [--all] | kernel --runtime node|deno|bun|workerd|celld --conn FILE | version";
 
 /** The command line, or exit 2 with the usage when it doesn't parse (an unknown option, a missing value). */
 function parseCommandLine() {
@@ -171,6 +191,7 @@ function parseCommandLine() {
         "deno-compat": { type: "boolean", default: false },
         "type-strip": { type: "string", default: "esbuild" },
         "no-language-service": { type: "boolean", default: false },
+        pin: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
       },
     });
@@ -214,6 +235,7 @@ switch (positionals[0]) {
       languageService,
       values.name ?? `cdp-${runtime}${suffix}`,
       values.display ?? `TypeScript (cdp-kernel, ${runtime}${denoCompat ? ", Deno compat" : ""})`,
+      values.pin === true,
     );
     break;
   }

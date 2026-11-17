@@ -4,6 +4,19 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- `cdp-kernel install` writes a kernelspec that survives Node upgrades. An
+  npm install is copied, with its dependencies, to `cdp-kernel/<version>/`
+  in Jupyter's data directory, and the kernelspec runs `node` or `deno`
+  through the version manager's shim (mise, asdf, volta, Homebrew) or by
+  name (fnm, nvm, n), not through the versioned paths that broke when that
+  Node was removed. `install --pin` keeps the exact binary, and `install`
+  and `uninstall` remove package copies no kernelspec runs. Kernelspecs
+  written by earlier releases keep their old paths: reinstall cdp-kernel and
+  re-run `cdp-kernel install`
+  ([#508](https://github.com/tlockney/cdp-kernel/issues/508)).
+
 ## 0.12.2 (2026-11-14)
 
 - The docs show the real output of more examples: the tables, SQL

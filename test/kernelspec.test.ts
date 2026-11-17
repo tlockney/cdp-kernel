@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -118,4 +118,37 @@ test("--help prints the usage; an unknown option says which, without a stack tra
   assert.match(r.stderr, /^cdp-kernel: Unknown option '--bogus'\nusage: cdp-kernel/);
   assert.doesNotMatch(r.stderr, /\n\s+at /);
   assert.ok(!existsSync(join(dir, "kernels")), "nothing was installed");
+});
+
+test("install --pin keeps the exact node; a checkout isn't copied", (t) => {
+  const dir = dataDir(t);
+  const r = cli(dir, "install", "--pin");
+  assert.equal(r.status, 0, r.stderr);
+  const argv = JSON.parse(readFileSync(join(dir, "kernels", "cdp-node", "kernel.json"), "utf8")).argv;
+  assert.equal(argv[0], process.execPath);
+  assert.equal(argv[1], MAIN);
+  assert.ok(!existsSync(join(dir, "cdp-kernel")), "a checkout runs in place");
+});
+
+test("install and uninstall prune unused package copies and nothing else (#508)", (t) => {
+  const dir = dataDir(t);
+  const root = join(dir, "cdp-kernel");
+  // A spec running 0.2.0's copy, as an npm install writes.
+  cli(dir, "install", "--runtime", "node");
+  for (const d of ["0.1.0", "0.2.0", "keep-me"]) mkdirSync(join(root, d), { recursive: true });
+  const file = join(dir, "kernels", "cdp-node", "kernel.json");
+  const spec = JSON.parse(readFileSync(file, "utf8"));
+  spec.argv[1] = join(root, "0.2.0", "dist", "main.js");
+  writeFileSync(file, JSON.stringify(spec));
+
+  const r = cli(dir, "install", "--runtime", "bun");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /removed unused package copy .*0\.1\.0/);
+  assert.ok(!existsSync(join(root, "0.1.0")));
+  assert.ok(existsSync(join(root, "0.2.0")));
+
+  const u = cli(dir, "uninstall", "--all");
+  assert.equal(u.status, 0, u.stderr);
+  assert.ok(!existsSync(join(root, "0.2.0")));
+  assert.ok(existsSync(join(root, "keep-me")));
 });
