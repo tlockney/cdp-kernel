@@ -10,7 +10,7 @@
 //   - stablePackage: copy the installed package, with the dependencies it
 //     resolves at run time, to <jupyter data dir>/cdp-kernel/<version>/.
 
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir, platform as osPlatform } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
@@ -188,11 +188,6 @@ function packagesIn(root: string): string[] {
   return found;
 }
 
-/**
- * Replace every symlink below `dir` with a copy of its target, and drop
- * dangling ones and links to an ancestor. cpSync leaves some (node_modules/.bin
- * entries) pointing back into the source prefix.
- */
 /** A symlink whose target is gone. */
 function isDangling(path: string): boolean {
   try {
@@ -202,24 +197,30 @@ function isDangling(path: string): boolean {
   }
 }
 
-// Node 26's cpSync with `dereference` fails on a dangling symlink (an
-// npm `.bin` entry whose package is missing, say), so leave those out.
-const COPY_OPTIONS = { recursive: true, dereference: true, filter: (src: string) => !isDangling(src) };
-
-function dereferenceTree(dir: string): void {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (lstatSync(path).isSymbolicLink()) {
-      let target: string | undefined;
-      try {
-        target = realpathSync(path);
-      } catch { /* dangling */ }
-      const here = realpathSync(dir);
-      rmSync(path, { force: true });
-      if (target === undefined || here === target || here.startsWith(target + sep)) continue;
-      cpSync(target, path, COPY_OPTIONS);
+/**
+ * Copy `src` to `dst`, hard-linking files where it can: the copy then costs
+ * no space while the npm install it came from exists, and keeps the files
+ * when that install is removed. Falls back to copying (another volume, a
+ * filesystem without hard links). Symlinks are followed, so the copy has
+ * none pointing back into the source; dangling ones and links to an
+ * enclosing directory are left out.
+ */
+function copyTree(src: string, dst: string, ancestors: readonly string[] = []): void {
+  const real = realpathSync(src);
+  if (statSync(real).isDirectory()) {
+    if (ancestors.includes(real)) return;
+    mkdirSync(dst, { recursive: true });
+    for (const entry of readdirSync(src)) {
+      const child = join(src, entry);
+      if (isDangling(child)) continue;
+      copyTree(child, join(dst, entry), [...ancestors, real]);
     }
-    if (lstatSync(path).isDirectory()) dereferenceTree(path);
+    return;
+  }
+  try {
+    linkSync(real, dst);
+  } catch {
+    copyFileSync(real, dst);
   }
 }
 
@@ -285,8 +286,7 @@ function completeDependencies(copy: string, source: string): void {
         }
         const real = realpathSync(original);
         const target = join(copy, "node_modules", ...name.split("/"));
-        cpSync(real, target, COPY_OPTIONS);
-        dereferenceTree(target);
+        copyTree(real, target);
         origins.set(join(copy, "node_modules", ...name.split("/")), real);
         progress = true;
       }
@@ -336,8 +336,7 @@ export function stablePackage(
   try {
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(stableRoot(dataDir), { recursive: true });
-    cpSync(pkgRoot, staging, COPY_OPTIONS);
-    dereferenceTree(staging);
+    copyTree(pkgRoot, staging);
     completeDependencies(staging, pkgRoot);
     if (existsSync(dest)) renameSync(dest, aside);
     try {

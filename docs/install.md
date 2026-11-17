@@ -150,7 +150,10 @@ version is removed or upgraded. `install` avoids both:
 - **The package.** An npm install is copied, with the dependencies it needs,
   to `<Jupyter data dir>/cdp-kernel/<version>/` (next to `kernels/`; it
   follows `JUPYTER_DATA_DIR`), and the kernelspec runs
-  `<data dir>/cdp-kernel/<version>/dist/main.js`. Installing the same
+  `<data dir>/cdp-kernel/<version>/dist/main.js`. Files are hard links
+  where the data dir is on the same volume as the npm install, so the copy
+  takes no extra space until that install is removed (then it keeps the
+  files); across volumes they are copied. Installing the same
   version again keeps a complete copy, and installing a new version leaves
   the old copy for kernels still running it. A checkout runs in place, and a JSR
   install already pins its release. If the dependencies can't be copied

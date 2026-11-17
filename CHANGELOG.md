@@ -8,7 +8,8 @@ Issue and pull request numbers refer to
 
 - `cdp-kernel install` writes a kernelspec that survives Node upgrades. An
   npm install is copied, with its dependencies, to `cdp-kernel/<version>/`
-  in Jupyter's data directory, and the kernelspec runs `node` or `deno`
+  in Jupyter's data directory (as hard links where it can, so it takes no
+  extra space while the npm install exists), and the kernelspec runs `node` or `deno`
   through the version manager's shim or link (mise, asdf, volta, Homebrew,
   fnm's default alias), not through the versioned paths that broke when
   that Node was removed. nvm and n have no stable path, so their binary is

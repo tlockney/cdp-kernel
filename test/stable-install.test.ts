@@ -1,7 +1,7 @@
 // The stable parts of a kernelspec: the runtime path and the package copy (#508).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, sep } from "node:path";
 import { createRequire } from "node:module";
@@ -311,6 +311,22 @@ test("copy: a complete copy of the same version is kept; an incomplete one is re
   const next = stablePackage(join(root, "dist", "main.js"), data, "1.1.0");
   assert.equal(next?.copied, true);
   assert.ok(existsSync(join(data, "cdp-kernel", "1.0.0")));
+});
+
+test("copy: files are hard links to the source on the same volume", (t) => {
+  const src = tmp(t);
+  const nm = join(src, "node_modules");
+  const root = pkg(join(nm, "@tlockney", "cdp-kernel"), NAME, "1.0.0", {}, mainFiles);
+  const { warnings, result } = install(t, join(root, "dist", "main.js"));
+  assert.deepEqual(warnings, []);
+  assert.ok(result?.copied);
+  const a = statSync(join(root, "dist", "main.js"));
+  const b = statSync(join(result.dest, "dist", "main.js"));
+  if (a.dev !== b.dev) return t.skip("the data dir is on another volume here");
+  assert.equal(b.ino, a.ino);
+  // The copy outlives the source.
+  rmSync(root, { recursive: true });
+  assert.equal(readFileSync(join(result.dest, "dist", "main.js"), "utf8"), "// main\n");
 });
 
 test("copy: nested symlinks (node_modules/.bin) are replaced by copies", (t) => {
