@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,7 +164,8 @@ test("install keeps other versions' package copies; uninstall prunes unused ones
 
 test("install names a version manager's shim, and --pin the exact node", (t) => {
   if (process.platform === "win32") return t.skip("no shims on Windows");
-  const tmpRoot = dataDir(t);
+  // process.execPath is the real path (macOS's tmpdir is under /private).
+  const tmpRoot = realpathSync(dataDir(t));
   const bin = join(tmpRoot, "mise", "installs", "node", "22.0.0", "bin");
   const shims = join(tmpRoot, "mise", "shims");
   mkdirSync(bin, { recursive: true });
