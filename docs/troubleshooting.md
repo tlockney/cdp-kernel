@@ -46,10 +46,6 @@ those paths stop existing. Reinstall cdp-kernel (`npm install -g
 @tlockney/cdp-kernel`), then re-run `cdp-kernel install` for each runtime
 you use.
 
-> [!NOTE]
-> **Unreleased.** Available only from a build of `main` (HEAD), not in
-> the latest release. The latest release writes the paths described above.
-
 A kernelspec made by a newer one runs a copy of the package kept in
 Jupyter's data directory and names your version manager's shim, so
 upgrading Node doesn't break it; see
@@ -57,8 +53,9 @@ upgrading Node doesn't break it; see
 If the kernel still doesn't start, check these:
 
 - `cdp-kernel list` shows each kernelspec's directory; its `kernel.json`
-  shows the command Jupyter runs. Run that command's first two entries in a
-  terminal (for example `node /path/to/dist/main.js version`).
+  shows the command Jupyter runs. Run it in a terminal with `kernel
+  --conn FILE` replaced by `version` (a Node host: `node
+  /path/to/dist/main.js version`) to see why it fails.
 - With a shim or plain `node`, the kernel runs the Node that the version
   manager selects for the notebook's folder, which must be 22.18 or later.
   A `.node-version` or `.tool-versions` file there can select an older one.

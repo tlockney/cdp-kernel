@@ -67,11 +67,6 @@ are supported; Windows isn't yet. See
 requirements, installing from a checkout, and how the kernelspec survives
 Node upgrades (`--pin`).
 
-> [!NOTE]
-> **Unreleased.** Available only from a build of `main` (HEAD), not in
-> the latest release. That includes the kernelspec's copy of the package
-> and `--pin`.
-
 JupyterLab with every runtime and the examples, in a container:
 
 ```sh

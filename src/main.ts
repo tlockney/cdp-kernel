@@ -85,12 +85,12 @@ function install(
   const program = basename(process.execPath);
   if (exec !== process.execPath) console.log(`runs ${program} via ${exec} (--pin to use ${process.execPath})`);
   else if (pin) console.log(`runs ${program} at ${process.execPath} (pinned)`);
-  if (copy?.copied) console.log(`package copied to ${copy.dest}`);
-  else if (copy) console.log(`package runs from ${copy.dest}`);
-  prune();
+  if (copy) console.log(copy.copied ? `package copied to ${copy.dest}` : `package copy kept at ${copy.dest}`);
 }
 
-// Remove stable package copies that no remaining kernelspec runs.
+// Remove stable package copies that no remaining kernelspec runs. Only
+// uninstall does: after an upgrade, running kernels (and the argv Jupyter
+// keeps for restarting them) still use the previous version's copy.
 function prune(): void {
   for (const dir of pruneStableCopies(jupyterDataDir(), installedSpecs().map((s) => s.argv))) {
     console.log(`removed unused package copy ${dir}`);

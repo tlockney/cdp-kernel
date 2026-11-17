@@ -1,9 +1,9 @@
 // The stable parts of a kernelspec: the runtime path and the package copy (#508).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { dirname, isAbsolute, join, sep } from "node:path";
 import { createRequire } from "node:module";
 import {
   jupyterDataDir,
@@ -46,11 +46,11 @@ test("stableExecPath: volta tool images map to its bin", () => {
 test("stableExecPath: Homebrew Cellar maps to the prefix's bin", () => {
   assert.equal(
     stableExecPath("/opt/homebrew/Cellar/node/22.18.0/bin/node", { exists: all, platform: "darwin", env: {} }),
-    "/opt/homebrew/bin/node",
+    "/opt/homebrew/opt/node/bin/node",
   );
   assert.equal(
     stableExecPath("/home/linuxbrew/.linuxbrew/Cellar/node@22/22.18.0_1/bin/node", { exists: all, platform: "linux", env: {} }),
-    "/home/linuxbrew/.linuxbrew/bin/node",
+    "/home/linuxbrew/.linuxbrew/opt/node@22/bin/node",
   );
 });
 
@@ -90,6 +90,11 @@ test("stableExecPath: system paths, Windows and --pin are unchanged", () => {
   assert.equal(stableExecPath(win, { exists: all, platform: "win32", env: {} }), win);
 });
 
+test("jupyterDataDir: absolute even for a relative JUPYTER_DATA_DIR", () => {
+  assert.equal(jupyterDataDir({ JUPYTER_DATA_DIR: "rel/data" }, "linux", "/h"), join(process.cwd(), "rel", "data"));
+  assert.ok(isAbsolute(jupyterDataDir({ XDG_DATA_HOME: "xdg" }, "linux", "/h")));
+});
+
 test("jupyterDataDir: the parent of the kernels directory", () => {
   assert.equal(jupyterDataDir({ JUPYTER_DATA_DIR: "/d" }, "linux", "/h"), "/d");
   assert.equal(jupyterDataDir({}, "darwin", "/h"), join("/h", "Library", "Jupyter"));
@@ -126,6 +131,18 @@ function load(from: string, name: string): string {
 
 function resolvedIn(from: string, name: string, root: string): boolean {
   return createRequire(join(from, "index.js")).resolve(name).startsWith(root + sep);
+}
+
+/** Every symlink below `dir`, found with lstat so none is followed. */
+function symlinksIn(dir: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) found.push(path);
+    else if (stat.isDirectory()) found.push(...symlinksIn(path));
+  }
+  return found;
 }
 
 function install(t: { after(fn: () => void): void }, entry: string, version = "1.0.0") {
@@ -188,8 +205,7 @@ test("copy: a symlinked (pnpm-style) layout is dereferenced", (t) => {
   assert.ok(resolvedIn(result.dest, "dep-a", result.dest));
   assert.ok(resolvedIn(join(result.dest, "node_modules", "dep-a"), "dep-b", result.dest));
   assert.equal(load(join(result.dest, "node_modules", "dep-a"), "dep-b"), "dep-b@1.0.0");
-  // No symlink points back at the pnpm store.
-  assert.ok(!readFileSync(join(result.dest, "package.json"), "utf8").includes(".pnpm"));
+  assert.deepEqual(symlinksIn(result.dest), [], "no symlink points back at the pnpm store");
 });
 
 test("copy: optional dependencies are copied when installed and skipped when not", (t) => {
@@ -235,34 +251,48 @@ test("copy: a version collision gives up and leaves the original in use", (t) =>
   assert.ok(!existsSync(join(data, "cdp-kernel", `1.0.0.${process.pid}.tmp`)), "staging is removed");
 });
 
-test("copy: reinstalling the same version refreshes the copy", (t) => {
+test("copy: a complete copy of the same version is kept; an incomplete one is replaced", (t) => {
   const src = tmp(t);
-  const root = pkg(join(src, "node_modules", "@tlockney", "cdp-kernel"), NAME, "1.0.0", {}, { ...mainFiles, "old.txt": "x" });
+  const nm = join(src, "node_modules");
+  const root = pkg(join(nm, "@tlockney", "cdp-kernel"), NAME, "1.0.0", { dependencies: { "dep-a": "1" } }, mainFiles);
+  pkg(join(nm, "dep-a"), "dep-a", "1.0.0");
   const data = tmp(t);
   const first = stablePackage(join(root, "dist", "main.js"), data, "1.0.0");
-  assert.ok(first?.copied && existsSync(join(first.dest, "old.txt")));
-  rmSync(join(root, "old.txt"));
-  writeFileSync(join(root, "dist", "main.js"), "// changed\n");
+  assert.ok(first?.copied);
+  writeFileSync(join(first.dest, "marker"), "mine");
   const second = stablePackage(join(root, "dist", "main.js"), data, "1.0.0");
-  assert.ok(second?.copied);
-  assert.equal(readFileSync(second.entry, "utf8"), "// changed\n");
-  assert.ok(!existsSync(join(second.dest, "old.txt")));
+  assert.equal(second?.copied, false);
+  assert.equal(second?.entry, first.entry);
+  assert.ok(existsSync(join(first.dest, "marker")), "kept, not recopied");
+
+  // A dependency is missing from the copy: copy again.
+  rmSync(join(first.dest, "node_modules", "dep-a"), { recursive: true });
+  const third = stablePackage(join(root, "dist", "main.js"), data, "1.0.0");
+  assert.equal(third?.copied, true);
+  assert.ok(!existsSync(join(first.dest, "marker")));
+  assert.ok(existsSync(join(first.dest, "node_modules", "dep-a", "package.json")));
+  assert.deepEqual(readdirSync(join(data, "cdp-kernel")), ["1.0.0"], "no staging or aside directory left");
+
+  // A different version gets its own directory and leaves this one.
+  const next = stablePackage(join(root, "dist", "main.js"), data, "1.1.0");
+  assert.equal(next?.copied, true);
+  assert.ok(existsSync(join(data, "cdp-kernel", "1.0.0")));
 });
 
-test("copy: running from the stable root uses it in place", (t) => {
+test("copy: nested symlinks (node_modules/.bin) are replaced by copies", (t) => {
   const src = tmp(t);
-  const root = pkg(join(src, "node_modules", "@tlockney", "cdp-kernel"), NAME, "1.0.0", {}, mainFiles);
-  const data = tmp(t);
-  const first = stablePackage(join(root, "dist", "main.js"), data, "1.0.0");
-  assert.ok(first);
-  const again = stablePackage(first.entry, data, "1.0.0");
-  assert.equal(again?.copied, false);
-  assert.equal(again?.entry, first.entry);
-  assert.equal(again?.dest, first.dest);
-  // Even a different version's root: no copy of a copy.
-  const other = stablePackage(first.entry, data, "2.0.0");
-  assert.equal(other?.copied, false);
-  assert.ok(!existsSync(join(data, "cdp-kernel", "2.0.0")));
+  const nm = join(src, "node_modules");
+  const root = pkg(join(nm, "@tlockney", "cdp-kernel"), NAME, "1.0.0", { dependencies: { "dep-a": "1" } }, mainFiles);
+  pkg(join(root, "node_modules", "dep-a"), "dep-a", "1.0.0", {}, { "bin/cli.js": "// cli\n" });
+  mkdirSync(join(root, "node_modules", ".bin"));
+  symlinkSync(join(root, "node_modules", "dep-a", "bin", "cli.js"), join(root, "node_modules", ".bin", "cli"));
+  symlinkSync("../does-not-exist", join(root, "node_modules", ".bin", "dangling"));
+  const { warnings, result } = install(t, join(root, "dist", "main.js"));
+  assert.deepEqual(warnings, []);
+  assert.ok(result?.copied);
+  assert.deepEqual(symlinksIn(result.dest), []);
+  assert.equal(readFileSync(join(result.dest, "node_modules", ".bin", "cli"), "utf8"), "// cli\n");
+  assert.ok(!existsSync(join(result.dest, "node_modules", ".bin", "dangling")));
 });
 
 test("copy: no package.json for this package above the file falls back", (t) => {
@@ -306,6 +336,20 @@ test("prune: removes only unreferenced version directories", (t) => {
   for (const kept of ["0.12.0", "0.12.1-rc.1", "notes", "0.12.2.99.tmp", "0.9.0"]) assert.ok(existsSync(join(root, kept)), kept);
   // A path that only shares a prefix doesn't count as a reference.
   assert.deepEqual(pruneStableCopies(data, [["node", join(root, "0.12.00", "x")]]).sort(), [join(root, "0.12.0"), join(root, "0.12.1-rc.1")].sort());
+});
+
+test("prune: only absolute argv entries count as references", (t) => {
+  const data = tmp(t);
+  const root = join(data, "cdp-kernel");
+  mkdirSync(join(root, "0.3.0"), { recursive: true });
+  const rel = join("cdp-kernel", "0.3.0", "dist", "main.js");
+  const saved = process.cwd();
+  process.chdir(data);
+  try {
+    assert.deepEqual(pruneStableCopies(data, [["node", rel]]), [join(root, "0.3.0")]);
+  } finally {
+    process.chdir(saved);
+  }
 });
 
 test("prune: nothing to do without a stable root", (t) => {

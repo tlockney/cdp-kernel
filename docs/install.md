@@ -143,12 +143,6 @@ deno run -A jsr:@tlockney/cdp-kernel@0.4.0/cli install --runtime deno \
 
 ## What the kernelspec points at
 
-> [!NOTE]
-> **Unreleased.** Available only from a build of `main` (HEAD), not in
-> the latest release. The latest release writes the absolute paths of the
-> `node` that ran `install` and of the package inside that Node's global
-> `node_modules`.
-
 A version manager keeps each Node in its own directory, and an npm global
 install lives inside it, so a kernelspec naming those paths breaks when the
 version is removed or upgraded. `install` avoids both:
@@ -157,14 +151,15 @@ version is removed or upgraded. `install` avoids both:
   to `<Jupyter data dir>/cdp-kernel/<version>/` (next to `kernels/`; it
   follows `JUPYTER_DATA_DIR`), and the kernelspec runs
   `<data dir>/cdp-kernel/<version>/dist/main.js`. Installing the same
-  version again refreshes the copy. A checkout runs in place, and a JSR
+  version again keeps a complete copy, and installing a new version leaves
+  the old copy for kernels still running it. A checkout runs in place, and a JSR
   install already pins its release. If the dependencies can't be copied
   consistently, `install` says so and points at the installed package as
-  before. `uninstall` (and `install`) remove the copies that no remaining
-  cdp-kernel kernelspec runs.
+  before. `uninstall` removes the copies that no remaining cdp-kernel
+  kernelspec runs.
 - **The program.** For mise, asdf, volta and Homebrew, the kernelspec runs
   the manager's shim or link (`~/.local/share/mise/shims/node`,
-  `~/.volta/bin/node`, `/opt/homebrew/bin/node`) instead of the versioned
+  `~/.volta/bin/node`, `/opt/homebrew/opt/node/bin/node`) instead of the versioned
   binary. For fnm, nvm and n, which have no shims, it runs plain `node`
   and the launcher's `PATH` picks it. Any other path, such as
   `/usr/bin/node`, is used as is. Windows isn't affected.

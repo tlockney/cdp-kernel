@@ -11,8 +11,8 @@ Issue and pull request numbers refer to
   in Jupyter's data directory, and the kernelspec runs `node` or `deno`
   through the version manager's shim (mise, asdf, volta, Homebrew) or by
   name (fnm, nvm, n), not through the versioned paths that broke when that
-  Node was removed. `install --pin` keeps the exact binary, and `install`
-  and `uninstall` remove package copies no kernelspec runs. Kernelspecs
+  Node was removed. `install --pin` keeps the exact binary, and `uninstall`
+  removes package copies no kernelspec runs. Kernelspecs
   written by earlier releases keep their old paths: reinstall cdp-kernel and
   re-run `cdp-kernel install`
   ([#508](https://github.com/tlockney/cdp-kernel/issues/508)).

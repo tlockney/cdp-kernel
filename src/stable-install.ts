@@ -10,9 +10,9 @@
 //   - stablePackage: copy the installed package, with the dependencies it
 //     resolves at run time, to <jupyter data dir>/cdp-kernel/<version>/.
 
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { homedir, platform as osPlatform } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { isInsideNodeModules, type Origin } from "./package.ts";
 
@@ -24,10 +24,11 @@ export function jupyterDataDir(
   platform: string = osPlatform(),
   home: string = homedir(),
 ): string {
-  if (env.JUPYTER_DATA_DIR) return env.JUPYTER_DATA_DIR;
+  // Absolute, because the kernelspec's argv outlives this process's cwd.
+  if (env.JUPYTER_DATA_DIR) return resolve(env.JUPYTER_DATA_DIR);
+  if (platform === "win32") return resolve(env.APPDATA ?? home, "jupyter");
   if (platform === "darwin") return join(home, "Library", "Jupyter");
-  if (platform === "win32") return join(env.APPDATA ?? home, "jupyter");
-  return join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "jupyter");
+  return resolve(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "jupyter");
 }
 
 /** Where stable copies of the package go. */
@@ -81,10 +82,12 @@ export function stableExecPath(execPath: string, options: ExecPathOptions = {}):
       return shimOrBare(`${root}/bin/${name}`);
     }
   }
-  // Homebrew: <prefix>/Cellar/<formula>/<version>/bin/<name>, linked in <prefix>/bin.
+  // Homebrew: <prefix>/Cellar/<formula>/<version>/bin/<name>. <prefix>/opt/<formula>
+  // follows the formula's current version, and exists for keg-only ones
+  // (node@22) that <prefix>/bin doesn't link.
   const cellar = segs.length - 5;
   if (cellar >= 1 && segs[cellar] === "Cellar" && segs[segs.length - 2] === "bin") {
-    return shimOrBare(`${rootBefore(cellar)}/bin/${name}`);
+    return shimOrBare(`${rootBefore(cellar)}/opt/${segs[cellar + 1]}/bin/${name}`);
   }
   // fnm, nvm and n have no shims: the version is whatever PATH says.
   if (
@@ -160,6 +163,44 @@ function packagesIn(root: string): string[] {
   return found;
 }
 
+/**
+ * Replace every symlink below `dir` with a copy of its target, and drop
+ * dangling ones and links to an ancestor. cpSync leaves some (node_modules/.bin
+ * entries) pointing back into the source prefix.
+ */
+function dereferenceTree(dir: string): void {
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (lstatSync(path).isSymbolicLink()) {
+      let target: string | undefined;
+      try {
+        target = realpathSync(path);
+      } catch { /* dangling */ }
+      const here = realpathSync(dir);
+      rmSync(path, { force: true });
+      if (target === undefined || here === target || here.startsWith(target + sep)) continue;
+      cpSync(target, path, { recursive: true, dereference: true });
+    }
+    if (lstatSync(path).isDirectory()) dereferenceTree(path);
+  }
+}
+
+/** True when `dir` holds this version of the package and every non-optional dependency resolves inside it. */
+function isComplete(dir: string, version: string): boolean {
+  const json = readPackageJson(dir);
+  if (json?.name !== PACKAGE_NAME || json.version !== version) return false;
+  try {
+    for (const pkg of packagesIn(dir)) {
+      for (const name of Object.keys(readPackageJson(pkg)?.dependencies ?? {})) {
+        if (lookup(pkg, name, dir) === undefined) return false;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 class Conflict extends Error {}
 
 /**
@@ -196,7 +237,9 @@ function completeDependencies(copy: string, source: string): void {
           continue;
         }
         const real = realpathSync(original);
-        cpSync(real, join(copy, "node_modules", ...name.split("/")), { recursive: true, dereference: true });
+        const target = join(copy, "node_modules", ...name.split("/"));
+        cpSync(real, target, { recursive: true, dereference: true });
+        dereferenceTree(target);
         origins.set(join(copy, "node_modules", ...name.split("/")), real);
         progress = true;
       }
@@ -209,16 +252,17 @@ export interface StableCopy {
   entry: string;
   /** The stable package root. */
   dest: string;
-  /** False when the CLI already ran from there. */
+  /** False when a complete copy of this version was already there and was kept. */
   copied: boolean;
 }
 
 /**
  * Copy the installed package containing `entry` (a file inside it) to
  * `<dataDir>/cdp-kernel/<version>/` with every dependency it needs, so the
- * kernelspec doesn't depend on the npm prefix of one Node version. Replaces
- * a copy of the same version. Returns undefined, after saying why on `warn`,
- * when the package can't be copied: the caller then points at the original.
+ * kernelspec doesn't depend on the npm prefix of one Node version. A complete
+ * copy of the same version is kept; an incomplete one is replaced. Returns
+ * undefined, after saying why on `warn`, when the package can't be copied:
+ * the caller then points at the original.
  */
 export function stablePackage(
   entry: string,
@@ -226,47 +270,48 @@ export function stablePackage(
   version: string,
   warn: (message: string) => void = console.error,
 ): StableCopy | undefined {
-  const root = stableRoot(dataDir);
-  const dest = join(root, version);
+  const dest = join(stableRoot(dataDir), version);
   let real: string;
   try {
     real = realpathSync(entry);
   } catch {
     real = resolve(entry);
   }
-  const realRoot = (() => {
-    try {
-      return realpathSync(root);
-    } catch {
-      return resolve(root);
-    }
-  })();
-  if (real.startsWith(realRoot + sep)) {
-    // Already running from a stable copy (any version): use it where it is.
-    return { entry: real, dest: join(realRoot, relative(realRoot, real).split(sep)[0]), copied: false };
-  }
   const pkgRoot = findPackageRoot(real);
   if (pkgRoot === undefined) {
     warn(`install: can't find the ${PACKAGE_NAME} package above ${entry}; pointing the kernelspec at it`);
     return undefined;
   }
+  const result = (copied: boolean): StableCopy => ({ entry: join(dest, relative(pkgRoot, real)), dest, copied });
+  if (isComplete(dest, version)) return result(false);
   const staging = `${dest}.${process.pid}.tmp`;
+  const aside = `${dest}.old.${process.pid}`;
   try {
     rmSync(staging, { recursive: true, force: true });
-    mkdirSync(root, { recursive: true });
+    mkdirSync(stableRoot(dataDir), { recursive: true });
     cpSync(pkgRoot, staging, { recursive: true, dereference: true });
+    dereferenceTree(staging);
     completeDependencies(staging, pkgRoot);
-    rmSync(dest, { recursive: true, force: true });
-    renameSync(staging, dest);
+    if (existsSync(dest)) renameSync(dest, aside);
+    try {
+      renameSync(staging, dest);
+    } catch (err) {
+      // Another install finished first; its copy is complete.
+      if (!isComplete(dest, version)) throw err;
+    }
   } catch (err) {
     rmSync(staging, { recursive: true, force: true });
+    if (!existsSync(dest) && existsSync(aside)) renameSync(aside, dest); // keep what was there
     warn(
       `install: couldn't copy the package to ${dest} (${err instanceof Error ? err.message : String(err)}); ` +
         `pointing the kernelspec at ${entry}`,
     );
     return undefined;
+  } finally {
+    rmSync(aside, { recursive: true, force: true });
   }
-  return { entry: join(dest, relative(pkgRoot, real)), dest, copied: true };
+  rmSync(staging, { recursive: true, force: true });
+  return result(true);
 }
 
 /**
@@ -309,7 +354,7 @@ export function pruneStableCopies(dataDir: string, argvs: string[][]): string[] 
   for (const entry of entries) {
     if (!entry.isDirectory() || !VERSION_DIR.test(entry.name)) continue;
     const prefixes = roots.map((r) => join(r, entry.name) + sep);
-    const used = argvs.some((argv) => argv.some((arg) => prefixes.some((p) => resolve(arg).startsWith(p))));
+    const used = argvs.some((argv) => argv.some((arg) => isAbsolute(arg) && prefixes.some((p) => resolve(arg).startsWith(p))));
     if (used) continue;
     rmSync(join(root, entry.name), { recursive: true, force: true });
     removed.push(join(root, entry.name));
