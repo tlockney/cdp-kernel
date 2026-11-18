@@ -20,6 +20,8 @@
     "acorn-walk": "npm:acorn-walk@^8.3.4",
     "esbuild": "npm:esbuild@^0.28.2",
     "sucrase": "npm:sucrase@^3.35.1",
+    // Types only: the language service loads TypeScript itself (#513,
+    // src/typescript-package.ts).
     "typescript": "npm:typescript@^6.0.3"
   },
   "publish": {

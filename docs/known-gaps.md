@@ -8,6 +8,9 @@
   - the first request after the kernel starts (or after 10 idle minutes)
     is answered from runtime values only, while the language service
     loads;
+  - TypeScript isn't part of the package: the first use downloads it once
+    (offline, completion is untyped until it can), see
+    [TypeScript for typed completion](install.md#typescript-for-typed-completion);
   - the language service knows only what cells declare: a property added
     at runtime or a global set by a library is still completed, from the
     runtime, but has no type;

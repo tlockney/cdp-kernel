@@ -4,6 +4,16 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- The package no longer includes TypeScript (24 MB, copied again into each
+  installed kernel version). Typed completion and inspection use the
+  notebook project's TypeScript 6 if it has one, otherwise TypeScript 6
+  installed once into the shared npm cache on first use; completion shows
+  runtime values meanwhile, and stays untyped offline. See
+  [TypeScript for typed completion](https://cdp-kernel.org/docs/install#typescript-for-typed-completion)
+  ([#513](https://github.com/tlockney/cdp-kernel/issues/513)).
+
 ## 0.12.3 (2026-11-17)
 
 - `cdp-kernel install` writes a kernelspec that survives Node upgrades. An

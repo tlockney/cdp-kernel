@@ -32,7 +32,11 @@ export type WorkerRequest =
   | { type: "reset" }
   | { type: "complete" | "quickInfo"; id: number; code: string; cursor: number };
 
-export type WorkerResponse = { id: number; result: CompletionResult | string | null } | { id: number; error: string };
+export type WorkerResponse =
+  | { id: number; result: CompletionResult | string | null }
+  | { id: number; error: string }
+  /** TypeScript couldn't be loaded or installed (#513): the worker is of no use. */
+  | { unavailable: string };
 
 /**
  * How long a request waits for the worker. JupyterLab gives a kernel's
@@ -145,7 +149,16 @@ export class LanguageService {
     }
     // An idle worker mustn't keep the kernel alive.
     worker.unref();
-    worker.on("message", (response: WorkerResponse) => this.#pending.get(response.id)?.(response));
+    worker.on("message", (response: WorkerResponse) => {
+      if ("unavailable" in response) {
+        // Until the kernel restarts: e.g. offline, so a retry would fail too.
+        this.#broken = true;
+        this.#log(`typed completion unavailable: ${response.unavailable}`);
+        if (this.#worker === worker) this.close();
+        return;
+      }
+      this.#pending.get(response.id)?.(response);
+    });
     worker.on("error", (err) => {
       // E.g. typescript failed to load. Completion goes on from the runtime.
       this.#broken = true;

@@ -121,6 +121,8 @@ cdp-kernel install [--runtime RUNTIME] [--deno-compat] [--type-strip STRIPPER] [
   take about 150 MB while in use. Tab and Shift-Tab then show runtime
   values only. See
   [Inspection and completion](notebooks.md#inspection-completion-and-history).
+  The package doesn't include TypeScript; see
+  [TypeScript for typed completion](#typescript-for-typed-completion).
 - `--pin` makes the kernelspec run the exact `node` (or `deno`) that ran
   `install`, not a version manager's shim. See
   [What the kernelspec points at](#what-the-kernelspec-points-at).
@@ -241,11 +243,31 @@ refilled on next use.
 | Cache | Location | What's in it |
 | --- | --- | --- |
 | Runtime files | `${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/runtime/<version>-<hash>/` | The kernel's runtime modules, copied here for a JSR install and for a Deno target of an npm install. One directory per version. |
-| npm packages | `${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/npm/` | `npm:` and `jsr:` imports on Node and workerd. `CDPK_CACHE_DIR` moves it. |
+| npm packages | `${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/npm/` | `npm:` and `jsr:` imports on Node and workerd, type packages for completion, and TypeScript itself. `CDPK_CACHE_DIR` moves it. |
 | Bun packages | `${XDG_CACHE_HOME:-~/.cache}/cdp-kernel/bun/` | `npm:` and `jsr:` imports on Bun. |
 
 On Deno, imports use Deno's own cache. See [Writing notebooks](notebooks.md#language-and-imports)
 for how the package caches behave.
+
+### TypeScript for typed completion
+
+Typed completion and inspection run TypeScript's language service, but the
+package doesn't include TypeScript (24 MB). The kernel uses, in order:
+
+1. the notebook project's own `typescript`: the nearest
+   `node_modules/typescript` at or above the notebook's directory, if it is
+   TypeScript 6;
+2. TypeScript 6 in the npm package cache, which every installed kernel
+   version shares;
+3. otherwise, it installs TypeScript 6 into that cache the first time
+   you press Tab or Shift-Tab, which takes a few seconds. Completion shows
+   runtime values meanwhile.
+
+Offline, with neither available, completion shows runtime values only and
+the server log has one line saying why. To have typed completion offline,
+add TypeScript to the notebook project while online
+(`npm install --save-dev typescript@6`), or open a notebook and press Tab
+once while online, which fills the cache.
 
 Environment variables the kernel reads:
 
