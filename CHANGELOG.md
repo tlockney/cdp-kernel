@@ -4,6 +4,12 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- `cdp-kernel install` no longer says "fnm has no default alias" for a
+  Node under a `node-versions/` directory that isn't fnm's
+  ([#510](https://github.com/tlockney/cdp-kernel/issues/510)).
+
 ## 0.12.3 (2026-11-17)
 
 - `cdp-kernel install` writes a kernelspec that survives Node upgrades. An

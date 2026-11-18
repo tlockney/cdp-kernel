@@ -162,6 +162,24 @@ test("install keeps other versions' package copies; uninstall prunes unused ones
   assert.ok(existsSync(join(root, "keep-me")));
 });
 
+test("install doesn't blame fnm for a node-versions path outside an fnm root", (t) => {
+  if (process.platform === "win32") return t.skip("no fnm aliases on Windows");
+  const tmpRoot = realpathSync(dataDir(t));
+  const bin = join(tmpRoot, "opt", "node-versions", "v22.0.0", "installation", "bin");
+  mkdirSync(bin, { recursive: true });
+  const node = join(bin, "node");
+  try {
+    linkSync(process.execPath, node);
+  } catch {
+    copyFileSync(process.execPath, node);
+  }
+  const env: Record<string, string | undefined> = { ...process.env, JUPYTER_DATA_DIR: join(tmpRoot, "data") };
+  delete env.FNM_DIR;
+  const r = spawnSync(node, [MAIN, "install"], { encoding: "utf8", env });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout + r.stderr, /fnm/);
+});
+
 test("install names fnm's default alias, and notes when it is another node", (t) => {
   if (process.platform === "win32") return t.skip("no fnm aliases on Windows");
   const tmpRoot = realpathSync(dataDir(t));

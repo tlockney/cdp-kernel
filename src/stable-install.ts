@@ -119,7 +119,9 @@ function fnmRoot(execPath: string, env: Record<string, string | undefined>, plat
 export function pinnedByManager(execPath: string, env: Record<string, string | undefined> = process.env): string | undefined {
   if (execPath.includes("/.nvm/versions/") || under(execPath, env.NVM_DIR, "/versions/")) return "nvm";
   if (execPath.includes("/n/versions/")) return "n";
-  if (execPath.includes("/node-versions/") || execPath.includes("/fnm_multishells/")) return "fnm";
+  // Only where stableExecPath looked for fnm's default alias: a
+  // /node-versions/ path outside an fnm root isn't fnm's (#510).
+  if (fnmRoot(execPath, env, process.platform) !== undefined) return "fnm";
   return undefined;
 }
 
