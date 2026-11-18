@@ -4,6 +4,14 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- The docs site no longer serves the widget screenshots `progress.png`,
+  `temperature.png` and `dice.png`. Only 0.12.1's typings linked to them,
+  so editor hovers on 0.12.1 lose those images; upgrade to get the
+  current typings
+  ([#503](https://github.com/tlockney/cdp-kernel/issues/503)).
+
 ## 0.12.3 (2026-11-17)
 
 - `cdp-kernel install` writes a kernelspec that survives Node upgrades. An
