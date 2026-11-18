@@ -263,8 +263,13 @@ package doesn't include TypeScript (24 MB). The kernel uses, in order:
    you press Tab or Shift-Tab, which takes a few seconds. Completion shows
    runtime values meanwhile.
 
+A kernel run by Deno (a [JSR install](#from-jsr)) gets TypeScript 6
+through Deno's own npm support instead, into Deno's cache, so it doesn't
+need npm.
+
 Offline, with neither available, completion shows runtime values only and
-the server log has one line saying why. To have typed completion offline,
+the server log has one line saying why. The [container image](#in-a-container)
+comes with TypeScript in its cache. To have typed completion offline,
 add TypeScript to the notebook project while online
 (`npm install --save-dev typescript@6`), or open a notebook and press Tab
 once while online, which fills the cache.

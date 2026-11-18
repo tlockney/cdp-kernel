@@ -91,3 +91,34 @@ export async function locateTypeScript(
 export function requireTypeScript(found: FoundTypeScript): typeof TS {
   return createRequire(join(found.dir, "package.json"))(found.dir) as typeof TS;
 }
+
+export interface LoadOptions {
+  /** Whether the kernel host is Deno, which resolves npm: itself, without the npm CLI. */
+  deno?: boolean;
+  /** Imports an npm: specifier (Deno only); replaceable in tests. */
+  importNpm?: (specifier: string) => Promise<unknown>;
+  /** See locateTypeScript. */
+  install?: (request: { name: string; range: string }) => Promise<unknown>;
+}
+
+/**
+ * The typescript the language service runs on: the project's or the npm
+ * cache's, else, on a Deno host (a JSR install, which may have no npm),
+ * Deno's own `npm:typescript` from its cache, else installed into the npm
+ * cache. Rejects if none can be had (offline).
+ */
+export async function loadTypeScript(notebookDir: string, options: LoadOptions = {}): Promise<typeof TS> {
+  const {
+    deno = "Deno" in globalThis,
+    // A variable, not a literal: Node's type check can't resolve npm: specifiers.
+    importNpm = (specifier: string) => import(specifier),
+    install,
+  } = options;
+  const found = findTypeScript(notebookDir);
+  if (found !== null) return requireTypeScript(found);
+  if (deno) {
+    const module = (await importNpm(`npm:typescript@${TYPESCRIPT_RANGE}`)) as { default?: typeof TS };
+    return module.default ?? (module as typeof TS);
+  }
+  return requireTypeScript(await locateTypeScript(notebookDir, install));
+}

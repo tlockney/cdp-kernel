@@ -35,7 +35,6 @@ export interface ConnectionInfo {
   hb_port: number;
 }
 
-
 /** Larger files get no source lines in a traceback. */
 const MAX_SOURCE_BYTES = 1 << 20;
 

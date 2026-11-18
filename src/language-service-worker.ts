@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { ensureInstalledAsync } from "../runtime/node-hooks.mjs";
 import { kernelGlobals, NotebookTypes } from "./notebook-types.ts";
 import { DenoResolver, denoTypes } from "./deno-types.ts";
-import { locateTypeScript, requireTypeScript } from "./typescript-package.ts";
+import { loadTypeScript } from "./typescript-package.ts";
 import type { WorkerOptions, WorkerRequest, WorkerResponse } from "./language-service.ts";
 
 const options = workerData as WorkerOptions;
@@ -60,7 +60,7 @@ async function addTypePackage(types: NotebookTypes, { name, range }: { name: str
 async function start(): Promise<void> {
   let ts;
   try {
-    ts = requireTypeScript(await locateTypeScript(options.notebookDir));
+    ts = await loadTypeScript(options.notebookDir);
   } catch (err) {
     // One log line: an npm failure's own output can run to many.
     const reason = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").trim().slice(0, 500);

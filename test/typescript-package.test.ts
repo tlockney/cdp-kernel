@@ -6,9 +6,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { aliasFor } from "../runtime/node-hooks.mjs";
+import { KernelCore } from "../src/kernel-core.ts";
+import { FakeChannels } from "./fake-channels.ts";
 import {
   cachedTypeScript,
   findTypeScript,
+  loadTypeScript,
   locateTypeScript,
   projectTypeScript,
   requireTypeScript,
@@ -89,4 +92,61 @@ test("a failed install (offline) rejects", async (t) => {
     /ENOTFOUND/,
   );
   assert.equal(cachedTypeScript(), null);
+});
+
+test("on a Deno host without one, Deno's own npm:typescript is used, not the npm CLI", async (t) => {
+  useCache(t);
+  const notebook = tempDir(t, "cdpk-nb-");
+  const imported: string[] = [];
+  const fake = { version: "6.9.9" };
+  const ts = await loadTypeScript(notebook, {
+    deno: true,
+    importNpm: async (specifier) => {
+      imported.push(specifier);
+      return { default: fake };
+    },
+    install: () => Promise.reject(new Error("the npm CLI isn't used on Deno")),
+  });
+  assert.equal(ts, fake);
+  assert.deepEqual(imported, [`npm:typescript@${TYPESCRIPT_RANGE}`]);
+  // A project's own still comes first.
+  assert.match((await loadTypeScript(repo, { deno: true, importNpm: () => Promise.reject(new Error("unused")) })).version, /^6\./);
+});
+
+test("on a Node host, a missing typescript is installed with the npm CLI", async (t) => {
+  const cache = useCache(t);
+  const notebook = tempDir(t, "cdpk-nb-");
+  const ts = await loadTypeScript(notebook, {
+    deno: false,
+    importNpm: () => Promise.reject(new Error("npm: imports are Deno's")),
+    install: async () => linkCachedTypeScript(cache),
+  });
+  assert.equal(ts.version, cachedTypeScript()?.version);
+});
+
+test("kernel_info reads the TypeScript version each time, so a cache install shows (#340)", async (t) => {
+  const cache = useCache(t);
+  const notebook = tempDir(t, "cdpk-nb-");
+  const channels = new FakeChannels();
+  const core = new KernelCore({
+    runtime: "test",
+    version: "0",
+    // As src/kernel.ts gives it.
+    get languageVersion() {
+      return findTypeScript(notebook)?.version;
+    },
+    channels,
+    launchTarget: () => new Promise(() => {}),
+    log: () => {},
+    exit: () => {},
+  });
+  void core.run();
+  const version = async () => {
+    const id = channels.push("shell", "kernel_info_request");
+    return ((await channels.replyOf("kernel_info_reply", id)).content.language_info as { version: string }).version;
+  };
+  assert.equal(await version(), "6");
+  linkCachedTypeScript(cache);
+  assert.equal(await version(), cachedTypeScript()?.version);
+  assert.match(await version(), /^6\.\d+\.\d+/);
 });
