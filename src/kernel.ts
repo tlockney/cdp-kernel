@@ -128,6 +128,17 @@ function languageServiceOptions(
 }
 
 /**
+ * kernel_info's language_info.version (#340): the TypeScript the language
+ * service loaded, else the one it would load (#513), read on each request
+ * because a cache install can finish while the kernel runs. Undefined
+ * without a language service, or before there's a TypeScript.
+ */
+export function languageVersion(notebookDir: string, service: LanguageService | null): string | undefined {
+  if (service === null) return undefined;
+  return service.typescriptVersion ?? findTypeScript(notebookDir)?.version;
+}
+
+/**
  * A kernel on its connection file's ports, running cells on a target
  * runtime launched as a child process. The message handling is
  * KernelCore's (src/kernel-core.ts); this is its Node wiring.
@@ -169,6 +180,9 @@ export class Kernel {
     // installed, unless CDP_KERNEL_CRASH_REPORTS=1.
     const reporter = crashReporter({ target: runtime });
     if (reporter) reportUncaught(reporter);
+    const types = options.languageService === false
+      ? null
+      : new LanguageService(languageServiceOptions(runtime, notebookDir, project), { log });
     this.#core = new KernelCore({
       runtime,
       version: VERSION,
@@ -176,7 +190,7 @@ export class Kernel {
       // (#513): kernel_info reads it each time, as a cache install can
       // finish while the kernel runs.
       get languageVersion() {
-        return options.languageService === false ? undefined : findTypeScript(notebookDir)?.version;
+        return languageVersion(notebookDir, types);
       },
       channels: new ZmqChannels(conn, log),
       launchTarget(events) {
@@ -188,9 +202,7 @@ export class Kernel {
       typeStrip: options.typeStrip,
       transform: project?.transform,
       warning,
-      types: options.languageService === false
-        ? null
-        : new LanguageService(languageServiceOptions(runtime, notebookDir, project), { log }),
+      types,
       createDebugger: runtime === "node" || runtime === "deno"
         ? (publish, transformOptions) => new Debugger(publish, transformOptions)
         : undefined,

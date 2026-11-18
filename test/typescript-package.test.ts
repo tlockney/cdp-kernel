@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { aliasFor } from "../runtime/node-hooks.mjs";
 import { KernelCore } from "../src/kernel-core.ts";
+import { languageVersion } from "../src/kernel.ts";
+import { LanguageService } from "../src/language-service.ts";
 import { FakeChannels } from "./fake-channels.ts";
 import {
   cachedTypeScript,
@@ -127,13 +129,17 @@ test("on a Node host, a missing typescript is installed with the npm CLI", async
 test("kernel_info reads the TypeScript version each time, so a cache install shows (#340)", async (t) => {
   const cache = useCache(t);
   const notebook = tempDir(t, "cdpk-nb-");
+  const service = new LanguageService(
+    { notebookDir: notebook, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] },
+  );
+  t.after(() => service.close());
   const channels = new FakeChannels();
   const core = new KernelCore({
     runtime: "test",
     version: "0",
     // As src/kernel.ts gives it.
     get languageVersion() {
-      return findTypeScript(notebook)?.version;
+      return languageVersion(notebook, service);
     },
     channels,
     launchTarget: () => new Promise(() => {}),
@@ -149,4 +155,20 @@ test("kernel_info reads the TypeScript version each time, so a cache install sho
   linkCachedTypeScript(cache);
   assert.equal(await version(), cachedTypeScript()?.version);
   assert.match(await version(), /^6\.\d+\.\d+/);
+});
+
+test("the language version: none without a service, else what the worker loaded first (#513)", async (t) => {
+  useCache(t);
+  const notebook = tempDir(t, "cdpk-nb-");
+  assert.equal(languageVersion(repo, null), undefined);
+  // A worker that loaded TypeScript where findTypeScript doesn't look (Deno's
+  // cache, on a Deno host): the repo's, while the notebook has none.
+  const service = new LanguageService({ notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] });
+  t.after(() => service.close());
+  assert.equal(languageVersion(notebook, service), undefined);
+  for (let i = 0; i < 100 && service.typescriptVersion === undefined; i++) {
+    await service.complete("Math.", 5);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(languageVersion(notebook, service), projectTypeScript(repo)?.version);
 });

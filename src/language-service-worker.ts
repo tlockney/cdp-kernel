@@ -85,6 +85,7 @@ async function start(): Promise<void> {
   for (const code of cells) service.addCell(code);
   cells = [];
   types = service;
+  parentPort?.postMessage({ loaded: ts.version } satisfies WorkerResponse);
   for (const pkg of options.typePackages) void addTypePackage(service, pkg);
 }
 
