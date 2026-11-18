@@ -7,9 +7,9 @@ Issue and pull request numbers refer to
 ## Unreleased
 
 - The docs site no longer serves the widget screenshots `progress.png`,
-  `temperature.png` and `dice.png`. Only 0.12.1's typings linked to them,
-  so editor hovers on 0.12.1 lose those images; upgrade to get the
-  current typings
+  `temperature.png` and `dice.png`. Typings from 0.9.0 through 0.12.1
+  linked to them, so editor hovers on those versions lose the images;
+  upgrade to get the current typings
   ([#503](https://github.com/tlockney/cdp-kernel/issues/503)).
 
 ## 0.12.3 (2026-11-17)
