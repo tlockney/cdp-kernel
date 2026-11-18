@@ -150,8 +150,9 @@ def checks(runtime, workdir, offline):
         assert runtime.split("-")[0] in info["banner"], info["banner"]
         package = json.loads((ROOT / "package.json").read_text())
         assert info["implementation_version"] == package["version"], info["implementation_version"]
-        # The TypeScript the kernel ships (#340).
-        major = package["dependencies"]["typescript"].lstrip("^~").split(".")[0]
+        # The TypeScript the language service uses (#340): the notebook's,
+        # else the npm cache's, else the supported major (#513).
+        major = package["devDependencies"]["typescript"].lstrip("^~").split(".")[0]
         assert info["language_info"]["version"].split(".")[0] == major, info["language_info"]
 
     def params_and_result(s):
