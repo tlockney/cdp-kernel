@@ -49,6 +49,38 @@ export interface CompletionResult {
   entries: CompletionEntry[];
 }
 
+/** A type or syntax error in the cell being checked (#514). */
+export interface CellDiagnostic {
+  /** Where it starts and ends in the cell, as UTF-16 indices. */
+  start: number;
+  end: number;
+  severity: "error" | "warning";
+  /** TypeScript's diagnostic code, e.g. 2322. */
+  code: number;
+  message: string;
+}
+
+/**
+ * Errors that notebook rules make false, by TypeScript code: they are
+ * kept only when the name or module they are about isn't one of these
+ * cases (see #ignored).
+ */
+const REDECLARATION = new Set([
+  2300, // Duplicate identifier 'x'.
+  2323, // Cannot redeclare exported variable 'x'.
+  2393, // Duplicate function implementation.
+  2403, // Subsequent variable declarations must have the same type.
+  2440, // Import declaration conflicts with local declaration of 'x'.
+  2451, // Cannot redeclare block-scoped variable 'x'.
+  2567, // Enum declarations can only merge with namespace or other enum declarations.
+]);
+const MODULE_NOT_FOUND = new Set([
+  2307, // Cannot find module 'x' or its corresponding type declarations.
+  2792, // Cannot find module 'x'. Did you mean to set the 'moduleResolution' option ...?
+]);
+/** Could not find a declaration file for module 'x' (an npm: package without types). */
+const UNTYPED_MODULE = 7016;
+
 /** One top-level statement of an executed cell, and the names it declares. */
 interface Statement {
   start: number;
@@ -83,6 +115,8 @@ export class NotebookTypes {
   #text = PREFIX;
   #version = 0;
   #projectVersion = 0;
+  /** When a diagnostics check gives up (Date.now() ms); Infinity outside one. */
+  #deadline = Infinity;
 
   constructor(ts: typeof TS, options: NotebookTypesOptions) {
     this.#ts = ts;
@@ -212,6 +246,54 @@ export class NotebookTypes {
     return lines.join("\n");
   }
 
+  /**
+   * Type and syntax errors in `code`, the cell being edited, checked
+   * against the cells that ran (#514). Null when the check takes longer
+   * than `budgetMs`. Errors that come from notebook rules (a name declared
+   * again, an import that hasn't run yet) are left out.
+   */
+  diagnostics(code: string, budgetMs: number): CellDiagnostic[] | null {
+    const ts = this.#ts;
+    const offset = this.#setDocument(code);
+    const end = offset + code.length;
+    let found: TS.Diagnostic[];
+    this.#deadline = Date.now() + budgetMs;
+    try {
+      found = [...this.#service.getSyntacticDiagnostics(this.#file), ...this.#service.getSemanticDiagnostics(this.#file)];
+    } catch (err) {
+      if (err instanceof ts.OperationCanceledException) return null;
+      throw err;
+    } finally {
+      this.#deadline = Infinity;
+    }
+    const result: CellDiagnostic[] = [];
+    for (const d of found) {
+      if (d.start === undefined || d.start < offset || d.start > end) continue;
+      if (d.category !== ts.DiagnosticCategory.Error && d.category !== ts.DiagnosticCategory.Warning) continue;
+      const start = d.start - offset;
+      const stop = Math.min(d.start + (d.length ?? 0), end) - offset;
+      if (this.#ignored(d.code, code.slice(start, stop))) continue;
+      result.push({
+        start,
+        end: stop,
+        severity: d.category === ts.DiagnosticCategory.Error ? "error" : "warning",
+        code: d.code,
+        message: ts.flattenDiagnosticMessageText(d.messageText, "\n"),
+      });
+    }
+    return result;
+  }
+
+  /** Whether diagnostic `code` on `text` (the span it marks) is one notebook rules cause. */
+  #ignored(code: number, text: string): boolean {
+    // A cell may declare again what an earlier cell declared: it replaces it.
+    if (REDECLARATION.has(code)) return this.#cells.some((cell) => cell.statements.some((s) => s.names.includes(text)));
+    // A package an import hasn't installed yet, or one without types.
+    // A relative path that isn't there is a real error.
+    if (MODULE_NOT_FOUND.has(code)) return !/^["'`](?:\.{0,2}\/)/.test(text);
+    return code === UNTYPED_MODULE;
+  }
+
   /** Sets the virtual file to the history plus `code`; returns where `code` starts. */
   #setDocument(code: string): number {
     const history = this.#history(new Set(this.#statements(code).flatMap((s) => s.names)));
@@ -336,6 +418,7 @@ export class NotebookTypes {
       readDirectory: ts.sys.readDirectory,
       directoryExists: ts.sys.directoryExists,
       getDirectories: ts.sys.getDirectories,
+      getCancellationToken: () => ({ isCancellationRequested: () => Date.now() > this.#deadline }),
       resolveModuleNameLiterals: (literals, containingFile) =>
         literals.map((literal) => this.#resolve(literal.text, containingFile)),
     };
@@ -354,11 +437,13 @@ function extensionOf(ts: typeof TS, path: string): TS.Extension | undefined {
  * Declarations for the names the kernel adds to every target, as in
  * src/globals.ts. `display` is runtime/display.mjs's path; its sibling
  * display.d.mts types `jupyter`. Without it (a kernel run from JSR, whose
- * runtime files aren't local), `jupyter` is untyped.
+ * runtime files aren't local), `jupyter` is untyped. `untyped` names
+ * globals the target has without types, declared `any` so they aren't
+ * errors (#514).
  */
-export function kernelGlobals(display: string | null): string {
+export function kernelGlobals(display: string | null, untyped: string[] = []): string {
   const jupyter = display === null ? "any" : `import(${JSON.stringify(display)}).JupyterNamespace`;
-  return `declare global {
+  return `declare global {${untyped.map((name) => `\n  var ${name}: any;`).join("")}
   /** The notebook display API: display, md/html/svg templates, image, format, broadcast. */
   var jupyter: ${jupyter};
   /** Asks the frontend for a line of input. Null when the frontend didn't allow input for this cell. */

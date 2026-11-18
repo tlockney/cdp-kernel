@@ -18,6 +18,13 @@ Issue and pull request numbers refer to
   linked to them, so editor hovers on those versions lose the images;
   upgrade to get the current typings
   ([#503](https://github.com/tlockney/cdp-kernel/issues/503)).
+- Type errors as you type, for frontends that show them: the kernel
+  answers a `cdp-kernel.diagnostics.v1` comm with the errors TypeScript
+  finds in the cell being edited, checked against the cells that ran,
+  leaving out those notebook rules make false (a name declared again, an
+  import that hasn't run). See
+  [Type errors for frontends](https://cdp-kernel.org/docs/notebooks#type-errors-for-frontends)
+  ([#514](https://github.com/tlockney/cdp-kernel/issues/514)).
 
 ## 0.12.3 (2026-11-17)
 

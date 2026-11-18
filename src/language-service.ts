@@ -6,9 +6,9 @@
 
 import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
-import type { CompletionResult } from "./notebook-types.ts";
+import type { CellDiagnostic, CompletionResult } from "./notebook-types.ts";
 
-export type { CompletionEntry, CompletionResult } from "./notebook-types.ts";
+export type { CellDiagnostic, CompletionEntry, CompletionResult } from "./notebook-types.ts";
 
 /** What the worker is started with. */
 export interface WorkerOptions {
@@ -25,15 +25,20 @@ export interface WorkerOptions {
   display: string | null;
   /** Type packages for the target's globals, e.g. @types/node. */
   typePackages: { name: string; range: string }[];
+  /** Globals the target has but no types for, e.g. `Deno` on a --deno-compat Node: declared `any`. */
+  untypedGlobals?: string[];
 }
 
 export type WorkerRequest =
   | { type: "cell"; code: string }
   | { type: "reset" }
-  | { type: "complete" | "quickInfo"; id: number; code: string; cursor: number };
+  | { type: "complete" | "quickInfo"; id: number; code: string; cursor: number }
+  | { type: "diagnostics"; id: number; code: string; budgetMs: number };
+
+type Result = CompletionResult | CellDiagnostic[] | string | null;
 
 export type WorkerResponse =
-  | { id: number; result: CompletionResult | string | null }
+  | { id: number; result: Result }
   | { id: number; error: string }
   /** TypeScript couldn't be loaded or installed (#513): the worker is of no use. */
   | { unavailable: string }
@@ -109,15 +114,26 @@ export class LanguageService {
 
   /** Typed completions, or null if the service isn't ready within the budget. */
   async complete(code: string, cursor: number): Promise<CompletionResult | null> {
-    return (await this.#request("complete", code, cursor)) as CompletionResult | null;
+    return (await this.#request({ type: "complete", code, cursor })) as CompletionResult | null;
   }
 
   /** Type, signature and JSDoc for the name at the cursor, or null. */
   async quickInfo(code: string, cursor: number): Promise<string | null> {
-    return (await this.#request("quickInfo", code, cursor)) as string | null;
+    return (await this.#request({ type: "quickInfo", code, cursor })) as string | null;
   }
 
-  #request(type: "complete" | "quickInfo", code: string, cursor: number): Promise<CompletionResult | string | null> {
+  /**
+   * Type and syntax errors in `code`, checked against the cells that ran
+   * (#514), or null if the service can't tell within the budget.
+   */
+  async diagnostics(code: string): Promise<CellDiagnostic[] | null> {
+    return (await this.#request({ type: "diagnostics", code, budgetMs: this.#budgetMs })) as CellDiagnostic[] | null;
+  }
+
+  #request(
+    request: { type: "complete" | "quickInfo"; code: string; cursor: number } | { type: "diagnostics"; code: string; budgetMs: number },
+  ): Promise<Result> {
+    const type = request.type;
     const worker = this.#ensureWorker();
     if (worker === null) return Promise.resolve(null);
     const id = this.#nextId++;
@@ -130,7 +146,7 @@ export class LanguageService {
         resolve(response !== null && "result" in response ? response.result : null);
       };
       this.#pending.set(id, settle);
-      worker.postMessage({ type, id, code, cursor } satisfies WorkerRequest);
+      worker.postMessage({ ...request, id } satisfies WorkerRequest);
     });
   }
 

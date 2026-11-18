@@ -12,7 +12,7 @@
 import { type Header, type JsonObject, type KernelMessage, makeHeader, type OutgoingMessage, PROTOCOL_VERSION } from "./message.ts";
 import { Interrupted, type KernelTarget, type TargetEvents, type TargetMessage } from "./target-api.ts";
 import type { Debugger } from "./debugger.ts";
-import type { CompletionResult } from "./notebook-types.ts";
+import type { CellDiagnostic, CompletionResult } from "./notebook-types.ts";
 import {
   type CellTransformOptions,
   CellSyntaxError,
@@ -58,6 +58,8 @@ export interface TypeService {
   addCell(code: string): void;
   complete(code: string, cursor: number): Promise<CompletionResult | null>;
   quickInfo(code: string, cursor: number): Promise<string | null>;
+  /** Type and syntax errors in a cell being edited (#514); null when unknown. */
+  diagnostics?(code: string): Promise<CellDiagnostic[] | null>;
 }
 
 /** What a KernelCore gets from the process it runs in. */
@@ -98,9 +100,15 @@ export interface KernelHost {
 
 /**
  * kernel_info's language_info.version when the host doesn't know the
- * installed TypeScript's: the major version package.json depends on.
+ * TypeScript the language service uses: the major version it supports.
  */
 export const TYPESCRIPT_VERSION = "6";
+
+/**
+ * The kernel's own comm target for type errors in a cell being edited
+ * (#514). Jupyter has no message for diagnostics; see docs/jupyter-api.md.
+ */
+export const DIAGNOSTICS_TARGET = "cdp-kernel.diagnostics.v1";
 
 /** Errors from launching a target, which `KernelHost.fault` doesn't get. */
 const launchFailures = new WeakSet<object>();
@@ -333,8 +341,44 @@ export class KernelCore {
     return comms;
   }
 
+  /**
+   * A message for the diagnostics comm (#514), which the kernel answers
+   * itself, without the runtime. False for any other comm.
+   */
+  async #diagnosticsComm(msg: KernelMessage): Promise<boolean> {
+    const type = msg.header.msg_type;
+    const commId = String(msg.content.comm_id ?? "");
+    const parent = msg.header;
+    if (type === "comm_open") {
+      if (msg.content.target_name !== DIAGNOSTICS_TARGET) return false;
+      // No language service (--no-language-service): as for an unknown target.
+      if (this.#types?.diagnostics === undefined) this.#publish("comm_close", { comm_id: commId, data: {} }, { parent });
+      else this.#comms.set(commId, DIAGNOSTICS_TARGET);
+      return true;
+    }
+    if (this.#comms.get(commId) !== DIAGNOSTICS_TARGET) return false;
+    if (type === "comm_close") {
+      this.#comms.delete(commId);
+      return true;
+    }
+    const data = (msg.content.data ?? {}) as JsonObject;
+    const code = typeof data.code === "string" ? data.code : "";
+    const found = (await this.#types?.diagnostics?.(code)) ?? null;
+    // Offsets in code points, as cursor_pos is.
+    const diagnostics = found?.map((d) => ({
+      start: utf16ToCodePointIndex(code, d.start),
+      end: utf16ToCodePointIndex(code, d.end),
+      severity: d.severity,
+      code: d.code,
+      message: d.message,
+    })) ?? null;
+    this.#publish("comm_msg", { comm_id: commId, data: { request: data.request ?? null, diagnostics } }, { parent });
+    return true;
+  }
+
   /** A frontend comm message. The busy/idle status around it is the caller's. */
   async #handleComm(msg: KernelMessage): Promise<void> {
+    if (await this.#diagnosticsComm(msg)) return;
     const type = msg.header.msg_type;
     const commId = String(msg.content.comm_id ?? "");
     const target = await this.#ensureTarget();
