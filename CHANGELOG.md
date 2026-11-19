@@ -13,6 +13,11 @@ Issue and pull request numbers refer to
   runtime values meanwhile, and stays untyped offline. See
   [TypeScript for typed completion](https://cdp-kernel.org/docs/install#typescript-for-typed-completion)
   ([#513](https://github.com/tlockney/cdp-kernel/issues/513)).
+- The docs site no longer serves the widget screenshots `progress.png`,
+  `temperature.png` and `dice.png`. Typings from 0.9.0 through 0.12.1
+  linked to them, so editor hovers on those versions lose the images;
+  upgrade to get the current typings
+  ([#503](https://github.com/tlockney/cdp-kernel/issues/503)).
 
 ## 0.12.3 (2026-11-17)
 
