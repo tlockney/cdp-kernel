@@ -264,7 +264,9 @@ User.safeParse({ name: "Ada", age: 36.5 }).error?.issues
 ```
 
 Cells aren't type-checked, as in Deno: types are removed and the code runs.
-For type errors in your editor, see [Editor types](editor-types.md).
+For type errors in your editor, see [Editor types](editor-types.md); a
+frontend can also ask the kernel for them as you type
+([Type errors for frontends](notebooks.md#type-errors-for-frontends)).
 
 ## Next steps
 

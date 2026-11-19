@@ -42,6 +42,10 @@ runtime versions and frontends are supported, and what may change before
   every target but workerd and celld).
 - `prompt()` and `confirm()`, interrupt that keeps state, Shift-Tab
   inspection, completion and history.
+- [Typed help](https://cdp-kernel.org/docs/notebooks#inspection-completion-and-history)
+  from TypeScript's language service: completion and tooltips from
+  declared types, and, for frontends that ask, type errors as you type,
+  signature help, go to definition and rename across cells.
 
 ## Install
 
