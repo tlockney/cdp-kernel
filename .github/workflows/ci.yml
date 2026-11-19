@@ -168,7 +168,12 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-1.64.1-chromium-webkit-firefox
-      - run: npx playwright install --with-deps chromium webkit firefox
+      # The browsers, then their system libraries with apt. When the Ubuntu
+      # archive is down, apt hangs: stop it and use the runner image's
+      # libraries, as ganymede-ui's CI does.
+      - run: |
+          npx playwright install chromium webkit firefox
+          timeout 5m npx playwright install-deps chromium webkit firefox || { sudo pkill -x apt-get || true; echo "::warning::apt failed; using the runner image's libraries"; }
         timeout-minutes: 10
       - run: CDPK_BROWSER=chromium node --test test/browser.test.ts test/browser-typescript.test.ts
         timeout-minutes: 5
