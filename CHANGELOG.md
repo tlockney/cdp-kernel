@@ -6,6 +6,15 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The browser kernel can have TypeScript's language service: the
+  `typescript` option to `startBrowserKernel` takes URLs for TypeScript,
+  its lib files and a Web Worker (`@tlockney/cdp-kernel/browser/language-worker`),
+  and typed completion, tooltips, type errors (`cdp-kernel.diagnostics.v1`)
+  and signature help, definition and rename (`cdp-kernel.language.v1`)
+  then work in a page as on the Node targets. Without the option nothing
+  changes. Types for imported packages aren't fetched yet, so they are
+  `any`. See [The browser](https://cdp-kernel.org/docs/integration-browser#typescript-language-service)
+  ([#524](https://github.com/tlockney/cdp-kernel/issues/524)).
 - Signature help, jump to definition and rename across cells, for
   frontends that offer them: the kernel answers a `cdp-kernel.language.v1`
   comm, from the cells the frontend shows, and a name declared again in a

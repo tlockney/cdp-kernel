@@ -15,19 +15,12 @@ import { ensureInstalledAsync } from "../runtime/node-hooks.mjs";
 import { kernelGlobals, NotebookTypes } from "./notebook-types.ts";
 import { DenoResolver, denoTypes } from "./deno-types.ts";
 import { loadTypeScript } from "./typescript-package.ts";
-import type { Result, WorkerOptions, WorkerRequest, WorkerResponse } from "./language-service.ts";
+import { LanguageServer } from "./language-server.ts";
+import type { WorkerOptions } from "./language-service.ts";
+import type { WorkerRequest, WorkerResponse } from "./language-client.ts";
 
 const options = workerData as WorkerOptions;
-/** Null until TypeScript is loaded. */
-let types: NotebookTypes | null = null;
-/** Cells that ran before TypeScript loaded, replayed to it. */
-let cells: string[] = [];
-/**
- * Type packages still loading, or failed: diagnostics wait for them, as
- * without them a target's globals are errors (#514).
- */
-let typePackagesPending = options.typePackages.length;
-let typePackagesFailed = false;
+const server = new LanguageServer((response) => parentPort?.postMessage(response), options.typePackages.length);
 
 /** A package's declaration entry point: package.json "types"/"typings", else index.d.ts. */
 function typesEntry(dir: string): string {
@@ -50,6 +43,7 @@ function typesEntry(dir: string): string {
  */
 async function addTypePackage(types: NotebookTypes, { name, range }: { name: string; range: string }): Promise<void> {
   const short = name.replace(/^@types\//, "");
+  let failed = false;
   try {
     if (types.resolvesTypes(short)) {
       types.addTypeNames([short]);
@@ -58,10 +52,10 @@ async function addTypePackage(types: NotebookTypes, { name, range }: { name: str
     const { dir, alias } = await ensureInstalledAsync({ name, range });
     types.addTypeFiles([typesEntry(join(dir, "node_modules", alias))]);
   } catch (err) {
-    typePackagesFailed = true;
+    failed = true;
     process.stderr.write(`[cdp-kernel] no ${name} for completion: ${err instanceof Error ? err.message : err}\n`);
   } finally {
-    typePackagesPending--;
+    server.typePackageDone(failed);
   }
 }
 
@@ -91,64 +85,11 @@ async function start(): Promise<void> {
     if (declarations !== null) service.addVirtualTypeFile("__cdpk_deno__.d.ts", declarations);
     else process.stderr.write("[cdp-kernel] no Deno types for completion: `deno types` failed\n");
   }
-  for (const code of cells) service.addCell(code);
-  cells = [];
-  types = service;
+  server.start(service);
   parentPort?.postMessage({ loaded: ts.version } satisfies WorkerResponse);
   for (const pkg of options.typePackages) void addTypePackage(service, pkg);
 }
 
 void start();
 
-/** The answer to a request for a loaded service. */
-function answer(types: NotebookTypes, request: Exclude<WorkerRequest, { type: "cell" | "reset" }>): Result {
-  // Without the target's type packages, its globals would be errors and
-  // unknown names, so these answer null until they are in (#514, #522).
-  const typesReady = typePackagesPending === 0 && !typePackagesFailed;
-  switch (request.type) {
-    case "complete":
-      return types.complete(request.code, request.cursor);
-    case "quickInfo":
-      return types.quickInfo(request.code, request.cursor);
-    case "diagnostics":
-      return typesReady ? types.diagnostics(request.code, request.budgetMs) : null;
-    case "signature":
-      return typesReady ? types.signature(request.code, request.cursor, request.budgetMs) : null;
-    case "definition":
-      return typesReady ? types.definition(request.cells, request.cell, request.cursor, request.budgetMs) : null;
-    case "rename":
-      return typesReady ? types.rename(request.cells, request.cell, request.cursor, request.newName, request.budgetMs) : null;
-  }
-}
-
-parentPort?.on("message", (request: WorkerRequest) => {
-  let response: WorkerResponse;
-  switch (request.type) {
-    case "cell":
-      if (types === null) cells.push(request.code);
-      else types.addCell(request.code);
-      return;
-    case "reset":
-      if (types === null) cells = [];
-      else types.reset();
-      return;
-    case "complete":
-    case "quickInfo":
-    case "diagnostics":
-    case "signature":
-    case "definition":
-    case "rename":
-      if (types === null) {
-        parentPort?.postMessage({ id: request.id, result: null } satisfies WorkerResponse);
-        return;
-      }
-      try {
-        // Without the target's type packages, its globals would be errors
-        // and unknown names; so these answer null until they are in (#514, #522).
-        response = { id: request.id, result: answer(types, request) };
-      } catch (err) {
-        response = { id: request.id, error: err instanceof Error ? err.stack ?? err.message : String(err) };
-      }
-      parentPort?.postMessage(response);
-  }
-});
+parentPort?.on("message", (request: WorkerRequest) => server.handle(request));
