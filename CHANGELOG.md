@@ -6,6 +6,8 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+## 0.14.0 (2026-11-19)
+
 - The browser kernel can have TypeScript's language service: the
   `typescript` option to `startBrowserKernel` takes URLs for TypeScript,
   its lib files and a Web Worker (`@tlockney/cdp-kernel/browser/language-worker`),
