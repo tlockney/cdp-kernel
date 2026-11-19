@@ -135,10 +135,6 @@ which the kernel doesn't carry: it is 9 MB, and TypeScript's lib files
 add more. A page that wants them passes the `typescript` option with
 files it serves:
 
-> [!NOTE]
-> **Unreleased.** Available only from a build of `main` (HEAD), not in
-> the latest release.
-
 ```js
 const kernel = startBrowserKernel({
   createWorker: () => new Worker(workerUrl, { type: "module" }),
