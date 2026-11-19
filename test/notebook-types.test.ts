@@ -264,6 +264,12 @@ test("definition: to an earlier cell, and to the same cell", () => {
   assert.deepEqual(places(same, types.definition(same, 0, 14, 10_000)), [{ cell: 0, start: 6, text: "n" }]);
 });
 
+test("definition: a redeclared statement is blanked, so later spans in its cell keep their offsets", () => {
+  const types = service();
+  const cells = ["const x = 1; const y = 2;", "const x = 3;", "y + x;"];
+  assert.deepEqual(places(cells, types.definition(cells, 2, 0, 10_000)), [{ cell: 0, start: 19, text: "y" }]);
+});
+
 test("definition: only inside the cells; a name from a package or an unknown name gives none", () => {
   const types = service({ types: ["node"] });
   const cells = ["import { join } from 'node:path';", "join('a', 'b');\nprocess.cwd();\nnope;\nconst o = { k: 1 };\no.k;"];
