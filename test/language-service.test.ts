@@ -54,6 +54,54 @@ test("the worker gives a cell's type errors (#514)", async () => {
   }
 });
 
+test("the worker answers signature, definition and rename requests (#522)", async () => {
+  const service = new LanguageService(
+    { notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [{ name: "@types/node", range: "24" }] },
+    { budgetMs: 5_000 },
+  );
+  try {
+    const cells = ["function add(a: number, b: number) { return a + b; }", "add(1, 2);\nprocess.cwd();"];
+    service.addCell("function add(a: number, b: number) { return a + b; }");
+    // The worker answers null until TypeScript and the type package are in.
+    let found = null;
+    for (let i = 0; i < 100 && found === null; i++) found = await service.signature("add(1, ", 7);
+    assert.equal(found?.label, "add(a: number, b: number): number");
+    assert.equal(found?.activeParameter, 1);
+    // Definition and rename take the notebook's cells from the request, not the cells that ran.
+    assert.deepEqual(await service.definition(cells, 1, 1), [{ cell: 0, start: 9, end: 12 }]);
+    assert.deepEqual(await service.definition(cells, 1, cells[1].indexOf("process") + 1), []);
+    assert.deepEqual(await service.rename(cells, 1, 1, "plus"), {
+      edits: [{ cell: 0, start: 9, end: 12, text: "plus" }, { cell: 1, start: 0, end: 3, text: "plus" }],
+    });
+    const refused = await service.rename(cells, 1, cells[1].indexOf("process") + 1, "p");
+    assert.ok(refused !== null && "error" in refused, JSON.stringify(refused));
+  } finally {
+    service.close();
+  }
+});
+
+test("without the target's type package, signature, definition and rename answer null (#522)", async (t) => {
+  // No npm on PATH: the package's install fails at once, as it does offline.
+  bareNotebook(t, { PATH: "" });
+  const service = new LanguageService(
+    { notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [{ name: "@types/cdpk-no-such-package", range: "1" }] },
+    { budgetMs: 5_000 },
+  );
+  try {
+    const cells = ["const a = 1;", "a;"];
+    // TypeScript is the repo's, so completion works while the package is missing.
+    assert.deepEqual((await completeWhenReady(service, "Math.PI.toFix")).entries.map((e) => e.name), ["toFixed"]);
+    for (let i = 0; i < 3; i++) {
+      assert.equal(await service.signature("Math.max(", 9), null);
+      assert.equal(await service.definition(cells, 1, 0), null);
+      assert.equal(await service.rename(cells, 1, 0, "b"), null);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  } finally {
+    service.close();
+  }
+});
+
 test("a request the worker can't answer within the budget gets null", async () => {
   const service = new LanguageService({ notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] }, { budgetMs: 1 });
   try {
@@ -152,6 +200,9 @@ test("offline with an empty cache, requests get null and the kernel logs one lin
     }
     for (let i = 0; i < 3; i++) assert.equal(await service.complete("Math.", 5), null);
     assert.equal(await service.diagnostics("const n: string = 1"), null);
+    assert.equal(await service.signature("Math.max(", 9), null);
+    assert.equal(await service.definition(["const a = 1;", "a;"], 1, 0), null);
+    assert.equal(await service.rename(["const a = 1;", "a;"], 1, 0, "b"), null);
     assert.equal(logs.length, 1, logs.join("\n"));
     assert.match(logs[0], /^typed completion unavailable: no typescript: npm install typescript@\^6\.0\.3 failed: .+$/);
   } finally {

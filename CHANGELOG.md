@@ -4,6 +4,15 @@ What changed in each release of `@tlockney/cdp-kernel` (npm and JSR).
 Issue and pull request numbers refer to
 [tlockney/cdp-kernel](https://github.com/tlockney/cdp-kernel).
 
+## Unreleased
+
+- Signature help, jump to definition and rename across cells, for
+  frontends that offer them: the kernel answers a `cdp-kernel.language.v1`
+  comm, from the cells the frontend shows, and a name declared again in a
+  later cell is renamed one declaration at a time. See
+  [Signatures, definitions and renames for frontends](https://cdp-kernel.org/docs/notebooks#signatures-definitions-and-renames-for-frontends)
+  ([#522](https://github.com/tlockney/cdp-kernel/issues/522)).
+
 ## 0.13.0 (2026-11-19)
 
 - `cdp-kernel install` no longer says "fnm has no default alias" for a

@@ -15,7 +15,7 @@ import { ensureInstalledAsync } from "../runtime/node-hooks.mjs";
 import { kernelGlobals, NotebookTypes } from "./notebook-types.ts";
 import { DenoResolver, denoTypes } from "./deno-types.ts";
 import { loadTypeScript } from "./typescript-package.ts";
-import type { WorkerOptions, WorkerRequest, WorkerResponse } from "./language-service.ts";
+import type { Result, WorkerOptions, WorkerRequest, WorkerResponse } from "./language-service.ts";
 
 const options = workerData as WorkerOptions;
 /** Null until TypeScript is loaded. */
@@ -100,6 +100,27 @@ async function start(): Promise<void> {
 
 void start();
 
+/** The answer to a request for a loaded service. */
+function answer(types: NotebookTypes, request: Exclude<WorkerRequest, { type: "cell" | "reset" }>): Result {
+  // Without the target's type packages, its globals would be errors and
+  // unknown names, so these answer null until they are in (#514, #522).
+  const typesReady = typePackagesPending === 0 && !typePackagesFailed;
+  switch (request.type) {
+    case "complete":
+      return types.complete(request.code, request.cursor);
+    case "quickInfo":
+      return types.quickInfo(request.code, request.cursor);
+    case "diagnostics":
+      return typesReady ? types.diagnostics(request.code, request.budgetMs) : null;
+    case "signature":
+      return typesReady ? types.signature(request.code, request.cursor, request.budgetMs) : null;
+    case "definition":
+      return typesReady ? types.definition(request.cells, request.cell, request.cursor, request.budgetMs) : null;
+    case "rename":
+      return typesReady ? types.rename(request.cells, request.cell, request.cursor, request.newName, request.budgetMs) : null;
+  }
+}
+
 parentPort?.on("message", (request: WorkerRequest) => {
   let response: WorkerResponse;
   switch (request.type) {
@@ -114,16 +135,17 @@ parentPort?.on("message", (request: WorkerRequest) => {
     case "complete":
     case "quickInfo":
     case "diagnostics":
+    case "signature":
+    case "definition":
+    case "rename":
       if (types === null) {
         parentPort?.postMessage({ id: request.id, result: null } satisfies WorkerResponse);
         return;
       }
       try {
-        if (request.type === "complete") response = { id: request.id, result: types.complete(request.code, request.cursor) };
-        else if (request.type === "quickInfo") response = { id: request.id, result: types.quickInfo(request.code, request.cursor) };
-        // Without the target's type packages, its globals would be errors.
-        else if (typePackagesPending > 0 || typePackagesFailed) response = { id: request.id, result: null };
-        else response = { id: request.id, result: types.diagnostics(request.code, (request as Extract<WorkerRequest, { type: "diagnostics" }>).budgetMs) };
+        // Without the target's type packages, its globals would be errors
+        // and unknown names; so these answer null until they are in (#514, #522).
+        response = { id: request.id, result: answer(types, request) };
       } catch (err) {
         response = { id: request.id, error: err instanceof Error ? err.stack ?? err.message : String(err) };
       }

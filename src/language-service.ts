@@ -6,9 +6,17 @@
 
 import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
-import type { CellDiagnostic, CompletionResult } from "./notebook-types.ts";
+import type { CellDiagnostic, CellSpan, CompletionResult, RenameResult, SignatureHelp } from "./notebook-types.ts";
 
-export type { CellDiagnostic, CompletionEntry, CompletionResult } from "./notebook-types.ts";
+export type {
+  CellDiagnostic,
+  CellEdit,
+  CellSpan,
+  CompletionEntry,
+  CompletionResult,
+  RenameResult,
+  SignatureHelp,
+} from "./notebook-types.ts";
 
 /** What the worker is started with. */
 export interface WorkerOptions {
@@ -33,9 +41,15 @@ export type WorkerRequest =
   | { type: "cell"; code: string }
   | { type: "reset" }
   | { type: "complete" | "quickInfo"; id: number; code: string; cursor: number }
-  | { type: "diagnostics"; id: number; code: string; budgetMs: number };
+  | { type: "diagnostics"; id: number; code: string; budgetMs: number }
+  | { type: "signature"; id: number; code: string; cursor: number; budgetMs: number }
+  | { type: "definition"; id: number; cells: string[]; cell: number; cursor: number; budgetMs: number }
+  | { type: "rename"; id: number; cells: string[]; cell: number; cursor: number; newName: string; budgetMs: number };
 
-type Result = CompletionResult | CellDiagnostic[] | string | null;
+export type Result = CompletionResult | CellDiagnostic[] | SignatureHelp | CellSpan[] | RenameResult | string | null;
+
+/** A request before it has an id. */
+type Query = WorkerRequest extends infer R ? R extends { id: number } ? Omit<R, "id"> : never : never;
 
 export type WorkerResponse =
   | { id: number; result: Result }
@@ -130,9 +144,28 @@ export class LanguageService {
     return (await this.#request({ type: "diagnostics", code, budgetMs: this.#budgetMs })) as CellDiagnostic[] | null;
   }
 
-  #request(
-    request: { type: "complete" | "quickInfo"; code: string; cursor: number } | { type: "diagnostics"; code: string; budgetMs: number },
-  ): Promise<Result> {
+  /**
+   * The signature of the call the cursor is in, checked against the cells
+   * that ran (#522), or null.
+   */
+  async signature(code: string, cursor: number): Promise<SignatureHelp | null> {
+    return (await this.#request({ type: "signature", code, cursor, budgetMs: this.#budgetMs })) as SignatureHelp | null;
+  }
+
+  /**
+   * Where the name at `cursor` in `cells[cell]` is declared, among the
+   * notebook's cells as the frontend has them (#522); null when unknown.
+   */
+  async definition(cells: string[], cell: number, cursor: number): Promise<CellSpan[] | null> {
+    return (await this.#request({ type: "definition", cells, cell, cursor, budgetMs: this.#budgetMs })) as CellSpan[] | null;
+  }
+
+  /** The edits that rename the name at `cursor` across `cells` (#522), or why not; null when unknown. */
+  async rename(cells: string[], cell: number, cursor: number, newName: string): Promise<RenameResult | null> {
+    return (await this.#request({ type: "rename", cells, cell, cursor, newName, budgetMs: this.#budgetMs })) as RenameResult | null;
+  }
+
+  #request(request: Query): Promise<Result> {
     const type = request.type;
     const worker = this.#ensureWorker();
     if (worker === null) return Promise.resolve(null);

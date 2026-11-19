@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import ts from "typescript";
-import { kernelGlobals, NotebookTypes } from "../src/notebook-types.ts";
+import { cellSpan, kernelGlobals, NotebookTypes } from "../src/notebook-types.ts";
 import { aliasFor } from "../runtime/node-hooks.mjs";
 
 const repo = join(import.meta.dirname, "..");
@@ -214,4 +214,240 @@ test("diagnostics: a check over its budget gives null", () => {
   assert.equal(types.diagnostics(big, 1), null);
   // The next check isn't cut short.
   assert.deepEqual(errors(types, "const n: string = 1")?.map((e) => e.code), [2322]);
+});
+
+// --- Signature, definition and rename (#522) ----------------------------------
+
+test("signature: the call's signature with the active parameter", () => {
+  const types = service();
+  types.addCell("/** Adds two numbers. */\nfunction add(a: number, b: number): number { return a + b; }");
+  const first = types.signature("add(1", 5, 10_000);
+  assert.equal(first?.label, "add(a: number, b: number): number");
+  assert.equal(first?.documentation, "Adds two numbers.");
+  assert.deepEqual(first?.parameters.map((p) => p.label), ["a: number", "b: number"]);
+  assert.equal(first?.activeParameter, 0);
+  assert.equal(types.signature("add(1, ", 7, 10_000)?.activeParameter, 1);
+  // Outside a call there is nothing to show.
+  assert.equal(types.signature("add", 3, 10_000), null);
+  // A rest parameter stays active for every argument after it.
+  types.addCell("function all(...xs: number[]) {}");
+  assert.equal(types.signature("all(1, 2, 3, ", 13, 10_000)?.activeParameter, 0);
+});
+
+test("signature: parameter documentation, and the overload that fits", () => {
+  const types = service();
+  types.addCell("/**\n * Greets.\n * @param who the name\n */\nfunction greet(who: string): void {}\nfunction pick(a: string): string;\nfunction pick(a: number, b: number): number;\nfunction pick(a: any, b?: any): any { return a; }");
+  assert.equal(types.signature("greet(", 6, 10_000)?.parameters[0].documentation, "the name");
+  assert.equal(types.signature("pick(1, ", 8, 10_000)?.label, "pick(a: number, b: number): number");
+});
+
+test("signature: a check over its budget gives null", () => {
+  const types = service();
+  const big = Array.from({ length: 3000 }, (_, i) => `const v${i}: number = [1, 2, 3].map((x) => x * ${i}).reduce((a, b) => a + b, 0);`).join("\n");
+  types.addCell(big);
+  assert.equal(types.signature("Math.max(", 9, 1), null);
+});
+
+/** The cell, start and text of each location. */
+function places(cells: string[], spans: { cell: number; start: number; end: number }[] | null) {
+  return spans?.map((s) => ({ cell: s.cell, start: s.start, text: cells[s.cell].slice(s.start, s.end) }));
+}
+
+test("definition: to an earlier cell, and to the same cell", () => {
+  const types = service();
+  const cells = ["const base = 1;", "function area(w: number) { return w * base; }", "area(base);"];
+  assert.deepEqual(places(cells, types.definition(cells, 2, 1, 10_000)), [{ cell: 1, start: 9, text: "area" }]);
+  assert.deepEqual(places(cells, types.definition(cells, 2, 6, 10_000)), [{ cell: 0, start: 6, text: "base" }]);
+  // The same cell, from a use inside a function body.
+  assert.deepEqual(places(cells, types.definition(cells, 1, 40, 10_000)), [{ cell: 0, start: 6, text: "base" }]);
+  const same = ["const n = 1;\nn + 1"];
+  assert.deepEqual(places(same, types.definition(same, 0, 14, 10_000)), [{ cell: 0, start: 6, text: "n" }]);
+});
+
+test("definition: a redeclared statement is blanked, so later spans in its cell keep their offsets", () => {
+  const types = service();
+  const cells = ["const x = 1; const y = 2;", "const x = 3;", "y + x;"];
+  assert.deepEqual(places(cells, types.definition(cells, 2, 0, 10_000)), [{ cell: 0, start: 19, text: "y" }]);
+});
+
+test("definition: only inside the cells; a name from a package or an unknown name gives none", () => {
+  const types = service({ types: ["node"] });
+  const cells = ["import { join } from 'node:path';", "join('a', 'b');\nprocess.cwd();\nnope;\nconst o = { k: 1 };\no.k;"];
+  assert.deepEqual(types.definition(cells, 1, 2, 10_000), []);
+  assert.deepEqual(types.definition(cells, 1, 18, 10_000), []);
+  assert.deepEqual(types.definition(cells, 1, 32, 10_000), []);
+  // Where the use is later than the declaration, in a cell that comes later in the notebook.
+  const k = cells[1].lastIndexOf("o.k") + 2;
+  assert.deepEqual(places(cells, types.definition(cells, 1, k, 10_000)), [{ cell: 1, start: cells[1].indexOf("k: 1"), text: "k" }]);
+  // Declared only in a later cell: not there yet.
+  const later = ["x;", "const x = 1;"];
+  assert.deepEqual(types.definition(later, 0, 0, 10_000), []);
+});
+
+test("definition: a name declared in several cells has the nearest declaration before the use", () => {
+  const types = service();
+  const cells = ["const v = 1;", "v;", "const v = 'two';", "v.toUpperCase();", "function v2() {}\nfunction v2() {}"];
+  assert.deepEqual(places(cells, types.definition(cells, 1, 0, 10_000)), [{ cell: 0, start: 6, text: "v" }]);
+  assert.deepEqual(places(cells, types.definition(cells, 3, 0, 10_000)), [{ cell: 2, start: 6, text: "v" }]);
+  // A use in the redeclaring cell's own statement is that cell's.
+  const own = ["const w = 1;", "const w = 2;\nw;"];
+  assert.deepEqual(places(own, types.definition(own, 1, 14, 10_000)), [{ cell: 1, start: 6, text: "w" }]);
+  // Members resolve against the nearest declaration's type.
+  const objects = ["const o = { a: 1 };", "const o = { b: 2 };", "o.b;"];
+  assert.deepEqual(places(objects, types.definition(objects, 2, 2, 10_000)), [{ cell: 1, start: 12, text: "b" }]);
+});
+
+test("definition: uses the frontend's cells, not the cells that ran", () => {
+  const types = service();
+  types.addCell("const ran = 1;");
+  const cells = ["const shown = 1;", "shown;"];
+  assert.deepEqual(places(cells, types.definition(cells, 1, 0, 10_000)), [{ cell: 0, start: 6, text: "shown" }]);
+  const cellsRan = ["ran;"];
+  assert.deepEqual(types.definition(cellsRan, 0, 0, 10_000), []);
+});
+
+/** Applies a rename's edits to the cells. */
+function renamed(cells: string[], result: ReturnType<NotebookTypes["rename"]>): string[] {
+  assert.ok(result !== null && "edits" in result, JSON.stringify(result));
+  const out = [...cells];
+  for (const e of [...result.edits].sort((a, b) => b.start - a.start)) out[e.cell] = out[e.cell].slice(0, e.start) + e.text + out[e.cell].slice(e.end);
+  return out;
+}
+
+test("rename: across three cells, from a use or the declaration", () => {
+  const types = service();
+  const cells = ["const total = 1;", "console.log(total);\nconst bigger = total + 1;", "function f() { return total; }"];
+  const expected = ["const sum = 1;", "console.log(sum);\nconst bigger = sum + 1;", "function f() { return sum; }"];
+  assert.deepEqual(renamed(cells, types.rename(cells, 1, 14, "sum", 10_000)), expected);
+  assert.deepEqual(renamed(cells, types.rename(cells, 0, 7, "sum", 10_000)), expected);
+  // Only the name, not another one that contains it.
+  const edits = types.rename(cells, 0, 7, "sum", 10_000);
+  assert.ok(edits !== null && "edits" in edits);
+  assert.deepEqual(edits.edits.map((e) => e.cell), [0, 1, 1, 2]);
+});
+
+test("rename: a shorthand property keeps its key, a member of another object is left", () => {
+  const types = service();
+  const cells = ["const x = 1;", "const o = { x };\nconst p = { x: 2 };\np.x;"];
+  assert.deepEqual(renamed(cells, types.rename(cells, 0, 6, "y", 10_000)), ["const y = 1;", "const o = { x: y };\nconst p = { x: 2 };\np.x;"]);
+});
+
+test("rename: refused for a package export, the globals, a keyword and a bad name", () => {
+  const types = service({ types: ["node"] });
+  const cells = ["import { join } from 'node:path';", "join('a');\nprocess.cwd();\nprompt('x');\nMath.max(1);\nif (true) {}\nconst k = 1;"];
+  const refused = (cell: number, at: number, name = "renamed") => {
+    const r = types.rename(cells, cell, at, name, 10_000);
+    assert.ok(r !== null && "error" in r, JSON.stringify(r));
+    return r.error;
+  };
+  assert.match(refused(1, 1), /./);
+  assert.match(refused(0, 10), /./);
+  refused(1, 12); // process
+  refused(1, 24); // the kernel's own prompt
+  refused(1, 38); // Math, in TypeScript's library
+  refused(1, cells[1].indexOf("if"), "kw"); // a keyword
+  assert.match(refused(1, cells[1].indexOf("k = 1"), "class"), /not a valid name/);
+  assert.match(refused(1, cells[1].indexOf("k = 1"), "a b"), /not a valid name/);
+  // Nothing was written for the refused ones.
+  const ok = types.rename(cells, 1, cells[1].indexOf("k = 1"), "kk", 10_000);
+  assert.ok(ok !== null && "edits" in ok);
+});
+
+test("rename: what another file declares is refused, an imported name is renamed in the notebook only", () => {
+  const notebookDir = mkdtempSync(join(tmpdir(), "cdpk-rename-"));
+  writeFileSync(join(notebookDir, "lib.ts"), "export const shared = { prop: 1 };\n");
+  const types = service({ notebookDir });
+  const cells = ["import { shared } from './lib.ts';", "shared.prop;"];
+  // A property the other file declares would be renamed there too.
+  const refused = types.rename(cells, 1, 9, "other", 10_000);
+  assert.ok(refused !== null && "error" in refused && /outside the notebook/.test(refused.error), JSON.stringify(refused));
+  assert.deepEqual(types.definition(cells, 1, 9, 10_000), []);
+  // The import's local name is the notebook's own: `shared as other` keeps the export's name.
+  assert.deepEqual(renamed(cells, types.rename(cells, 1, 0, "other", 10_000)), ["import { shared as other } from './lib.ts';", "other.prop;"]);
+});
+
+test("rename: a name declared again in a later cell is two variables; the cursor's is renamed", () => {
+  const types = service();
+  const cells = ["const v = 1;", "v + 1;", "const v = 'two';", "v.length;", "v;"];
+  // From the first variable: its declaration and the use before the redeclaration.
+  assert.deepEqual(renamed(cells, types.rename(cells, 1, 0, "one", 10_000)), ["const one = 1;", "one + 1;", "const v = 'two';", "v.length;", "v;"]);
+  assert.deepEqual(renamed(cells, types.rename(cells, 0, 6, "one", 10_000)), ["const one = 1;", "one + 1;", "const v = 'two';", "v.length;", "v;"]);
+  // From the second: the redeclaration and the uses after it.
+  assert.deepEqual(renamed(cells, types.rename(cells, 3, 0, "two", 10_000)), ["const v = 1;", "v + 1;", "const two = 'two';", "two.length;", "two;"]);
+  // Declared only in a later cell.
+  const later = ["x;", "const x = 1;"];
+  const r = types.rename(later, 0, 0, "y", 10_000);
+  assert.ok(r !== null && "error" in r && /later cell/.test(r.error), JSON.stringify(r));
+});
+
+test("rename: a check over its budget gives null", () => {
+  const types = service();
+  // Renaming a property needs the type of every object it is read from.
+  const heavy = Array.from({ length: 2000 }, (_, i) => `const o${i} = [1, 2, 3].map((x) => ({ k: x * ${i} })).filter(Boolean).reduce((a, b) => ({ k: a.k + b.k }), { k: 0 });`);
+  const cells = [...heavy, "o1.k;"];
+  assert.equal(types.rename(cells, 2000, 3, "z", 1), null);
+  // The next one isn't cut short.
+  const result = types.rename(cells, 2000, 3, "z", 30_000);
+  assert.ok(result !== null && "edits" in result && result.edits.some((e) => e.cell === 2000), JSON.stringify(result));
+});
+
+test("definition and rename: positions in a cell are UTF-16 indices", () => {
+  const types = service();
+  const cells = ["const s = '😀'; const name = 1;", "name;"];
+  const at = cells[0].indexOf("name");
+  assert.deepEqual(places(cells, types.definition(cells, 1, 0, 10_000)), [{ cell: 0, start: at, text: "name" }]);
+});
+
+// --- Redeclarations rename can't follow (#522) --------------------------------
+
+test("rename: a member found through a variable that a cell in between declares again is refused", () => {
+  const types = service();
+  const cells = ["const o = { k: 1 };", "o.k;", "const o = { k: 2 };", "o.k;"];
+  for (const cell of [1, 3]) {
+    const r = types.rename(cells, cell, 2, "kk", 10_000);
+    assert.ok(r !== null && "error" in r && /"o" is declared again in a later cell/.test(r.error), JSON.stringify(r));
+  }
+  // Without the redeclaration the member is renamed everywhere.
+  const plain = ["const o = { k: 1 };", "o.k;", "o.k;"];
+  assert.deepEqual(renamed(plain, types.rename(plain, 1, 2, "kk", 10_000)), ["const o = { kk: 1 };", "o.kk;", "o.kk;"]);
+  // A name declared once in between, or unrelated, doesn't stop it.
+  const unrelated = ["const o = { k: 1 };", "const n = 1;", "o.k; n;", "const m = 2;", "o.k;"];
+  assert.deepEqual(renamed(unrelated, types.rename(unrelated, 2, 2, "kk", 10_000)), ["const o = { kk: 1 };", "const n = 1;", "o.kk; n;", "const m = 2;", "o.kk;"]);
+});
+
+test("definition and rename: a name a later cell declares again only in part isn't followed", () => {
+  const types = service();
+  const cells = ["const [a, b] = [1, 2];", "const [a, c] = [3, 4];", "a; b;"];
+  // From the later cell's own declaration, and from a use after it.
+  assert.deepEqual(types.definition(cells, 2, 0, 10_000), []);
+  assert.deepEqual(types.definition(cells, 1, 7, 10_000), []);
+  for (const [cell, at] of [[1, 7], [2, 0]]) {
+    const r = types.rename(cells, cell, at, "z", 10_000);
+    assert.ok(r !== null && "error" in r && /"a" is declared in more than one cell in a way rename can't follow/.test(r.error), JSON.stringify(r));
+  }
+  // A name the later statement doesn't declare again resolves as usual.
+  assert.deepEqual(places(cells, types.definition(cells, 2, 3, 10_000)), [{ cell: 0, start: 10, text: "b" }]);
+  assert.deepEqual(renamed(cells, types.rename(cells, 2, 3, "z", 10_000)), ["const [a, z] = [1, 2];", cells[1], "a; z;"]);
+  // A statement the later cell declares again in whole is dropped, as before.
+  const whole = ["const [a, b] = [1, 2];", "const [a, b] = [3, 4];", "a;"];
+  assert.deepEqual(places(whole, types.definition(whole, 2, 0, 10_000)), [{ cell: 1, start: 7, text: "a" }]);
+});
+
+test("definition and rename: a type and a value of one name in different cells aren't followed", () => {
+  const types = service();
+  const cells = ["const T = 1;", "type T = string;", "let u: T = 'a'; T;"];
+  assert.deepEqual(types.definition(cells, 2, cells[2].lastIndexOf("T"), 10_000), []);
+  const r = types.rename(cells, 2, cells[2].lastIndexOf("T"), "U", 10_000);
+  assert.ok(r !== null && "error" in r && /"T" is declared in more than one cell in a way rename can't follow/.test(r.error), JSON.stringify(r));
+});
+
+test("a span is a cell's only when it lies inside the cell", () => {
+  const texts = ["abc", "de"];
+  const starts = [11, 15]; // after "export {};\n", each cell followed by a newline
+  assert.deepEqual(cellSpan(starts, texts, 12, 2), { cell: 0, start: 1, end: 3 });
+  assert.deepEqual(cellSpan(starts, texts, 15, 2), { cell: 1, start: 0, end: 2 });
+  assert.equal(cellSpan(starts, texts, 13, 2), null); // runs into the newline after the cell
+  assert.equal(cellSpan(starts, texts, 14, 1), null); // the newline itself
+  assert.equal(cellSpan(starts, texts, 16, 5), null); // past the last cell
+  assert.equal(cellSpan(starts, texts, 3, 2), null); // before the first
 });
