@@ -6,6 +6,9 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- `cdp-kernel install` no longer says "fnm has no default alias" for a
+  Node under a `node-versions/` directory that isn't fnm's
+  ([#510](https://github.com/tlockney/cdp-kernel/issues/510)).
 - The package no longer includes TypeScript (24 MB, copied again into each
   installed kernel version). Typed completion and inspection use the
   notebook project's TypeScript 6 if it has one, otherwise TypeScript 6

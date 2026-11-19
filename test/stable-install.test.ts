@@ -84,6 +84,9 @@ test("stableExecPath: fnm uses its default alias; nvm and n keep the exact binar
   assert.equal(pinnedByManager("/usr/local/n/versions/node/22.18.0/bin/node", {}), "n");
   assert.equal(pinnedByManager(fnmNode, {}), "fnm");
   assert.equal(pinnedByManager("/usr/bin/node", {}), undefined);
+  // A /node-versions/ path with no fnm root: no alias was looked up (#510).
+  assert.equal(pinnedByManager("/opt/node-versions/v22/installation/bin/node", {}), undefined);
+  assert.equal(pinnedByManager("/opt/node-versions/v22/installation/bin/node", { FNM_DIR: "/opt" }), "fnm");
 });
 
 test("stableExecPath: other managers' deno and bun use the same rules", () => {
