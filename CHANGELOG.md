@@ -28,6 +28,12 @@ Issue and pull request numbers refer to
   import that hasn't run). See
   [Type errors for frontends](https://cdp-kernel.org/docs/notebooks#type-errors-for-frontends)
   ([#514](https://github.com/tlockney/cdp-kernel/issues/514)).
+- Signature help, jump to definition and rename across cells, for
+  frontends that offer them: the kernel answers a `cdp-kernel.language.v1`
+  comm, from the cells the frontend shows, and a name declared again in a
+  later cell is renamed one declaration at a time. See
+  [Signatures, definitions and renames for frontends](https://cdp-kernel.org/docs/notebooks#signatures-definitions-and-renames-for-frontends)
+  ([#522](https://github.com/tlockney/cdp-kernel/issues/522)).
 
 ## 0.12.3 (2026-11-17)
 

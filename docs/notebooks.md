@@ -240,6 +240,72 @@ cell unless the frontend sends it on a
 kernel subshell ([JEP 91](https://github.com/jupyter/enhancement-proposals/blob/master/91-kernel-subshells/kernel-subshells.md)).
 A kernel restart closes the comm; open it again.
 
+### Signatures, definitions and renames for frontends
+
+The same language service can show the signature of the call being typed,
+jump to where a name is declared, and rename it across the notebook, for a
+frontend that offers those. The kernel answers a second comm, again
+without running anything in the runtime:
+
+1. The frontend opens a comm to `cdp-kernel.language.v1`. As with the
+   diagnostics comm, a kernel started with `--no-language-service` closes
+   it at once.
+2. It sends `comm_msg` with `{ request, op, ... }`, where `request` is any
+   JSON value that comes back with the answer. All offsets are in Unicode
+   code points, as `cursor_pos` is.
+3. The kernel answers with `comm_msg` `{ request, ... }`, as below.
+
+| `op` | The frontend sends | The kernel answers |
+|---|---|---|
+| `"signature"` | `code`, `cursor` | `signature`: `{ label, documentation, parameters: [{ label, documentation }], activeParameter }`, or `null` when the cursor isn't inside a call |
+| `"definition"` | `cells`, `cell`, `cursor` | `locations`: `[{ cell, start, end }]` |
+| `"rename"` | `cells`, `cell`, `cursor`, `newName` | `edits`: `[{ cell, start, end, text }]`, or `error`: a string |
+
+`signature` is checked against the cells that ran, as completion is, and
+`code` is the cell being edited. For a call with several signatures it is
+the one that fits the arguments so far. `activeParameter` is the index in
+`parameters` of the argument at the cursor; it stays on the last parameter
+after a rest parameter, and is past the end when the call has more
+arguments than the signature has parameters.
+
+`definition` and `rename` don't use the cells that ran. `cells` is the
+notebook's code cells in order, with their current text, and `cell` is the
+index in `cells` of the one with the cursor, so the answer matches what the
+person sees. `start` and `end` are offsets in `cells[cell]` for that
+location's `cell`. A definition only has locations inside `cells`: a name
+declared in a package's types, in the runtime's globals, or in an imported
+file gives `[]`. A rename gives `{ error }` instead of edits when it can't
+happen: the name is a keyword, is declared outside the notebook (a package
+export, a global such as `process`, a property an imported file declares), isn't declared in the notebook, is
+declared only in a later cell, or `newName` isn't a name a declaration can
+have. Apply every edit in `edits`; each replaces `start` to `end` of its
+cell with `text`, which is `newName` (`key: newName` where a shorthand
+property `{ key }` used the old name, and `name as newName` for an imported
+name, which keeps the export's own name).
+
+A name declared again in a later cell isn't an error in a notebook (see
+above), and it doesn't stop these. The name at the cursor refers to its
+nearest declaration at or before the cell with the cursor, so
+`definition` gives that one, and a name in a cell before any declaration
+of it has none. `rename` treats the cells that declare a name as separate
+variables, as the runtime does: it renames the declaration the cursor's
+name refers to and the uses it governs, up to the cell that declares the
+name again. The later declarations, and the uses after them, keep the old
+name. To rename those too, rename from each of them in turn. When a
+later cell declares only some of the names a statement declared
+(`const [a, b] = pair`, then `const [a, c] = other`), the earlier statement
+is kept as it is, so a use after the later cell still resolves to the
+earlier declaration.
+
+Every answer is `null` (`signature`, `locations` or `edits`) when the
+kernel can't tell: TypeScript isn't loaded yet or isn't available, the
+runtime's type package is still loading or couldn't be installed, or the
+check took longer than the 500 ms budget. A request the kernel can't read
+(`cells` that isn't a list of strings, a `cell` that isn't an index in
+it, no `newName`) gets the same null answer, and an unknown `op` gets
+`{ request, error }`. As with diagnostics, the messages go on the shell
+channel, and a kernel restart closes the comm.
+
 ## Typed globals in your editor
 
 See [Editor types](editor-types.md).
