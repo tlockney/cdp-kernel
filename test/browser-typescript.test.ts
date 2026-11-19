@@ -41,8 +41,9 @@ const TS_LIB = join(ROOT, "node_modules/typescript/lib");
 
 // The page's query string sets what the test varies: `plain` starts the
 // kernel without the `typescript` option; `hang` makes the language
-// Worker one that never answers; `budget`, `tsbase`, `module`, `libs` and
-// `rt` set the option of those names (tsbase is a path on this origin).
+// Worker one that never answers; `nort` leaves out `runtimeTypes`;
+// `budget`, `tsbase`, `module`, `libs` and `rt` set the option of those
+// names (tsbase is a path on this origin).
 const PAGE = `<!doctype html><script type="module">
 import { startBrowserKernel } from "./kernel.js";
 const q = new URLSearchParams(location.search);
@@ -60,7 +61,7 @@ const typescript = q.has("plain") ? undefined : {
   },
   module: q.get("module") ?? "./ts/typescript.js",
   libs: q.get("libs") ?? "./ts/lib/",
-  runtimeTypes: q.get("rt") ?? "./runtime/",
+  ...(q.has("nort") ? {} : { runtimeTypes: q.get("rt") ?? "./runtime/" }),
   budgetMs: q.has("budget") ? Number(q.get("budget")) : 20000,
   ...(q.has("tsbase") ? { base: location.origin + q.get("tsbase") } : {}),
 };
@@ -276,6 +277,24 @@ test("type errors from the diagnostics comm; Worker globals and unfetched packag
   assert.equal(missing.length, 1);
   assert.equal(missing[0].code, 2307);
 });
+
+for (const [query, what] of [["?rt=./nort/", "runtime types that don't load"], ["?nort", "no runtimeTypes"]] as const) {
+  test(`with ${what}, \`jupyter\` is any and the rest still works`, { skip }, async (t) => {
+    const { execute, request, ask, logs } = await open(t, query);
+    await execute("const n: number = 1; const u = { name: 'x' } as { name: string; age?: number };");
+    const found = await until("diagnostics", async () => {
+      const answer = await ask(DIAGNOSTICS, { request: 1, code: "const s: string = n;" });
+      return answer.diagnostics === null ? undefined : answer;
+    });
+    assert.deepEqual((found.diagnostics as { code: number }[]).map((d) => d.code), [2322]);
+    // `jupyter` is `any`: a name it lacks is no error.
+    assert.deepEqual((await ask(DIAGNOSTICS, { request: 2, code: "jupyter.noSuchThing" })).diagnostics, []);
+    const code = "u.";
+    const reply = of(await request("shell", "complete_request", { code, cursor_pos: code.length }), "complete_reply")[0];
+    assert.ok((reply.matches as string[]).includes("age"), String(reply.matches));
+    assert.ok(!(await logs()).some((line) => /unavailable/.test(line)), (await logs()).join("\n"));
+  });
+}
 
 test("definition across cells from the language comm", { skip }, async (t) => {
   const { ask } = await open(t);
