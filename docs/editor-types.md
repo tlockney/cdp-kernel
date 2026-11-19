@@ -11,7 +11,8 @@ Cannot find name 'jupyter'.
 ```
 
 The code still runs. The kernel removes types before running a cell and
-doesn't check them, so these errors come only from your editor. But they
+never refuses one for a type error, so these errors come from your editor,
+not the kernel. But they
 hide real mistakes among false ones, and you get no completion or
 signatures for `jupyter.display`, `jupyter.md` and the rest.
 
