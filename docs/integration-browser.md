@@ -176,23 +176,26 @@ with the kernel, and the page pays for the files only then. TypeScript
 takes a moment to load (about a second); until it has, the kernel
 answers from the runtime as it does without the option, and the comms
 answer `null`, which frontends read as "can't tell". The Worker is
-ended after ten minutes without a request, and a request starts a new
+ended when the kernel shuts down, and after ten minutes without a request; a later request starts a new
 one with the cells that have run. `language_info.version` in
 `kernel_info_reply` is the TypeScript the Worker loaded.
 
 Without the option nothing changes: completion comes from the runtime,
 no Worker is made, and a frontend's request to open either comm is closed.
 
-The service checks cells against ES libs (`lib.esnext.d.ts`; 621 KB, 65
-KB gzipped, with their 87 files) plus declarations in the kernel for
+The service checks cells against ES libs (`lib.esnext.d.ts` and its 87
+files; 621 KB, 116 KB gzipped file by file, as a server sends them) plus declarations in the kernel for
 what a cell in a Worker reaches for: `console`, timers, `fetch` with its
 `Request`, `Response`, `Headers`, `URL`, `AbortController` and
-`TextEncoder`, among a few more (7 KB, in `src/browser/language-globals.ts`).
-It doesn't load `lib.dom.d.ts` (2.3 MB, 358 KB gzipped) or
-`lib.webworker.d.ts` (787 KB, 129 KB gzipped). A Worker global the
+`TextEncoder`, among others (12 KB, 3 KB gzipped, in
+`src/browser/language-globals.ts`). `WebAssembly`, `navigator`,
+`ReadableStream`, `WebSocket`, `FormData`, `Event`, `MessageChannel` and
+a few more are declared loosely, so using them is not an error.
+It doesn't load `lib.dom.d.ts` (2.3 MB) or `lib.webworker.d.ts`
+(787 KB). A Worker global the
 declarations leave out is an error in the diagnostics although the Worker
-has it; it can be added to that file. The `jupyter` types are 51 KB (15 KB
-gzipped). TypeScript itself is 9.1 MB (1.6 MB gzipped).
+has it; it can be added to that file. The `jupyter` types are 51 KB (17 KB
+gzipped file by file). TypeScript itself is 9.1 MB (1.6 MB gzipped).
 
 An import of a package is `any`: the language service doesn't fetch
 types for `npm:` or esm.sh imports, and doesn't report them as errors.
@@ -253,7 +256,8 @@ A relative import that isn't served to the language service is an error
   `Atomics.wait`, so a cross-origin isolated page (COOP and COEP headers).
 - Types for packages. In the browser's language service an import from
   esm.sh or `npm:` is `any`, without an error; fetching the package's
-  types is not done yet.
+  types is not done yet
+  ([#525](https://github.com/tlockney/cdp-kernel/issues/525)).
 - The visual debugger: a page has no CDP.
 - `Deno.*` and Node's builtins, beyond what esm.sh polyfills for `node:`
   imports.

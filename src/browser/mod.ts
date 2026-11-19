@@ -60,23 +60,23 @@ export const SQL_MODULES = {
  * kernel has no TypeScript of its own to load (it is 9 MB).
  */
 export interface BrowserTypeScriptOptions {
-  /** Makes the language service's Worker: a module Worker of \`dist/browser/language-worker.js\`. */
+  /** Makes the language service's Worker: a module Worker of `dist/browser/language-worker.js`. */
   createWorker(): WorkerLike;
-  /** URL of TypeScript 6's \`lib/typescript.js\`, resolved against \`base\`. The Worker fetches and runs it. */
+  /** URL of TypeScript 6's `lib/typescript.js`, resolved against `base`. The Worker fetches and runs it. */
   module: string;
   /**
-   * URL of a directory (resolved against \`base\`) that serves TypeScript's
-   * \`lib.*.d.ts\` files, as \`lib/\` in the package does. The Worker fetches
-   * \`lib.esnext.d.ts\` and the files it references.
+   * URL of a directory (resolved against `base`) that serves TypeScript's
+   * `lib.*.d.ts` files, as `lib/` in the package does. The Worker fetches
+   * `lib.esnext.d.ts` and the files it references.
    */
   libs: string;
   /**
-   * URL of a directory (resolved against \`base\`) that serves the kernel
-   * package's \`runtime/*.d.mts\` files, which type \`jupyter\`. Without
-   * it \`jupyter\` is \`any\`.
+   * URL of a directory (resolved against `base`) that serves the kernel
+   * package's `runtime/*.d.mts` files, which type `jupyter`. Without
+   * it `jupyter` is `any`.
    */
   runtimeTypes?: string;
-  /** What \`base\` is for these URLs; the target's \`base\` by default. */
+  /** What `base` is for these URLs; the target's `base` by default. */
   base?: string;
   /** How long a request waits for the Worker, in milliseconds; 500 by default. */
   budgetMs?: number;
@@ -85,7 +85,7 @@ export interface BrowserTypeScriptOptions {
 export interface BrowserKernelOptions extends BrowserTargetOptions {
   /**
    * Opt in to the language service: typed completion and tooltips,
-   * \`cdp-kernel.diagnostics.v1\` and \`cdp-kernel.language.v1\`. Without
+   * `cdp-kernel.diagnostics.v1` and `cdp-kernel.language.v1`. Without
    * it the kernel answers from the runtime, and those comms close.
    */
   typescript?: BrowserTypeScriptOptions;
@@ -127,7 +127,11 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
       return types?.typescriptVersion;
     },
     log,
-    exit: () => closed(),
+    exit: () => {
+      // The language service's Worker would otherwise run until it idles out.
+      types?.close();
+      closed();
+    },
   });
   core.run().catch((err) => log(`kernel stopped: ${err instanceof Error ? err.stack : err}`));
   return {
@@ -140,14 +144,15 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
 
 /** The language service, with its Worker started lazily by the first request. */
 function languageClient(options: BrowserKernelOptions, log: (text: string) => void): LanguageClient {
-  const { createWorker, module, libs, runtimeTypes, budgetMs } = options.typescript!;
-  const base = options.typescript!.base ?? options.base ?? globalThis.location?.href ?? "file:///";
+  const typescript = options.typescript!;
+  const { module, libs, runtimeTypes, budgetMs } = typescript;
+  const base = typescript.base ?? options.base ?? globalThis.location?.href ?? "file:///";
   const url = (u: string) => new URL(u, base).href;
   return new LanguageClient({
     budgetMs,
     log,
     start(): WorkerHandle {
-      const worker = createWorker();
+      const worker = typescript.createWorker();
       worker.postMessage({
         type: "init",
         module: url(module),
@@ -158,6 +163,11 @@ function languageClient(options: BrowserKernelOptions, log: (text: string) => vo
         postMessage: (message) => worker.postMessage(message),
         onMessage: (listener) => worker.addEventListener("message", (event: { data: unknown }) => listener(event.data as WorkerResponse)),
         onError: (listener) => worker.addEventListener("error", (event: { message?: string }) => listener(event.message ?? "unknown")),
+        // A Web Worker has no exit event: one that dies (the page's
+        // terminate(), a crash that raises no error event) is noticed only
+        // when a request finds no answer in its budget, so it is no worse
+        // than a slow one. An "error" event, which a failed load raises,
+        // does mark the service unavailable.
         onExit: () => {},
         terminate: () => worker.terminate(),
       };

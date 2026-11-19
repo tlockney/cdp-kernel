@@ -39,25 +39,37 @@ if (!ENGINES.includes(engine)) throw new Error(`CDPK_BROWSER must be one of ${EN
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const TS_LIB = join(ROOT, "node_modules/typescript/lib");
 
-// `?plain` starts the kernel without the `typescript` option.
+// The page's query string sets what the test varies: `plain` starts the
+// kernel without the `typescript` option; `hang` makes the language
+// Worker one that never answers; `budget`, `tsbase`, `module`, `libs` and
+// `rt` set the option of those names (tsbase is a path on this origin).
 const PAGE = `<!doctype html><script type="module">
 import { startBrowserKernel } from "./kernel.js";
-globalThis.languageWorkers = 0;
-const typescript = location.search.includes("plain") ? undefined : {
+const q = new URLSearchParams(location.search);
+// One record per language Worker made: whether the kernel terminated it.
+globalThis.languageWorkers = [];
+globalThis.logs = [];
+const typescript = q.has("plain") ? undefined : {
   createWorker: () => {
-    globalThis.languageWorkers++;
-    return new Worker("./language-worker.js", { type: "module" });
+    const worker = new Worker(q.has("hang") ? "./hang-worker.js" : "./language-worker.js", { type: "module" });
+    const record = { terminated: false };
+    globalThis.languageWorkers.push(record);
+    const terminate = worker.terminate.bind(worker);
+    worker.terminate = () => { record.terminated = true; terminate(); };
+    return worker;
   },
-  module: "./ts/typescript.js",
-  libs: "./ts/lib/",
-  runtimeTypes: "./runtime/",
-  budgetMs: 20000,
+  module: q.get("module") ?? "./ts/typescript.js",
+  libs: q.get("libs") ?? "./ts/lib/",
+  runtimeTypes: q.get("rt") ?? "./runtime/",
+  budgetMs: q.has("budget") ? Number(q.get("budget")) : 20000,
+  ...(q.has("tsbase") ? { base: location.origin + q.get("tsbase") } : {}),
 };
 const kernel = startBrowserKernel({
   createWorker: () => new Worker("./worker.js", { type: "module" }),
-  log: () => {},
+  log: (text) => globalThis.logs.push(text),
   typescript,
 });
+globalThis.kernel = kernel;
 const seen = [];
 kernel.onMessage((channel, msg) => seen.push({ channel, msg }));
 function header(msg_type) {
@@ -76,6 +88,11 @@ globalThis.request = (channel, msgType, content) => {
     poll();
   });
 };
+// Sends a shutdown_request and settles once the kernel has closed.
+globalThis.shutdown = () => {
+  kernel.send("control", { header: header("shutdown_request"), parent_header: {}, metadata: {}, content: { restart: false } });
+  return kernel.closed;
+};
 globalThis.ready = true;
 </script>`;
 
@@ -90,13 +107,21 @@ function typescriptFile(path: string): Buffer | null {
   }
 }
 
-async function serve(dir: string): Promise<{ server: Server; url: string }> {
+/** Stands in for typescript.js with an API that isn't TypeScript's. */
+const WRONG_TYPESCRIPT = "module.exports = { version: '0.0.0', createLanguageService() {} };";
+
+async function serve(dir: string, requested: string[]): Promise<{ server: Server; url: string }> {
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://x").pathname;
+    requested.push(path);
     const ts = typescriptFile(path);
     const runtime = /^\/runtime\/([\w.-]+\.d\.mts)$/.exec(path)?.[1];
     if (path === "/") {
       res.writeHead(200, { "content-type": "text/html" }).end(PAGE);
+    } else if (path === "/hang-worker.js") {
+      res.writeHead(200, { "content-type": "text/javascript" }).end("self.onmessage = () => {};");
+    } else if (path === "/wrong-typescript.js") {
+      res.writeHead(200, { "content-type": "text/javascript" }).end(WRONG_TYPESCRIPT);
     } else if (ts !== null) {
       res.writeHead(200, { "content-type": path.endsWith(".js") ? "text/javascript" : "text/plain" }).end(ts);
     } else if (runtime !== undefined) {
@@ -117,7 +142,8 @@ async function open(t: { after(fn: () => unknown): void }, query = "") {
   const dir = mkdtempSync(join(tmpdir(), "cdpk-browser-ts-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   execFileSync(process.execPath, [join(ROOT, "scripts/build-browser.mjs"), dir], { cwd: ROOT, stdio: "pipe" });
-  const { server, url } = await serve(dir);
+  const requested: string[] = [];
+  const { server, url } = await serve(dir, requested);
   t.after(() => server.close());
   const browser = await playwright![engine].launch();
   t.after(() => browser.close());
@@ -128,7 +154,11 @@ async function open(t: { after(fn: () => unknown): void }, query = "") {
     page.evaluate(([ch, ty, co]) =>
       (globalThis as unknown as { request(a: unknown, b: unknown, c: unknown): Promise<Reply[]> }).request(ch, ty, co), [channel, type, content] as const);
   const execute = (code: string) => request("shell", "execute_request", { code, silent: false, store_history: true, allow_stdin: false, stop_on_error: true });
-  const languageWorkers = () => page.evaluate(() => (globalThis as unknown as { languageWorkers: number }).languageWorkers, null);
+  /** The language Workers made so far, each with whether the kernel terminated it. */
+  const workers = () => page.evaluate(() => (globalThis as unknown as { languageWorkers: { terminated: boolean }[] }).languageWorkers, null);
+  const languageWorkers = async () => (await workers()).length;
+  const logs = () => page.evaluate(() => (globalThis as unknown as { logs: string[] }).logs, null);
+  const shutdown = () => page.evaluate(() => (globalThis as unknown as { shutdown(): Promise<void> }).shutdown(), null);
   let comms = 0;
   /** Opens a comm to `target` and sends it `data`; the answer's data. */
   const ask = async (target: string, data: object): Promise<Record<string, unknown>> => {
@@ -137,10 +167,22 @@ async function open(t: { after(fn: () => unknown): void }, query = "") {
     const replies = await request("shell", "comm_msg", { comm_id: commId, data });
     return replies.find((r) => r.type === "comm_msg")!.content.data as Record<string, unknown>;
   };
-  return { request, execute, languageWorkers, ask };
+  return { request, execute, languageWorkers, workers, logs, shutdown, requested, ask };
 }
 
 const of = (replies: Reply[], type: string) => replies.filter((r) => r.type === type).map((r) => r.content);
+
+/** `lib.*.d.ts` files TypeScript's lib.esnext.d.ts reaches, by the references the Worker follows. */
+function esnextLibFiles(): string[] {
+  const found = new Set<string>();
+  const todo = ["lib.esnext.d.ts"];
+  for (let name = todo.pop(); name !== undefined; name = todo.pop()) {
+    if (found.has(name)) continue;
+    found.add(name);
+    for (const m of readFileSync(join(TS_LIB, name), "utf8").matchAll(/\/\/\/\s*<reference\s+lib="([^"]+)"\s*\/>/g)) todo.push(`lib.${m[1].toLowerCase()}.d.ts`);
+  }
+  return [...found];
+}
 
 /** Calls `fn` until it returns something other than undefined: TypeScript takes a moment to load. */
 async function until<T>(what: string, fn: () => Promise<T | undefined>): Promise<T> {
@@ -217,6 +259,13 @@ test("type errors from the diagnostics comm; Worker globals and unfetched packag
     "const r = await fetch(new URL('https://a.test'), { signal: AbortSignal.timeout(5) });",
     "const j: unknown = await r.json();",
     "const d = jupyter.html`<b>x</b>`;",
+    // Worker globals that are loosely typed rather than missing.
+    "const ua: string = navigator.userAgent;",
+    "const m: unknown = await WebAssembly.compile(new Uint8Array(8));",
+    "const body: ReadableStream<Uint8Array> | null = r.body;",
+    "const f = new FormData(); f.append('a', new Blob(['x']));",
+    "const ev: Event = new Event('x'); const ch = new MessageChannel(); ch.port1.postMessage(ev.type);",
+    "const ws: WebSocket = new WebSocket('wss://a.test'); ws.send('x');",
   ].join("\n");
   assert.deepEqual((await ask(DIAGNOSTICS, { request: 3, code: fine })).diagnostics, []);
   // `jupyter` is typed from runtime/display.d.mts: a name it lacks is an error.
@@ -264,4 +313,73 @@ test("without the typescript option the kernel behaves as before", { skip }, asy
   const info = of(await request("shell", "kernel_info_request", {}), "kernel_info_reply")[0];
   assert.equal((info.language_info as { version: string }).version, "6");
   assert.equal(await languageWorkers(), 0);
+});
+
+/** The reply to a completion of `u.` for a value only the runtime knows `name` of. */
+async function completeU(request: (c: string, t: string, b: object) => Promise<Reply[]>) {
+  return of(await request("shell", "complete_request", { code: "u.", cursor_pos: 2 }), "complete_reply")[0];
+}
+const U = "const u = { name: 'x' } as { name: string; age?: number };";
+
+test("shutting the kernel down ends the language Worker", { skip }, async (t) => {
+  const { request, execute, workers, shutdown } = await open(t);
+  await execute(U);
+  await completeU(request);
+  assert.deepEqual(await workers(), [{ terminated: false }]);
+  await shutdown();
+  assert.deepEqual(await workers(), [{ terminated: true }]);
+});
+
+test("budgetMs bounds how long a request waits for the Worker", { skip }, async (t) => {
+  // A Worker that never answers: the budget decides when the kernel gives up on it.
+  const { request, execute } = await open(t, "?hang&budget=50");
+  await execute(U);
+  const started = Date.now();
+  const reply = await completeU(request);
+  const took = Date.now() - started;
+  assert.ok((reply.matches as string[]).includes("name"));
+  assert.deepEqual(reply.metadata, {});
+  // The default is 500 ms.
+  assert.ok(took < 400, `took ${took} ms`);
+});
+
+test("typescript.base resolves the option's URLs", { skip }, async (t) => {
+  // Relative to the page these would be /typescript.js and /lib/: not served.
+  const { request, execute } = await open(t, "?tsbase=/ts/&module=typescript.js&libs=lib/&rt=../runtime/");
+  await execute(U);
+  await completeU(request);
+  const typed = await until("typed completion", async () => {
+    const reply = await completeU(request);
+    return (reply.matches as string[]).includes("age") ? reply : undefined;
+  });
+  assert.ok(Array.isArray((typed.metadata as Record<string, unknown>)._jupyter_types_experimental));
+});
+
+for (const [name, query] of [
+  ["a typescript.js that isn't there", "?module=./ts/missing.js"],
+  ["lib files that aren't there", "?libs=./ts/nolibs/"],
+  ["a typescript.js with another API", "?module=./wrong-typescript.js"],
+] as const) {
+  test(`${name}: the kernel answers from the runtime and starts no second Worker`, { skip }, async (t) => {
+    const { request, execute, ask, languageWorkers, logs } = await open(t, query);
+    await execute(U);
+    const first = await completeU(request);
+    assert.ok((first.matches as string[]).includes("name"));
+    await until("the service to be marked unavailable", async () => ((await logs()).some((l) => /unavailable.*no typescript/.test(l)) ? true : undefined));
+    const reply = await completeU(request);
+    assert.ok((reply.matches as string[]).includes("name") && !(reply.matches as string[]).includes("age"));
+    assert.deepEqual(reply.metadata, {});
+    assert.deepEqual(await ask(DIAGNOSTICS, { request: 1, code: "const s: string = 1;" }), { request: 1, diagnostics: null });
+    assert.deepEqual((await ask(LANGUAGE, { request: 2, op: "definition", cells: ["const a = 1;", "a"], cell: 1, cursor: 0 })).locations, null);
+    assert.equal(await languageWorkers(), 1);
+  });
+}
+
+test("each of TypeScript's lib files is fetched once", { skip }, async (t) => {
+  const { request, execute, requested } = await open(t);
+  await execute(U);
+  await completeU(request);
+  await until("typed completion", async () => ((await completeU(request)).matches as string[]).includes("age") ? true : undefined);
+  const fetched = requested.filter((p) => /^\/ts\/lib\//.test(p)).map((p) => p.slice("/ts/lib/".length));
+  assert.deepEqual([...fetched].sort(), esnextLibFiles().sort());
 });

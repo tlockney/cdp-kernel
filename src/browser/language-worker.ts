@@ -53,11 +53,11 @@ async function fetchClosure(
   let wave = [entry];
   while (wave.length > 0) {
     const texts = await Promise.all(wave.map((name) => fetchText(new URL(name, directory(base)).href)));
+    // The whole wave is in before the next is chosen, so a file two of
+    // them name isn't fetched again.
+    wave.forEach((name, i) => files.set(`${dir}/${name}`, texts[i]));
     const next = new Set<string>();
-    wave.forEach((name, i) => {
-      files.set(`${dir}/${name}`, texts[i]);
-      for (const dependency of references(texts[i])) if (!files.has(`${dir}/${dependency}`)) next.add(dependency);
-    });
+    for (const text of texts) for (const dependency of references(text)) if (!files.has(`${dir}/${dependency}`)) next.add(dependency);
     wave = [...next];
   }
 }
@@ -105,16 +105,9 @@ function memoryFileSystem(files: Map<string, string>): TypesFileSystem {
 }
 
 async function start(init: LanguageInit): Promise<void> {
-  let ts: typeof TS;
   const files = new Map<string, string>();
   let display: string | null = null;
-  try {
-    [ts] = await Promise.all([loadTypeScript(init.module), fetchClosure(init.libs, LIB_DIR, "lib.esnext.d.ts", libReferences, files)]);
-  } catch (err) {
-    const reason = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").trim().slice(0, 500);
-    post({ unavailable: `no typescript: ${reason}` });
-    return;
-  }
+  const [ts] = await Promise.all([loadTypeScript(init.module), fetchClosure(init.libs, LIB_DIR, "lib.esnext.d.ts", libReferences, files)]);
   if (init.runtimeTypes !== undefined) {
     // The types of `jupyter`. Without them it is `any`, not a reason to give up.
     try {
@@ -136,8 +129,16 @@ async function start(init: LanguageInit): Promise<void> {
   post({ loaded: ts.version });
 }
 
+/** Any failure to start, in loading or setting up TypeScript, makes the service unavailable to the client. */
+function startOrGiveUp(init: LanguageInit): void {
+  start(init).catch((err) => {
+    const reason = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").trim().slice(0, 500);
+    post({ unavailable: `no typescript: ${reason}` });
+  });
+}
+
 self.addEventListener("message", (event) => {
   const data = (event as MessageEvent).data as WorkerRequest | LanguageInit;
-  if (data.type === "init") void start(data);
+  if (data.type === "init") startOrGiveUp(data);
   else server.handle(data);
 });

@@ -46,6 +46,93 @@ declare function btoa(data: string): string;
 declare var performance: { now(): number; readonly timeOrigin: number; mark(name: string): unknown; measure(name: string, start?: string, end?: string): unknown };
 declare var crypto: { randomUUID(): string; getRandomValues<T extends ArrayBufferView | null>(array: T): T; readonly subtle: any };
 
+
+// What a Worker has that is big to type in full: loosely typed, so using
+// it is no error, and what it returns is mostly \`any\`.
+declare var WebAssembly: any;
+declare var navigator: {
+  readonly userAgent: string;
+  readonly language: string;
+  readonly languages: readonly string[];
+  readonly hardwareConcurrency: number;
+  readonly onLine: boolean;
+  readonly platform: string;
+  readonly [key: string]: any;
+};
+declare var location: any;
+declare var indexedDB: any;
+declare var caches: any;
+declare var origin: string;
+declare function postMessage(message: any, transfer?: any): void;
+declare function reportError(error: any): void;
+interface Event { readonly type: string; readonly target: any; readonly defaultPrevented: boolean; preventDefault(): void; stopPropagation(): void; readonly [key: string]: any }
+declare var Event: { prototype: Event; new(type: string, init?: any): Event };
+interface CustomEvent<T = any> extends Event { readonly detail: T }
+declare var CustomEvent: { prototype: CustomEvent; new<T = any>(type: string, init?: { detail?: T }): CustomEvent<T> };
+interface ReadableStream<R = any> {
+  readonly locked: boolean;
+  cancel(reason?: any): Promise<void>;
+  getReader(options?: any): any;
+  pipeThrough(transform: any, options?: any): ReadableStream;
+  pipeTo(destination: any, options?: any): Promise<void>;
+  tee(): [ReadableStream<R>, ReadableStream<R>];
+  values(options?: any): AsyncIterableIterator<R>;
+  [Symbol.asyncIterator](): AsyncIterableIterator<R>;
+}
+declare var ReadableStream: { prototype: ReadableStream; new<R = any>(source?: any, strategy?: any): ReadableStream<R>; from<R>(iterable: Iterable<R> | AsyncIterable<R>): ReadableStream<R> };
+interface WritableStream<W = any> { readonly locked: boolean; abort(reason?: any): Promise<void>; close(): Promise<void>; getWriter(): any }
+declare var WritableStream: { prototype: WritableStream; new<W = any>(sink?: any, strategy?: any): WritableStream<W> };
+interface TransformStream<I = any, O = any> { readonly readable: ReadableStream<O>; readonly writable: WritableStream<I> }
+declare var TransformStream: { prototype: TransformStream; new<I = any, O = any>(transformer?: any, writable?: any, readable?: any): TransformStream<I, O> };
+interface FormData {
+  append(name: string, value: string | Blob, fileName?: string): void;
+  delete(name: string): void;
+  get(name: string): any;
+  getAll(name: string): any[];
+  has(name: string): boolean;
+  set(name: string, value: string | Blob, fileName?: string): void;
+  forEach(callback: (value: any, key: string, parent: FormData) => void): void;
+  entries(): IterableIterator<[string, any]>;
+  keys(): IterableIterator<string>;
+  values(): IterableIterator<any>;
+  [Symbol.iterator](): IterableIterator<[string, any]>;
+}
+declare var FormData: { prototype: FormData; new(): FormData };
+interface File extends Blob { readonly name: string; readonly lastModified: number }
+declare var File: { prototype: File; new(bits: (BufferSource | Blob | string)[], name: string, options?: { type?: string; lastModified?: number }): File };
+interface MessagePort extends EventTarget {
+  postMessage(message: any, transfer?: any): void;
+  start(): void;
+  close(): void;
+  onmessage: ((event: any) => void) | null;
+}
+declare var MessagePort: { prototype: MessagePort };
+interface MessageChannel { readonly port1: MessagePort; readonly port2: MessagePort }
+declare var MessageChannel: { prototype: MessageChannel; new(): MessageChannel };
+interface BroadcastChannel extends EventTarget { readonly name: string; postMessage(message: any): void; close(): void; onmessage: ((event: any) => void) | null }
+declare var BroadcastChannel: { prototype: BroadcastChannel; new(name: string): BroadcastChannel };
+interface WebSocket extends EventTarget {
+  readonly url: string;
+  readonly readyState: number;
+  binaryType: string;
+  send(data: string | BufferSource | Blob): void;
+  close(code?: number, reason?: string): void;
+  onopen: ((event: any) => void) | null;
+  onmessage: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onclose: ((event: any) => void) | null;
+}
+declare var WebSocket: {
+  prototype: WebSocket;
+  new(url: string | URL, protocols?: string | string[]): WebSocket;
+  readonly CONNECTING: 0;
+  readonly OPEN: 1;
+  readonly CLOSING: 2;
+  readonly CLOSED: 3;
+};
+interface Worker extends EventTarget { postMessage(message: any, transfer?: any): void; terminate(): void; onmessage: ((event: any) => void) | null; onerror: ((event: any) => void) | null }
+declare var Worker: { prototype: Worker; new(url: string | URL, options?: { type?: "classic" | "module"; name?: string }): Worker };
+
 interface EventTarget {
   addEventListener(type: string, listener: ((event: any) => void) | null, options?: boolean | { once?: boolean; signal?: AbortSignal }): void;
   removeEventListener(type: string, listener: ((event: any) => void) | null): void;
@@ -150,9 +237,9 @@ interface Headers {
   values(): IterableIterator<string>;
 }
 declare var Headers: { prototype: Headers; new(init?: HeadersInit): Headers };
-type BodyInit = Blob | BufferSource | URLSearchParams | string;
+type BodyInit = Blob | BufferSource | FormData | ReadableStream | URLSearchParams | string;
 interface Body {
-  readonly body: any;
+  readonly body: ReadableStream<Uint8Array> | null;
   readonly bodyUsed: boolean;
   arrayBuffer(): Promise<ArrayBuffer>;
   blob(): Promise<Blob>;
