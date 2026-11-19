@@ -50,7 +50,9 @@
     real name from it;
   - a project's own `package.json` doesn't decide an `npm:` import's version
     (bare imports do use its `node_modules`).
-- No type checking. Deno doesn't type-check REPL cells either.
+- Cells run without a type check, as in Deno's REPL: a type error doesn't
+  stop a cell. Type errors show only in a frontend that asks for them
+  ([Type errors for frontends](notebooks.md#type-errors-for-frontends)).
 - Results are formatted by each runtime's own inspector: `util.inspect` on
   Node, Bun, workerd and celld, and `Deno.inspect` on Deno. On a fixture of
   30 typical values, 23 format identically on Node and Deno. The rest
