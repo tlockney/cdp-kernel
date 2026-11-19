@@ -9,7 +9,6 @@ Issue and pull request numbers refer to
 - `cdp-kernel install` no longer says "fnm has no default alias" for a
   Node under a `node-versions/` directory that isn't fnm's
   ([#510](https://github.com/tlockney/cdp-kernel/issues/510)).
-
 - The docs site no longer serves the widget screenshots `progress.png`,
   `temperature.png` and `dice.png`. Typings from 0.9.0 through 0.12.1
   linked to them, so editor hovers on those versions lose the images;
