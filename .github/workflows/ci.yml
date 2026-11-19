@@ -142,7 +142,8 @@ jobs:
       - run: docker run --rm -v "$PWD/container:/test:ro" cdp-kernel python /test/smoke-test.py
         timeout-minutes: 10
 
-  # The browser target (src/browser/, test/browser.test.ts) in each of
+  # The browser target (src/browser/, test/browser.test.ts and
+  # test/browser-typescript.test.ts) in each of
   # Playwright's engines. The test is skipped without the playwright
   # package, which isn't a dependency, so no other job runs it (#319).
   browser:
@@ -169,11 +170,11 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-1.64.1-chromium-webkit-firefox
       - run: npx playwright install --with-deps chromium webkit firefox
         timeout-minutes: 10
-      - run: CDPK_BROWSER=chromium node --test test/browser.test.ts
+      - run: CDPK_BROWSER=chromium node --test test/browser.test.ts test/browser-typescript.test.ts
         timeout-minutes: 5
-      - run: CDPK_BROWSER=webkit node --test test/browser.test.ts
+      - run: CDPK_BROWSER=webkit node --test test/browser.test.ts test/browser-typescript.test.ts
         timeout-minutes: 5
-      - run: CDPK_BROWSER=firefox node --test test/browser.test.ts
+      - run: CDPK_BROWSER=firefox node --test test/browser.test.ts test/browser-typescript.test.ts
         timeout-minutes: 5
 
   # No Windows job: Windows isn't supported yet, and is its own issue (#32).

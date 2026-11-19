@@ -1,6 +1,8 @@
 // Bundles the browser target for a page: dist/browser/kernel.js (the
 // kernel, from src/browser/mod.ts) and dist/browser/worker.js (the driver
-// Worker, from runtime/browser-worker.mjs). Both are ES modules.
+// Worker, from runtime/browser-worker.mjs) and dist/browser/language-worker.js
+// (the language service's Worker, from src/browser/language-worker.ts, #524).
+// All are ES modules.
 //
 //   node scripts/build-browser.mjs [outdir]
 
@@ -31,4 +33,5 @@ await build({ ...common, entryPoints: { kernel: "src/browser/mod.ts" }, outdir, 
 // A cell's import() goes to whatever URL it names; esbuild warns that it
 // can't follow one it can't see.
 await build({ ...common, entryPoints: { worker: "runtime/browser-worker.mjs" }, outdir, logOverride: { "unsupported-dynamic-import": "silent" } });
-console.log(`built ${outdir}/kernel.js and ${outdir}/worker.js`);
+await build({ ...common, entryPoints: { "language-worker": "src/browser/language-worker.ts" }, outdir });
+console.log(`built ${outdir}/kernel.js, ${outdir}/worker.js and ${outdir}/language-worker.js`);

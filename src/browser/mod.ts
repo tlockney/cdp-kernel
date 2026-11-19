@@ -15,10 +15,13 @@ import type { TypeStripper, TypeStripperName } from "../transform.ts";
 // The browser build (scripts/build-browser.mjs) swaps package.ts, which
 // imports Node, for its VERSION alone.
 import { VERSION } from "../package.ts";
+import { LanguageClient, type WorkerHandle, type WorkerResponse } from "../language-client.ts";
+import type { LanguageInit } from "./language-worker.ts";
 import { type Channel, type JupyterMessage, type MessageListener, PageChannels } from "./channels.ts";
-import { BrowserTarget, type BrowserTargetOptions } from "./target.ts";
+import { BrowserTarget, type BrowserTargetOptions, type WorkerLike } from "./target.ts";
 
 export type { Channel, JupyterMessage, MessageListener } from "./channels.ts";
+export type { LanguageInit } from "./language-worker.ts";
 export { BrowserTarget, type BrowserTargetOptions, type HostHandler, type HostRequest, type WorkerLike } from "./target.ts";
 
 /**
@@ -50,7 +53,42 @@ export const SQL_MODULES = {
   mvpWorker: "npm:@duckdb/duckdb-wasm@1.29.0/dist/duckdb-browser-mvp.worker.js",
 } as const;
 
+/**
+ * Typed completion, inspection, type errors and the language comm in a
+ * page (#524). TypeScript's language service runs in a Web Worker of its
+ * own, started on the first request, from files the page serves: the
+ * kernel has no TypeScript of its own to load (it is 9 MB).
+ */
+export interface BrowserTypeScriptOptions {
+  /** Makes the language service's Worker: a module Worker of \`dist/browser/language-worker.js\`. */
+  createWorker(): WorkerLike;
+  /** URL of TypeScript 6's \`lib/typescript.js\`, resolved against \`base\`. The Worker fetches and runs it. */
+  module: string;
+  /**
+   * URL of a directory (resolved against \`base\`) that serves TypeScript's
+   * \`lib.*.d.ts\` files, as \`lib/\` in the package does. The Worker fetches
+   * \`lib.esnext.d.ts\` and the files it references.
+   */
+  libs: string;
+  /**
+   * URL of a directory (resolved against \`base\`) that serves the kernel
+   * package's \`runtime/*.d.mts\` files, which type \`jupyter\`. Without
+   * it \`jupyter\` is \`any\`.
+   */
+  runtimeTypes?: string;
+  /** What \`base\` is for these URLs; the target's \`base\` by default. */
+  base?: string;
+  /** How long a request waits for the Worker, in milliseconds; 500 by default. */
+  budgetMs?: number;
+}
+
 export interface BrowserKernelOptions extends BrowserTargetOptions {
+  /**
+   * Opt in to the language service: typed completion and tooltips,
+   * \`cdp-kernel.diagnostics.v1\` and \`cdp-kernel.language.v1\`. Without
+   * it the kernel answers from the runtime, and those comms close.
+   */
+  typescript?: BrowserTypeScriptOptions;
   /** What strips cells' types; sucrase by default, since esbuild's native binary can't run in a page. */
   typeStrip?: TypeStripperName | TypeStripper;
   /** Where the kernel's own log lines go; console.debug by default. */
@@ -76,6 +114,7 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
   let closed!: () => void;
   const closedPromise = new Promise<void>((resolve) => (closed = resolve));
   let target: BrowserTarget | null = null;
+  const types = options.typescript === undefined ? null : languageClient(options, log);
   const core = new KernelCore({
     runtime: "browser",
     version: VERSION,
@@ -83,6 +122,10 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
     launchTarget: async (events) => (target = await BrowserTarget.launch(events, options)),
     typeStrip: options.typeStrip ?? "sucrase",
     capabilities: options.capabilities,
+    types,
+    get languageVersion() {
+      return types?.typescriptVersion;
+    },
     log,
     exit: () => closed(),
   });
@@ -93,4 +136,31 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
     closed: closedPromise,
     notifyHost: (event, value) => target?.notifyHost(event, value),
   };
+}
+
+/** The language service, with its Worker started lazily by the first request. */
+function languageClient(options: BrowserKernelOptions, log: (text: string) => void): LanguageClient {
+  const { createWorker, module, libs, runtimeTypes, budgetMs } = options.typescript!;
+  const base = options.typescript!.base ?? options.base ?? globalThis.location?.href ?? "file:///";
+  const url = (u: string) => new URL(u, base).href;
+  return new LanguageClient({
+    budgetMs,
+    log,
+    start(): WorkerHandle {
+      const worker = createWorker();
+      worker.postMessage({
+        type: "init",
+        module: url(module),
+        libs: url(libs),
+        runtimeTypes: runtimeTypes === undefined ? undefined : url(runtimeTypes),
+      } satisfies LanguageInit);
+      return {
+        postMessage: (message) => worker.postMessage(message),
+        onMessage: (listener) => worker.addEventListener("message", (event: { data: unknown }) => listener(event.data as WorkerResponse)),
+        onError: (listener) => worker.addEventListener("error", (event: { message?: string }) => listener(event.message ?? "unknown")),
+        onExit: () => {},
+        terminate: () => worker.terminate(),
+      };
+    },
+  });
 }

@@ -39,6 +39,7 @@
       "default": "./dist/browser/kernel.js"
     },
     "./browser/worker": "./dist/browser/worker.js",
+    "./browser/language-worker": "./dist/browser/language-worker.js",
     "./globals/deno-compat": {
       "types": "./dist/globals-deno-compat.d.ts",
       "default": "./dist/globals-deno-compat.js"

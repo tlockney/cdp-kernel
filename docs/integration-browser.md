@@ -48,13 +48,14 @@ const kernel = startBrowserKernel({
 });
 ```
 
-`@tlockney/cdp-kernel/browser` is `dist/browser/kernel.js` and
-`.../browser/worker` is `dist/browser/worker.js`, both from
+`@tlockney/cdp-kernel/browser` is `dist/browser/kernel.js`,
+`.../browser/worker` is `dist/browser/worker.js` and
+`.../browser/language-worker` is `dist/browser/language-worker.js`, all from
 `scripts/build-browser.mjs`, which `npm run build` runs. Not on JSR yet.
 From a checkout:
 
 ```sh
-node scripts/build-browser.mjs dist/browser   # kernel.js and worker.js
+node scripts/build-browser.mjs dist/browser   # kernel.js, worker.js and language-worker.js
 ```
 
 ```js
@@ -72,8 +73,9 @@ kernel.send("shell", {
 });
 ```
 
-`test/browser.test.ts` runs a page like this in headless Chromium, WebKit
-and Firefox, through Playwright; CI runs it in all three. Safari itself,
+`test/browser.test.ts` and `test/browser-typescript.test.ts` run a page
+like this in headless Chromium, WebKit and Firefox, through Playwright;
+CI runs them in all three. Safari itself,
 on macOS or iOS, isn't tested.
 
 ## Host features
@@ -123,6 +125,80 @@ const kernel = startBrowserKernel({
 });
 ```
 
+## TypeScript language service
+
+Typed completion and tooltips (declared types, where the runtime knows
+only values), type errors through the `cdp-kernel.diagnostics.v1` comm,
+and signature help, definition and rename through `cdp-kernel.language.v1`
+([notebooks](notebooks.md#type-errors-for-frontends)) need TypeScript,
+which the kernel doesn't carry: it is 9 MB, and TypeScript's lib files
+add more. A page that wants them passes the `typescript` option with
+files it serves:
+
+> [!NOTE]
+> **Unreleased.** Available only from a build of `main` (HEAD), not in
+> the latest release.
+
+```js
+const kernel = startBrowserKernel({
+  createWorker: () => new Worker(workerUrl, { type: "module" }),
+  typescript: {
+    // dist/browser/language-worker.js, `@tlockney/cdp-kernel/browser/language-worker`
+    createWorker: () => new Worker(languageWorkerUrl, { type: "module" }),
+    module: "/vendor/typescript/typescript.js", // TypeScript 6's lib/typescript.js
+    libs: "/vendor/typescript/lib/", // its lib.*.d.ts files
+    runtimeTypes: "/vendor/cdp-kernel/runtime/", // the package's runtime/*.d.mts, optional
+  },
+});
+```
+
+- **`module`** is `lib/typescript.js` from the `typescript` package,
+  version 6. The Worker fetches it and runs it with `new Function`, so a
+  page whose Content Security Policy forbids `unsafe-eval` can't use the
+  option. The URL is resolved against `typescript.base`, else the
+  target's `base`.
+- **`libs`** is a directory that serves the package's `lib.*.d.ts` files
+  under their names. The Worker fetches `lib.esnext.d.ts` and the files
+  it references, 87 of them in TypeScript 6.0.3. Serve the package's
+  `lib/` as it is, or just those files.
+- **`runtimeTypes`** is a directory that serves the kernel package's
+  `runtime/*.d.mts` files, which type `jupyter` (`display.d.mts` and
+  what it imports, 6 files). Without it, or if they don't load,
+  `jupyter` is `any`.
+- **`createWorker`** makes the language service's own Web Worker, so
+  parsing and checking never block cells, the page or the kernel's
+  replies.
+- **`budgetMs`** is how long a request waits for the Worker, 500 by
+  default.
+
+The Worker starts on the first completion, tooltip or comm request, not
+with the kernel, and the page pays for the files only then. TypeScript
+takes a moment to load (about a second); until it has, the kernel
+answers from the runtime as it does without the option, and the comms
+answer `null`, which frontends read as "can't tell". The Worker is
+ended after ten minutes without a request, and a request starts a new
+one with the cells that have run. `language_info.version` in
+`kernel_info_reply` is the TypeScript the Worker loaded.
+
+Without the option nothing changes: completion comes from the runtime,
+no Worker is made, and a frontend's request to open either comm is closed.
+
+The service checks cells against ES libs (`lib.esnext.d.ts`; 621 KB, 65
+KB gzipped, with their 87 files) plus declarations in the kernel for
+what a cell in a Worker reaches for: `console`, timers, `fetch` with its
+`Request`, `Response`, `Headers`, `URL`, `AbortController` and
+`TextEncoder`, among a few more (7 KB, in `src/browser/language-globals.ts`).
+It doesn't load `lib.dom.d.ts` (2.3 MB, 358 KB gzipped) or
+`lib.webworker.d.ts` (787 KB, 129 KB gzipped). A Worker global the
+declarations leave out is an error in the diagnostics although the Worker
+has it; it can be added to that file. The `jupyter` types are 51 KB (15 KB
+gzipped). TypeScript itself is 9.1 MB (1.6 MB gzipped).
+
+An import of a package is `any`: the language service doesn't fetch
+types for `npm:` or esm.sh imports, and doesn't report them as errors.
+A relative import that isn't served to the language service is an error
+(there are no files to resolve it from).
+
 ## What works
 
 - TypeScript and TSX, stripped by sucrase (esbuild's native binary can't
@@ -160,6 +236,9 @@ const kernel = startBrowserKernel({
   both of its files are mapped; one left out, or half mapped, loads from
   jsDelivr. Current browsers all run `eh`, so mapping `eh` is enough,
   and `mvp` alone never takes effect there.
+- Typed completion, tooltips, type errors and signature help, definition
+  and rename, when the page opts in ([TypeScript language
+  service](#typescript-language-service)).
 - Interrupt. A cell waiting on a promise is abandoned and the Worker keeps
   its state, as on workerd, and
   [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal)
@@ -172,9 +251,9 @@ const kernel = startBrowserKernel({
 - `prompt()` and `confirm()` answer as when the frontend has no stdin. A
   synchronous prompt in a Worker needs `SharedArrayBuffer` and
   `Atomics.wait`, so a cross-origin isolated page (COOP and COEP headers).
-- Typed completion. The language service runs in a browser, but
-  `src/language-service-worker.ts` reads its lib files from disk and
-  installs `@types` packages with npm.
+- Types for packages. In the browser's language service an import from
+  esm.sh or `npm:` is `any`, without an error; fetching the package's
+  types is not done yet.
 - The visual debugger: a page has no CDP.
 - `Deno.*` and Node's builtins, beyond what esm.sh polyfills for `node:`
   imports.
