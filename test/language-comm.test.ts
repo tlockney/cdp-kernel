@@ -129,6 +129,11 @@ test("a request the kernel can't read gets an answer, and never reaches the serv
   for (const bad of [{ cells: "x", cell: 0 }, { cells: [1], cell: 0 }, { cells, cell: 2 }, { cells, cell: -1 }, { cells, cell: 0.5 }, { cells, cell: "0" }]) {
     assert.deepEqual(await ask(channels, "l6", { request: 2, op: "definition", cursor: 0, ...bad }), { request: 2, locations: null }, JSON.stringify(bad));
   }
+  // A cursor that isn't a number.
+  for (const op of ["definition", "rename"]) {
+    const data = await ask(channels, "l6", { request: 4, op, cells, cell: 0, cursor: "0", newName: "x" });
+    assert.deepEqual(data, { request: 4, [op === "definition" ? "locations" : "edits"]: null });
+  }
   assert.deepEqual(await ask(channels, "l6", { request: 3, op: "rename", cells, cell: 0, cursor: 0 }), { request: 3, edits: null });
   assert.deepEqual(asked, []);
 });

@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import ts from "typescript";
-import { kernelGlobals, NotebookTypes } from "../src/notebook-types.ts";
+import { cellSpan, kernelGlobals, NotebookTypes } from "../src/notebook-types.ts";
 import { aliasFor } from "../runtime/node-hooks.mjs";
 
 const repo = join(import.meta.dirname, "..");
@@ -390,4 +390,58 @@ test("definition and rename: positions in a cell are UTF-16 indices", () => {
   const cells = ["const s = '😀'; const name = 1;", "name;"];
   const at = cells[0].indexOf("name");
   assert.deepEqual(places(cells, types.definition(cells, 1, 0, 10_000)), [{ cell: 0, start: at, text: "name" }]);
+});
+
+// --- Redeclarations rename can't follow (#522) --------------------------------
+
+test("rename: a member found through a variable that a cell in between declares again is refused", () => {
+  const types = service();
+  const cells = ["const o = { k: 1 };", "o.k;", "const o = { k: 2 };", "o.k;"];
+  for (const cell of [1, 3]) {
+    const r = types.rename(cells, cell, 2, "kk", 10_000);
+    assert.ok(r !== null && "error" in r && /"o" is declared again in a later cell/.test(r.error), JSON.stringify(r));
+  }
+  // Without the redeclaration the member is renamed everywhere.
+  const plain = ["const o = { k: 1 };", "o.k;", "o.k;"];
+  assert.deepEqual(renamed(plain, types.rename(plain, 1, 2, "kk", 10_000)), ["const o = { kk: 1 };", "o.kk;", "o.kk;"]);
+  // A name declared once in between, or unrelated, doesn't stop it.
+  const unrelated = ["const o = { k: 1 };", "const n = 1;", "o.k; n;", "const m = 2;", "o.k;"];
+  assert.deepEqual(renamed(unrelated, types.rename(unrelated, 2, 2, "kk", 10_000)), ["const o = { kk: 1 };", "const n = 1;", "o.kk; n;", "const m = 2;", "o.kk;"]);
+});
+
+test("definition and rename: a name a later cell declares again only in part isn't followed", () => {
+  const types = service();
+  const cells = ["const [a, b] = [1, 2];", "const [a, c] = [3, 4];", "a; b;"];
+  // From the later cell's own declaration, and from a use after it.
+  assert.deepEqual(types.definition(cells, 2, 0, 10_000), []);
+  assert.deepEqual(types.definition(cells, 1, 7, 10_000), []);
+  for (const [cell, at] of [[1, 7], [2, 0]]) {
+    const r = types.rename(cells, cell, at, "z", 10_000);
+    assert.ok(r !== null && "error" in r && /"a" is declared in more than one cell in a way rename can't follow/.test(r.error), JSON.stringify(r));
+  }
+  // A name the later statement doesn't declare again resolves as usual.
+  assert.deepEqual(places(cells, types.definition(cells, 2, 3, 10_000)), [{ cell: 0, start: 10, text: "b" }]);
+  assert.deepEqual(renamed(cells, types.rename(cells, 2, 3, "z", 10_000)), ["const [a, z] = [1, 2];", cells[1], "a; z;"]);
+  // A statement the later cell declares again in whole is dropped, as before.
+  const whole = ["const [a, b] = [1, 2];", "const [a, b] = [3, 4];", "a;"];
+  assert.deepEqual(places(whole, types.definition(whole, 2, 0, 10_000)), [{ cell: 1, start: 7, text: "a" }]);
+});
+
+test("definition and rename: a type and a value of one name in different cells aren't followed", () => {
+  const types = service();
+  const cells = ["const T = 1;", "type T = string;", "let u: T = 'a'; T;"];
+  assert.deepEqual(types.definition(cells, 2, cells[2].lastIndexOf("T"), 10_000), []);
+  const r = types.rename(cells, 2, cells[2].lastIndexOf("T"), "U", 10_000);
+  assert.ok(r !== null && "error" in r && /"T" is declared in more than one cell in a way rename can't follow/.test(r.error), JSON.stringify(r));
+});
+
+test("a span is a cell's only when it lies inside the cell", () => {
+  const texts = ["abc", "de"];
+  const starts = [11, 15]; // after "export {};\n", each cell followed by a newline
+  assert.deepEqual(cellSpan(starts, texts, 12, 2), { cell: 0, start: 1, end: 3 });
+  assert.deepEqual(cellSpan(starts, texts, 15, 2), { cell: 1, start: 0, end: 2 });
+  assert.equal(cellSpan(starts, texts, 13, 2), null); // runs into the newline after the cell
+  assert.equal(cellSpan(starts, texts, 14, 1), null); // the newline itself
+  assert.equal(cellSpan(starts, texts, 16, 5), null); // past the last cell
+  assert.equal(cellSpan(starts, texts, 3, 2), null); // before the first
 });

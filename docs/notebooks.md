@@ -276,9 +276,10 @@ location's `cell`. A definition only has locations inside `cells`: a name
 declared in a package's types, in the runtime's globals, or in an imported
 file gives `[]`. A rename gives `{ error }` instead of edits when it can't
 happen: the name is a keyword, is declared outside the notebook (a package
-export, a global such as `process`, a property an imported file declares), isn't declared in the notebook, is
-declared only in a later cell, or `newName` isn't a name a declaration can
-have. Apply every edit in `edits`; each replaces `start` to `end` of its
+export, a global such as `process`, a property an imported file
+declares), isn't declared in the notebook, is declared only in a later
+cell, `newName` isn't a name a declaration can have, or one of the
+redeclarations below can't be followed. Apply every edit in `edits`; each replaces `start` to `end` of its
 cell with `text`, which is `newName` (`key: newName` where a shorthand
 property `{ key }` used the old name, and `name as newName` for an imported
 name, which keeps the export's own name).
@@ -291,11 +292,25 @@ of it has none. `rename` treats the cells that declare a name as separate
 variables, as the runtime does: it renames the declaration the cursor's
 name refers to and the uses it governs, up to the cell that declares the
 name again. The later declarations, and the uses after them, keep the old
-name. To rename those too, rename from each of them in turn. When a
-later cell declares only some of the names a statement declared
-(`const [a, b] = pair`, then `const [a, c] = other`), the earlier statement
-is kept as it is, so a use after the later cell still resolves to the
-earlier declaration.
+name. To rename those too, rename from each of them in turn.
+
+Rename refuses rather than guess where it can't follow a redeclaration:
+
+- A property or other member is found through its variable. If a cell
+  between the first and last cell the rename would edit declares that
+  variable again (`const o = { k: 1 }`, later `const o = { k: 2 }`), the
+  rename fails with `"o" is declared again in a later cell; rename it there
+  separately`, as the edits would leave that cell's own `k`.
+- When a later cell declares only some of the names a statement declared
+  (`const [a, b] = pair`, then `const [a, c] = other`), the earlier
+  statement stays in the file, so `a` can't be told apart. `definition`
+  gives `[]` for `a`, and `rename` fails with `"a" is declared in more than
+  one cell in a way rename can't follow`. `b`, which the later statement
+  doesn't declare again, is unaffected.
+- The same message answers a name that one cell declares as a value and
+  another as a type (`const T = 1`, later `type T = string`): the later
+  declaration replaces the earlier one in the file, so the other meaning
+  doesn't resolve, and `definition` gives `[]` for it.
 
 Every answer is `null` (`signature`, `locations` or `edits`) when the
 kernel can't tell: TypeScript isn't loaded yet or isn't available, the

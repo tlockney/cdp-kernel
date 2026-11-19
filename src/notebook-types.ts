@@ -120,6 +120,31 @@ const RESERVED = new Set([
   "void", "while", "with", "yield",
 ]);
 
+/** The identifier the cursor (a UTF-16 index) is in or at the end of. */
+function wordAt(code: string, cursor: number): string {
+  return (/[\w$]*$/.exec(code.slice(0, cursor))?.[0] ?? "") + (/^[\w$]*/.exec(code.slice(cursor))?.[0] ?? "");
+}
+
+/**
+ * Whether a cell up to `at` declares `name` again, after a statement that
+ * declares it and other names too that no cell declares again: that
+ * statement stays in the file (see NotebookTypes#withoutRedeclared), so the
+ * name resolves to it and not to the nearest declaration.
+ */
+function partiallyRedeclared(cells: Cell[], name: string, at: number): boolean {
+  const declaredIn = (n: string, after: number) => cells.some((c, i) => i > after && i <= at && c.statements.some((st) => st.names.includes(n)));
+  return cells.some((c, j) =>
+    j < at && c.statements.some((st) => st.names.length > 1 && st.names.includes(name) && declaredIn(name, j) && !st.names.every((n) => declaredIn(n, j)))
+  );
+}
+
+/** The cell a span of the notebook file is in, as a span of that cell; null if it isn't inside one. */
+export function cellSpan(starts: number[], texts: string[], start: number, length: number): CellSpan | null {
+  const i = starts.findLastIndex((s) => s <= start);
+  if (i < 0 || start + length > starts[i] + texts[i].length) return null;
+  return { cell: i, start: start - starts[i], end: start - starts[i] + length };
+}
+
 /** One top-level statement of an executed cell, and the names it declares. */
 interface Statement {
   start: number;
@@ -358,7 +383,8 @@ export class NotebookTypes {
     const found = this.#withinBudget(budgetMs, () => this.#service.getDefinitionAtPosition(this.#file, position) ?? []);
     if (found === null) return null;
     const spans = found.filter((d) => this.#isNotebook(d.fileName)).flatMap((d) => notebook.span(d.textSpan) ?? []);
-    return notebook.governed(spans, cell) ?? [];
+    const governed = notebook.governed(spans, cell);
+    return "problem" in governed ? [] : governed.spans;
   }
 
   /**
@@ -383,7 +409,13 @@ export class NotebookTypes {
     const position = notebook.starts[cell] + cursor;
     const found = this.#withinBudget(budgetMs, (): { error: string } | { locations: readonly TS.RenameLocation[] } => {
       const info = this.#service.getRenameInfo(this.#file, position, { allowRenameOfImportPath: false });
-      if (!info.canRename) return { error: info.localizedErrorMessage };
+      if (!info.canRename) {
+        // A name one cell declares as a value and another as a type, say,
+        // doesn't resolve in both: only one is in the file (see #setNotebook).
+        const word = wordAt(cells[cell], cursor);
+        const declaredIn = this.#statementsOf(cells).filter((c) => c.some((st) => st.names.includes(word))).length;
+        return { error: declaredIn > 1 ? `${JSON.stringify(word)} is declared in more than one cell in a way rename can't follow` : info.localizedErrorMessage };
+      }
       const locations = this.#service.findRenameLocations(this.#file, position, false, false, { providePrefixAndSuffixTextForRename: true });
       return locations === undefined ? { error: "This name can't be renamed" } : { locations };
     });
@@ -395,9 +427,20 @@ export class NotebookTypes {
       const span = notebook.span(l.textSpan);
       return span === null ? [] : [{ ...span, text: `${l.prefixText ?? ""}${newName}${l.suffixText ?? ""}` }];
     });
-    const edits = notebook.governed(located, cell);
-    if (edits === null) return { error: "This name is declared only in a later cell" };
-    return { edits };
+    const governed = notebook.governed(located, cell);
+    if ("problem" in governed) {
+      return {
+        error: governed.problem === "later"
+          ? "This name is declared only in a later cell"
+          : `${JSON.stringify(governed.name)} is declared in more than one cell in a way rename can't follow`,
+      };
+    }
+    // A property or local the renamed symbol was found through a variable
+    // that a cell in between declares again: the edits would miss that
+    // cell's own declaration.
+    const again = notebook.redeclaredBetween(governed.spans, governed.topLevel);
+    if (again !== null) return { error: `${JSON.stringify(again)} is declared again in a later cell; rename it there separately` };
+    return { edits: governed.spans };
   }
 
   /** Runs `run` with a deadline that cancels TypeScript's work in it: null if it took longer than `budgetMs`. */
@@ -488,30 +531,58 @@ export class NotebookTypes {
     return {
       starts,
       /** A span of the file as one of the cell's, or null if it isn't inside a cell. */
-      span: ({ start, length }: TS.TextSpan): CellSpan | null => {
-        const i = starts.findLastIndex((s) => s <= start);
-        if (i < 0 || start + length > starts[i] + texts[i].length) return null;
-        return { cell: i, start: start - starts[i], end: start - starts[i] + length };
-      },
+      span: ({ start, length }: TS.TextSpan): CellSpan | null => cellSpan(starts, texts, start, length),
       /**
        * `spans` as far as the declaration they are about governs them. When
        * they include a top-level declaration, the name is a notebook
        * variable, and a cell that declares it again starts another: keep
-       * the spans from the nearest declaration at or before `cell` up to
-       * that cell. Null when every declaration is in a later cell. Spans
-       * with no such declaration (a property, a local) are all kept.
+       * the spans from the nearest declaration at or before `at` up to
+       * that cell. "later" when every declaration is in a later cell, and
+       * "partial" when a cell declares again only some of the names of an
+       * earlier statement, which is then still in the file, so the name
+       * doesn't resolve to the nearest declaration. Spans with no
+       * top-level declaration (a property, a local) are all kept.
        */
-      governed: <T extends CellSpan>(spans: T[], at: number): T[] | null => {
+      governed: <T extends CellSpan>(
+        spans: T[],
+        at: number,
+      ): { spans: T[]; topLevel: boolean } | { problem: "later" | "partial"; name: string } => {
         const declared = spans.filter((s) => cells[s.cell].statements.some((st) => st.spans.some((d) => d.start === s.start && d.end === s.end)));
-        if (declared.length === 0) return spans;
+        if (declared.length === 0) return { spans, topLevel: false };
+        const name = cells[declared[0].cell].code.slice(declared[0].start, declared[0].end);
+        if (partiallyRedeclared(cells, name, at)) return { problem: "partial", name };
         const from = Math.max(-1, ...declared.map((d) => d.cell).filter((c) => c <= at));
-        if (from < 0) return null;
-        const first = declared.find((d) => d.cell === from)!;
-        const name = cells[from].code.slice(first.start, first.end);
+        if (from < 0) return { problem: "later", name };
         const to = cells.findIndex((c, i) => i > from && c.statements.some((st) => st.names.includes(name)));
-        return spans.filter((s) => s.cell >= from && (to < 0 || s.cell < to));
+        return { spans: spans.filter((s) => s.cell >= from && (to < 0 || s.cell < to)), topLevel: true };
+      },
+      /**
+       * For a rename of something that isn't a top-level name: a top-level
+       * name that the cells with edits use and that a cell after the first
+       * of them (up to the last) declares again, or null. The symbol was
+       * found through the declaration the cursor sees, so the edits would
+       * miss what that cell declares.
+       */
+      redeclaredBetween: (spans: CellSpan[], topLevel: boolean): string | null => {
+        if (topLevel || spans.length === 0) return null;
+        const editCells = spans.map((s) => s.cell);
+        const first = Math.min(...editCells);
+        const last = Math.max(...editCells);
+        const names = new Set(cells.slice(first + 1, last + 1).flatMap((c) => c.statements.flatMap((st) => st.names)));
+        for (const name of names) {
+          const declaring = cells.filter((c) => c.statements.some((st) => st.names.includes(name))).length;
+          if (declaring < 2) continue;
+          const word = new RegExp(`(?<![\\w$])${name.replace(/\$/g, "\\$")}(?![\\w$])`);
+          if (editCells.some((i) => word.test(texts[i]))) return name;
+        }
+        return null;
       },
     };
+  }
+
+  /** The top-level statements of each of `texts`. */
+  #statementsOf(texts: string[]): Statement[][] {
+    return texts.map((code) => this.#statements(code));
   }
 
   #statements(code: string): Statement[] {
