@@ -22,6 +22,12 @@ const options = workerData as WorkerOptions;
 let types: NotebookTypes | null = null;
 /** Cells that ran before TypeScript loaded, replayed to it. */
 let cells: string[] = [];
+/**
+ * Type packages still loading, or failed: diagnostics wait for them, as
+ * without them a target's globals are errors (#514).
+ */
+let typePackagesPending = options.typePackages.length;
+let typePackagesFailed = false;
 
 /** A package's declaration entry point: package.json "types"/"typings", else index.d.ts. */
 function typesEntry(dir: string): string {
@@ -44,15 +50,18 @@ function typesEntry(dir: string): string {
  */
 async function addTypePackage(types: NotebookTypes, { name, range }: { name: string; range: string }): Promise<void> {
   const short = name.replace(/^@types\//, "");
-  if (types.resolvesTypes(short)) {
-    types.addTypeNames([short]);
-    return;
-  }
   try {
+    if (types.resolvesTypes(short)) {
+      types.addTypeNames([short]);
+      return;
+    }
     const { dir, alias } = await ensureInstalledAsync({ name, range });
     types.addTypeFiles([typesEntry(join(dir, "node_modules", alias))]);
   } catch (err) {
+    typePackagesFailed = true;
     process.stderr.write(`[cdp-kernel] no ${name} for completion: ${err instanceof Error ? err.message : err}\n`);
+  } finally {
+    typePackagesPending--;
   }
 }
 
@@ -75,7 +84,7 @@ async function start(): Promise<void> {
       : new DenoResolver({ config: options.deno.config, root: join(options.notebookDir, "__cdpk_remote__") }),
     types: [],
     typeFiles: options.typeFiles,
-    globals: kernelGlobals(options.display),
+    globals: kernelGlobals(options.display, options.untypedGlobals),
   });
   if (options.denoTypes) {
     const declarations = denoTypes();
@@ -104,14 +113,17 @@ parentPort?.on("message", (request: WorkerRequest) => {
       return;
     case "complete":
     case "quickInfo":
+    case "diagnostics":
       if (types === null) {
         parentPort?.postMessage({ id: request.id, result: null } satisfies WorkerResponse);
         return;
       }
       try {
-        response = request.type === "complete"
-          ? { id: request.id, result: types.complete(request.code, request.cursor) }
-          : { id: request.id, result: types.quickInfo(request.code, request.cursor) };
+        if (request.type === "complete") response = { id: request.id, result: types.complete(request.code, request.cursor) };
+        else if (request.type === "quickInfo") response = { id: request.id, result: types.quickInfo(request.code, request.cursor) };
+        // Without the target's type packages, its globals would be errors.
+        else if (typePackagesPending > 0 || typePackagesFailed) response = { id: request.id, result: null };
+        else response = { id: request.id, result: types.diagnostics(request.code, (request as Extract<WorkerRequest, { type: "diagnostics" }>).budgetMs) };
       } catch (err) {
         response = { id: request.id, error: err instanceof Error ? err.stack ?? err.message : String(err) };
       }

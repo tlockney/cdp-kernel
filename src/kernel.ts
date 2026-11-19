@@ -100,17 +100,19 @@ function nodeMajor(): string {
  * Where the language service gets each target's globals and imports from
  * (#273, #275). A `--deno-compat` Node target gets Node's types only: its
  * `Deno` namespace is partial, and Deno's declarations would promise
- * members it doesn't have.
+ * members it doesn't have; it is declared `any`, so using it isn't a type
+ * error (#514).
  */
 function languageServiceOptions(
   runtime: RuntimeName,
   notebookDir: string,
   project: DenoProject | null,
+  denoCompat: boolean,
 ): Omit<WorkerOptions, "display"> {
   const base = { notebookDir, npmCache: "npm" as const, deno: null, denoTypes: false, typeFiles: [], typePackages: [] };
   switch (runtime) {
     case "node":
-      return { ...base, typePackages: [{ name: "@types/node", range: nodeMajor() }] };
+      return { ...base, typePackages: [{ name: "@types/node", range: nodeMajor() }], untypedGlobals: denoCompat ? ["Deno"] : [] };
     case "deno":
       return { ...base, npmCache: null, deno: { config: project?.configPath ?? null }, denoTypes: true };
     case "bun":
@@ -182,7 +184,7 @@ export class Kernel {
     if (reporter) reportUncaught(reporter);
     const types = options.languageService === false
       ? null
-      : new LanguageService(languageServiceOptions(runtime, notebookDir, project), { log });
+      : new LanguageService(languageServiceOptions(runtime, notebookDir, project, denoCompat), { log });
     this.#core = new KernelCore({
       runtime,
       version: VERSION,

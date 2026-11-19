@@ -207,6 +207,39 @@ runs it takes about 150 MB. To turn it off, install the kernel with
 
 Executed cells are kept for `history_request` (tail, range and search).
 
+### Type errors for frontends
+
+The language service can also check the cell being edited against the
+cells that ran, for a frontend that shows type errors as you type.
+Jupyter has no message for this, so the kernel answers a comm itself,
+without running anything in the runtime:
+
+1. The frontend opens a comm to `cdp-kernel.diagnostics.v1` (`comm_open`,
+   any `data`). A kernel started with `--no-language-service` closes it
+   at once, as for an unknown target.
+2. For each check it sends `comm_msg` with `{ request, code }`: `request`
+   is any JSON value, sent back to match the answer; `code` is the cell.
+3. The kernel answers with `comm_msg` `{ request, diagnostics }`, where
+   `diagnostics` is a list of `{ start, end, severity, code, message }`:
+   `start` and `end` are offsets in `code` counted in Unicode code points,
+   as `cursor_pos` is; `severity` is `"error"` or `"warning"`; `code` is
+   TypeScript's error number. `diagnostics` is `null` when the kernel
+   can't tell: TypeScript isn't loaded yet or isn't available, the
+   runtime's type package (such as `@types/node`) is still loading or
+   couldn't be installed (offline), or the check took longer than the
+   500 ms budget.
+
+Errors that notebook rules make false are left out: declaring a name that
+an earlier cell declared, and importing a package that no cell has run
+yet (or one without types). Top-level `await` is allowed. A missing
+relative file (`./missing.ts`) is still an error. On the `--deno-compat`
+Node kernel, `Deno` has no types, so it is never an error.
+
+The messages go on the shell channel, so a check waits behind a running
+cell unless the frontend sends it on a
+kernel subshell ([JEP 91](https://github.com/jupyter/enhancement-proposals/blob/master/91-kernel-subshells/kernel-subshells.md)).
+A kernel restart closes the comm; open it again.
+
 ## Typed globals in your editor
 
 See [Editor types](editor-types.md).

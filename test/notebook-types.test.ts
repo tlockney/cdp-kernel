@@ -153,3 +153,65 @@ test("quick info leaves an unresolved import to the runtime", () => {
   types.addCell(`import { missing } from "npm:not-installed@1";`);
   assert.equal(types.quickInfo("missing", 7), null);
 });
+
+// --- Diagnostics (#514) -------------------------------------------------------
+
+function errors(types: NotebookTypes, code: string) {
+  return types.diagnostics(code, 10_000)?.map(({ start, end, code: id }) => ({ start, end, text: code.slice(start, end), code: id }));
+}
+
+test("diagnostics: a type error in the cell, at its range in the cell", () => {
+  const types = service();
+  types.addCell("let earlier = 1;");
+  assert.deepEqual(types.diagnostics("const n: string = 1", 10_000), [
+    { start: 6, end: 7, severity: "error", code: 2322, message: "Type 'number' is not assignable to type 'string'." },
+  ]);
+  assert.deepEqual(errors(types, "let y = ;"), [{ start: 8, end: 9, text: ";", code: 1109 }]);
+  // Only the cell's own errors, not the history's.
+  types.addCell("const broken: string = 2;");
+  assert.deepEqual(errors(types, "earlier + 1"), []);
+});
+
+test("diagnostics: a name an earlier cell declared may be declared again", () => {
+  const types = service();
+  // Partly redeclared, so the history keeps these statements.
+  types.addCell("let a = 1, b = 2;\nfunction f() {}\nenum E { A }\nimport { join } from 'node:path';");
+  assert.deepEqual(errors(types, "let a = 'x';"), []);
+  assert.deepEqual(errors(types, "function f() { return 1; }"), []);
+  assert.deepEqual(errors(types, "enum E { B }"), []);
+  assert.deepEqual(errors(types, "const join = 1;"), []);
+  // Twice in one cell is still an error, as it is at runtime.
+  assert.deepEqual(errors(types, "let q = 1; let q = 2;")?.map((e) => e.code), [2451, 2451]);
+  // Even for a name an earlier cell declared.
+  assert.deepEqual(errors(types, "let a = 1; let a = 2;")?.map((e) => e.code), [2451, 2451]);
+});
+
+test("diagnostics: top-level await, and a cell without imports or exports, aren't errors", () => {
+  const types = service();
+  assert.deepEqual(errors(types, "const x = await Promise.resolve(1);\nx.toFixed();"), []);
+  // In a script, these would clash with lib.dom's globals.
+  assert.deepEqual(errors(types, "const name = 'x'; const status = 2;"), []);
+});
+
+test("diagnostics: an import that hasn't run isn't an error; a missing relative file is", () => {
+  const notebookDir = mkdtempSync(join(tmpdir(), "cdpk-diag-"));
+  const types = service({ notebookDir });
+  types.addCell("const before = 1;");
+  assert.deepEqual(errors(types, "import isOdd from 'npm:is-odd@3';\nisOdd(1);"), []);
+  assert.deepEqual(errors(types, "import lodash from 'lodash';\nlodash.map;"), []);
+  assert.deepEqual(errors(types, "import x from './missing.ts';\nx;"), [{ start: 14, end: 28, text: "'./missing.ts'", code: 2307 }]);
+});
+
+test("diagnostics: a global the target has without types isn't an error", () => {
+  const types = new NotebookTypes(ts, { notebookDir: repo, npmCache: "npm", types: [], typeFiles: [], globals: kernelGlobals(display, ["Deno"]) });
+  assert.deepEqual(errors(types, "Deno.env.get('HOME');"), []);
+  assert.deepEqual(errors(service(), "Deno.env.get('HOME');")?.map((e) => e.code), [2304]);
+});
+
+test("diagnostics: a check over its budget gives null", () => {
+  const types = service();
+  const big = Array.from({ length: 3000 }, (_, i) => `const v${i}: number = [1, 2, 3].map((x) => x * ${i}).reduce((a, b) => a + b, 0);`).join("\n");
+  assert.equal(types.diagnostics(big, 1), null);
+  // The next check isn't cut short.
+  assert.deepEqual(errors(types, "const n: string = 1")?.map((e) => e.code), [2322]);
+});

@@ -39,6 +39,21 @@ test("the worker completes from executed cells and the target's type package", a
   }
 });
 
+test("the worker gives a cell's type errors (#514)", async () => {
+  const service = new LanguageService(
+    { notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [{ name: "@types/node", range: "24" }] },
+    { budgetMs: 5_000 },
+  );
+  try {
+    service.addCell("let total = 0;");
+    let found = null;
+    for (let i = 0; i < 100 && found === null; i++) found = await service.diagnostics("const n: string = total;\nprocess.version;");
+    assert.deepEqual(found?.map((d) => [d.start, d.end, d.code]), [[6, 7, 2322]]);
+  } finally {
+    service.close();
+  }
+});
+
 test("a request the worker can't answer within the budget gets null", async () => {
   const service = new LanguageService({ notebookDir: repo, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] }, { budgetMs: 1 });
   try {
@@ -136,6 +151,7 @@ test("offline with an empty cache, requests get null and the kernel logs one lin
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     for (let i = 0; i < 3; i++) assert.equal(await service.complete("Math.", 5), null);
+    assert.equal(await service.diagnostics("const n: string = 1"), null);
     assert.equal(logs.length, 1, logs.join("\n"));
     assert.match(logs[0], /^typed completion unavailable: no typescript: npm install typescript@\^6\.0\.3 failed: .+$/);
   } finally {
