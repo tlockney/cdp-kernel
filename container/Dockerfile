@@ -82,5 +82,9 @@ RUN pip install --no-cache-dir "anywidget==${ANYWIDGET_VERSION}" \
  && fix-permissions "$CONDA_DIR"
 
 USER ${NB_UID}
+# Typed completion's TypeScript (#513), in jovyan's npm cache, so a fresh
+# container doesn't download it on the first Tab (or go untyped offline).
+RUN node --input-type=module -e 'const { locateTypeScript } = await import("/usr/local/lib/node_modules/@tlockney/cdp-kernel/dist/typescript-package.js"); console.log(await locateTypeScript("/tmp"));' \
+ && rm -rf "$HOME/.npm"
 COPY --chown=${NB_UID}:${NB_GID} examples/*.ipynb docs/public/notebooks/ /home/${NB_USER}/examples/
 WORKDIR /home/${NB_USER}/examples

@@ -3,7 +3,6 @@
 // the language service in a worker thread, and the visual debugger.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
@@ -15,6 +14,7 @@ import { launchCelld } from "./celld-target.ts";
 import type { TypeStripper, TypeStripperName } from "./transform.ts";
 import { type DenoProject, loadDenoProject } from "./deno-config.ts";
 import { LanguageService, type WorkerOptions } from "./language-service.ts";
+import { findTypeScript } from "./typescript-package.ts";
 import { findWranglerConfig } from "./workers-project.ts";
 import { cacheRoot, VERSION } from "./package.ts";
 import { watchParent } from "./parent.ts";
@@ -33,16 +33,6 @@ export interface ConnectionInfo {
   stdin_port: number;
   iopub_port: number;
   hb_port: number;
-}
-
-/** The installed TypeScript's version, for kernel_info's language_info (#340). */
-function typescriptVersion(): string | undefined {
-  try {
-    const { version } = createRequire(import.meta.url)("typescript/package.json") as { version?: unknown };
-    return typeof version === "string" ? version : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /** Larger files get no source lines in a traceback. */
@@ -138,6 +128,17 @@ function languageServiceOptions(
 }
 
 /**
+ * kernel_info's language_info.version (#340): the TypeScript the language
+ * service loaded, else the one it would load (#513), read on each request
+ * because a cache install can finish while the kernel runs. Undefined
+ * without a language service, or before there's a TypeScript.
+ */
+export function languageVersion(notebookDir: string, service: LanguageService | null): string | undefined {
+  if (service === null) return undefined;
+  return service.typescriptVersion ?? findTypeScript(notebookDir)?.version;
+}
+
+/**
  * A kernel on its connection file's ports, running cells on a target
  * runtime launched as a child process. The message handling is
  * KernelCore's (src/kernel-core.ts); this is its Node wiring.
@@ -179,10 +180,18 @@ export class Kernel {
     // installed, unless CDP_KERNEL_CRASH_REPORTS=1.
     const reporter = crashReporter({ target: runtime });
     if (reporter) reportUncaught(reporter);
+    const types = options.languageService === false
+      ? null
+      : new LanguageService(languageServiceOptions(runtime, notebookDir, project), { log });
     this.#core = new KernelCore({
       runtime,
       version: VERSION,
-      languageVersion: typescriptVersion(),
+      // The TypeScript the language service uses (#340), once there is one
+      // (#513): kernel_info reads it each time, as a cache install can
+      // finish while the kernel runs.
+      get languageVersion() {
+        return languageVersion(notebookDir, types);
+      },
       channels: new ZmqChannels(conn, log),
       launchTarget(events) {
         if (runtime === "bun") return BunTarget.launch(events);
@@ -193,9 +202,7 @@ export class Kernel {
       typeStrip: options.typeStrip,
       transform: project?.transform,
       warning,
-      types: options.languageService === false
-        ? null
-        : new LanguageService(languageServiceOptions(runtime, notebookDir, project), { log }),
+      types,
       createDebugger: runtime === "node" || runtime === "deno"
         ? (publish, transformOptions) => new Debugger(publish, transformOptions)
         : undefined,
