@@ -182,6 +182,8 @@ test("diagnostics: a name an earlier cell declared may be declared again", () =>
   assert.deepEqual(errors(types, "const join = 1;"), []);
   // Twice in one cell is still an error, as it is at runtime.
   assert.deepEqual(errors(types, "let q = 1; let q = 2;")?.map((e) => e.code), [2451, 2451]);
+  // Even for a name an earlier cell declared.
+  assert.deepEqual(errors(types, "let a = 1; let a = 2;")?.map((e) => e.code), [2451, 2451]);
 });
 
 test("diagnostics: top-level await, and a cell without imports or exports, aren't errors", () => {

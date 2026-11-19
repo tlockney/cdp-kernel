@@ -106,7 +106,8 @@ export const TYPESCRIPT_VERSION = "6";
 
 /**
  * The kernel's own comm target for type errors in a cell being edited
- * (#514). Jupyter has no message for diagnostics; see docs/jupyter-api.md.
+ * (#514). Jupyter has no message for diagnostics; see docs/notebooks.md
+ * ("Type errors for frontends").
  */
 export const DIAGNOSTICS_TARGET = "cdp-kernel.diagnostics.v1";
 

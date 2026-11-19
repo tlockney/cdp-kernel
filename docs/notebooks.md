@@ -225,8 +225,9 @@ without running anything in the runtime:
    as `cursor_pos` is; `severity` is `"error"` or `"warning"`; `code` is
    TypeScript's error number. `diagnostics` is `null` when the kernel
    can't tell: TypeScript isn't loaded yet or isn't available, the
-   runtime's type package is still loading, or the check took longer than
-   the 500 ms budget.
+   runtime's type package (such as `@types/node`) is still loading or
+   couldn't be installed (offline), or the check took longer than the
+   500 ms budget.
 
 Errors that notebook rules make false are left out: declaring a name that
 an earlier cell declared, and importing a package that no cell has run

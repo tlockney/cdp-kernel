@@ -272,7 +272,7 @@ export class NotebookTypes {
       if (d.category !== ts.DiagnosticCategory.Error && d.category !== ts.DiagnosticCategory.Warning) continue;
       const start = d.start - offset;
       const stop = Math.min(d.start + (d.length ?? 0), end) - offset;
-      if (this.#ignored(d.code, code.slice(start, stop))) continue;
+      if (this.#ignored(d.code, code.slice(start, stop), code)) continue;
       result.push({
         start,
         end: stop,
@@ -284,10 +284,17 @@ export class NotebookTypes {
     return result;
   }
 
-  /** Whether diagnostic `code` on `text` (the span it marks) is one notebook rules cause. */
-  #ignored(code: number, text: string): boolean {
-    // A cell may declare again what an earlier cell declared: it replaces it.
-    if (REDECLARATION.has(code)) return this.#cells.some((cell) => cell.statements.some((s) => s.names.includes(text)));
+  /**
+   * Whether diagnostic `code` on `text` (the span it marks) in `cell` is one
+   * notebook rules cause.
+   */
+  #ignored(code: number, text: string, cell: string): boolean {
+    // A cell may declare again what an earlier cell declared: it replaces
+    // it. Declaring it twice in the one cell is still an error.
+    if (REDECLARATION.has(code)) {
+      const inCell = this.#statements(cell).flatMap((s) => s.names).filter((n) => n === text).length;
+      return inCell <= 1 && this.#cells.some((c) => c.statements.some((s) => s.names.includes(text)));
+    }
     // A package an import hasn't installed yet, or one without types.
     // A relative path that isn't there is a real error.
     if (MODULE_NOT_FOUND.has(code)) return !/^["'`](?:\.{0,2}\/)/.test(text);
