@@ -29,7 +29,8 @@ test("deno.jsonc's npm: imports use package.json's ranges", () => {
   // Dependabot bumps package.json only; a deno.jsonc range left behind
   // fails `deno publish` (#457).
   const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as Record<string, Record<string, string>>;
-  const ranges = { ...pkg.dependencies, ...pkg.optionalDependencies };
+  // typescript is a devDependency imported for its types only (#513).
+  const ranges: Record<string, string> = { ...pkg.dependencies, ...pkg.optionalDependencies, typescript: pkg.devDependencies.typescript };
   const deno = readFileSync(new URL("deno.jsonc", root), "utf8");
   const imports = [...deno.matchAll(/"([^"]+)":\s*"npm:((?:@[^/"]+\/)?[^@"]+)@([^"]+)"/g)];
   assert.ok(imports.length > 0, "no npm: imports found in deno.jsonc");

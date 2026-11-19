@@ -46,7 +46,8 @@ Name runtimes to measure only those (`npm run bench -- node bun`), and add
 The e2e suite follows Deno's `tests/integration/jupyter_tests.rs` and adds
 the gaps those tests leave: display ordering, TS, imports, `npm:`/`jsr:`,
 completion, and `update_display_data`. Set `CDPK_E2E_OFFLINE=1` to skip the
-registry-dependent checks. Set `CDPK_E2E_CLI` to run it through a different
+registry-dependent checks; typed completion then uses the checkout's
+TypeScript, linked into a temporary npm cache (`CDPK_CACHE_DIR`). Set `CDPK_E2E_CLI` to run it through a different
 CLI: an installed npm bin, or `deno run -A src/main.ts` to test a Deno host.
 
 ### Latest runtime releases

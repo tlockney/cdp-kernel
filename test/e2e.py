@@ -150,8 +150,9 @@ def checks(runtime, workdir, offline):
         assert runtime.split("-")[0] in info["banner"], info["banner"]
         package = json.loads((ROOT / "package.json").read_text())
         assert info["implementation_version"] == package["version"], info["implementation_version"]
-        # The TypeScript the kernel ships (#340).
-        major = package["dependencies"]["typescript"].lstrip("^~").split(".")[0]
+        # The TypeScript the language service uses (#340): the notebook's,
+        # else the npm cache's, else the supported major (#513).
+        major = package["devDependencies"]["typescript"].lstrip("^~").split(".")[0]
         assert info["language_info"]["version"].split(".")[0] == major, info["language_info"]
 
     def params_and_result(s):
@@ -1171,6 +1172,26 @@ VARIANTS = {
 }
 
 
+def prime_typescript_cache():
+    """
+    Offline, the language service can't install TypeScript (#513), and the
+    kernels' working directories are outside the checkout: link the
+    checkout's TypeScript into a fresh npm cache, where it looks.
+    """
+    cache = Path(tempfile.mkdtemp(prefix="cdpk-e2e-cache-"))
+    script = (
+        "import { aliasFor } from './runtime/node-hooks.mjs';"
+        "import { TYPESCRIPT_RANGE } from './src/typescript-package.ts';"
+        "console.log(aliasFor('typescript', TYPESCRIPT_RANGE));"
+    )
+    alias = subprocess.run(
+        ["node", "--input-type=module", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    (cache / "node_modules").mkdir()
+    (cache / "node_modules" / alias).symlink_to(ROOT / "node_modules" / "typescript")
+    os.environ["CDPK_CACHE_DIR"] = str(cache)
+
+
 def write_workers_project(workdir):
     """A Workers project with vars, KV, D1 and its own Durable Object class.
     Its node_modules is the checkout's, for wrangler and Miniflare."""
@@ -1263,6 +1284,8 @@ def main():
     runtimes = sys.argv[1:] or list(VARIANTS)
     offline = os.environ.get("CDPK_E2E_OFFLINE") == "1"
     failures = 0
+    if offline:
+        prime_typescript_cache()
     with tempfile.TemporaryDirectory() as data_dir:
         os.environ["JUPYTER_DATA_DIR"] = data_dir
         os.environ["GANYMEDE_PARAMS"] = json.dumps(PARAMS)

@@ -9,6 +9,13 @@ Issue and pull request numbers refer to
 - `cdp-kernel install` no longer says "fnm has no default alias" for a
   Node under a `node-versions/` directory that isn't fnm's
   ([#510](https://github.com/tlockney/cdp-kernel/issues/510)).
+- The package no longer includes TypeScript (24 MB, copied again into each
+  installed kernel version). Typed completion and inspection use the
+  notebook project's TypeScript 6 if it has one, otherwise TypeScript 6
+  installed once into the shared npm cache on first use; completion shows
+  runtime values meanwhile, and stays untyped offline. See
+  [TypeScript for typed completion](https://cdp-kernel.org/docs/install#typescript-for-typed-completion)
+  ([#513](https://github.com/tlockney/cdp-kernel/issues/513)).
 - The docs site no longer serves the widget screenshots `progress.png`,
   `temperature.png` and `dice.png`. Typings from 0.9.0 through 0.12.1
   linked to them, so editor hovers on those versions lose the images;

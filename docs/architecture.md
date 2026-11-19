@@ -149,6 +149,9 @@ So on every runtime, a cell and an imported `.ts` or `.tsx` file accept the same
 Tab and Shift-Tab merge two answers: the target's runtime values, and
 TypeScript's language service (`typescript` 6) running in a worker thread
 of the kernel host (`src/language-service.ts`, `src/language-service-worker.ts`).
+The worker loads the notebook project's `typescript`, or one installed on
+first use into the npm cache (`src/typescript-package.ts`); until then,
+and if it can't, the runtime answers alone.
 The worker keeps one virtual file in the notebook's directory, so relative
 imports resolve as the target resolves them: every cell that ran, then the
 cell being edited (`src/notebook-types.ts`). A REPL redeclares names all the

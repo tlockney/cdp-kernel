@@ -1,8 +1,12 @@
 // The language-service worker and its time budget (#273), src/language-service.ts.
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { aliasFor } from "../runtime/node-hooks.mjs";
 import { LanguageService, workerEntry } from "../src/language-service.ts";
+import { TYPESCRIPT_RANGE } from "../src/typescript-package.ts";
 
 const repo = join(import.meta.dirname, "..");
 
@@ -76,6 +80,64 @@ test("the worker answers quick info", async () => {
     let info: string | null = null;
     for (let i = 0; i < 100 && info === null; i++) info = await service.quickInfo("answer", 6);
     assert.equal(info, "const answer: 42\nThe answer.");
+  } finally {
+    service.close();
+  }
+});
+
+/**
+ * A notebook directory without typescript and an empty npm cache, set in
+ * the environment the next worker starts with.
+ */
+function bareNotebook(t: TestContext, env: Record<string, string> = {}): { notebook: string; cache: string } {
+  const notebook = mkdtempSync(join(tmpdir(), "cdpk-nb-"));
+  const cache = mkdtempSync(join(tmpdir(), "cdpk-ts-cache-"));
+  const before = { ...process.env };
+  Object.assign(process.env, { CDPK_CACHE_DIR: cache, ...env });
+  t.after(() => {
+    for (const key of Object.keys(process.env)) if (!(key in before)) delete process.env[key];
+    Object.assign(process.env, before);
+    rmSync(notebook, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+  });
+  return { notebook, cache };
+}
+
+test("without the project's typescript, the worker uses the npm cache's (#513)", async (t) => {
+  const { notebook, cache } = bareNotebook(t);
+  mkdirSync(join(cache, "node_modules"));
+  symlinkSync(join(repo, "node_modules", "typescript"), join(cache, "node_modules", aliasFor("typescript", TYPESCRIPT_RANGE)), "dir");
+  const logs: string[] = [];
+  const service = new LanguageService(
+    { notebookDir: notebook, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] },
+    { budgetMs: 5_000, log: (text) => logs.push(text) },
+  );
+  try {
+    service.addCell("const settings = { verbose: true, depth: 2 };");
+    assert.deepEqual((await completeWhenReady(service, "settings.")).entries.map((e) => e.name), ["depth", "verbose"]);
+    assert.deepEqual(logs, []);
+  } finally {
+    service.close();
+  }
+});
+
+test("offline with an empty cache, requests get null and the kernel logs one line (#513)", async (t) => {
+  // No npm on PATH: the install fails at once, as it does offline.
+  const { notebook } = bareNotebook(t, { PATH: "" });
+  const logs: string[] = [];
+  const service = new LanguageService(
+    { notebookDir: notebook, npmCache: "npm", deno: null, denoTypes: false, typeFiles: [], typePackages: [] },
+    { budgetMs: 5_000, log: (text) => logs.push(text) },
+  );
+  try {
+    const deadline = Date.now() + 30_000;
+    while (logs.length === 0 && Date.now() < deadline) {
+      assert.equal(await service.complete("Math.", 5), null);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    for (let i = 0; i < 3; i++) assert.equal(await service.complete("Math.", 5), null);
+    assert.equal(logs.length, 1, logs.join("\n"));
+    assert.match(logs[0], /^typed completion unavailable: no typescript: npm install typescript@\^6\.0\.3 failed: .+$/);
   } finally {
     service.close();
   }

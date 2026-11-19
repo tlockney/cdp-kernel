@@ -32,7 +32,13 @@ export type WorkerRequest =
   | { type: "reset" }
   | { type: "complete" | "quickInfo"; id: number; code: string; cursor: number };
 
-export type WorkerResponse = { id: number; result: CompletionResult | string | null } | { id: number; error: string };
+export type WorkerResponse =
+  | { id: number; result: CompletionResult | string | null }
+  | { id: number; error: string }
+  /** TypeScript couldn't be loaded or installed (#513): the worker is of no use. */
+  | { unavailable: string }
+  /** The TypeScript version the worker loaded (#513). */
+  | { loaded: string };
 
 /**
  * How long a request waits for the worker. JupyterLab gives a kernel's
@@ -70,6 +76,7 @@ export class LanguageService {
   #idle: ReturnType<typeof setTimeout> | null = null;
   /** The worker couldn't start: don't keep trying. */
   #broken = false;
+  #typescriptVersion: string | undefined;
 
   constructor(
     options: Omit<WorkerOptions, "display">,
@@ -78,6 +85,14 @@ export class LanguageService {
     this.#options = { ...options, display: DISPLAY_URL.protocol === "file:" ? fileURLToPath(DISPLAY_URL) : null };
     this.#budgetMs = budgetMs;
     this.#log = log;
+  }
+
+  /**
+   * The TypeScript version a worker loaded, once one has: on a Deno host
+   * it may come from Deno's cache, where findTypeScript doesn't look.
+   */
+  get typescriptVersion(): string | undefined {
+    return this.#typescriptVersion;
   }
 
   /** A cell that ran (even if it threw): its declarations exist now. */
@@ -145,7 +160,20 @@ export class LanguageService {
     }
     // An idle worker mustn't keep the kernel alive.
     worker.unref();
-    worker.on("message", (response: WorkerResponse) => this.#pending.get(response.id)?.(response));
+    worker.on("message", (response: WorkerResponse) => {
+      if ("loaded" in response) {
+        this.#typescriptVersion = response.loaded;
+        return;
+      }
+      if ("unavailable" in response) {
+        // Until the kernel restarts: e.g. offline, so a retry would fail too.
+        this.#broken = true;
+        this.#log(`typed completion unavailable: ${response.unavailable}`);
+        if (this.#worker === worker) this.close();
+        return;
+      }
+      this.#pending.get(response.id)?.(response);
+    });
     worker.on("error", (err) => {
       // E.g. typescript failed to load. Completion goes on from the runtime.
       this.#broken = true;
