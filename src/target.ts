@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { asEvaluateResult, CdpAbandoned, CdpError, CdpSession, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { type CellTransformOptions, SHIM, transformCell } from "./transform.ts";
 import type { DebugChannel } from "./debugger.ts";
-import { hostRuntime, isInsideNodeModules, runtimeDir } from "./package.ts";
+import { hostRuntime, isInsideNodeModules, runtimeDir, VERSION } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import {
   type CdpRuntime,
@@ -433,6 +433,7 @@ export class Target implements KernelTarget {
       denoConfig: options.denoConfig,
     });
     const env: Record<string, string | undefined> = { ...process.env, FORCE_COLOR: "1" };
+    env.CDPK_VERSION = VERSION; // jupyter.version (#531)
     if (options.denoCompat) env.CDPK_DENO_COMPAT = "1";
     if (runtime === "deno" && options.denoConfig !== undefined) env.CDPK_DENO_PROJECT = "1";
     const esbuild = runtime === "node" ? esbuildBinary() : null;

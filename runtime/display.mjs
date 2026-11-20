@@ -293,6 +293,8 @@ function isMediaBundle(obj) {
  *   send: (msgType: string, content: object, metadata: object, buffers: Uint8Array[]) => void,
  *   input: (prompt: string, password: boolean) => string | null,
  *   params?: () => string | undefined,
+ *   version?: () => string | undefined,
+ *   runtime?: () => { name: string, version: string },
  * }} host
  */
 /** The MIME type of a named result (cdp-kernel#456): `{ name, value }`. */
@@ -432,6 +434,17 @@ export function createJupyter(host) {
     return (params = deepFreeze(value));
   }
 
+  // jupyter.version and jupyter.runtime (cdp-kernel#531): what the host
+  // says this kernel and its runtime are. Read lazily, since workerd and the
+  // browser get them when the driver is installed, and cached so the frozen
+  // object is the same on every read.
+  let runtime;
+  function readRuntime() {
+    if (runtime !== undefined) return runtime;
+    const info = host.runtime?.();
+    return (runtime = Object.freeze({ name: String(info?.name ?? ""), version: String(info?.version ?? "") }));
+  }
+
   // jupyter.result (cdp-kernel#456): a named value as an output of
   // Ganymede's result type, which a run's caller reads without parsing
   // outputs. JSON only, so every reader sees the same value.
@@ -525,6 +538,12 @@ export function createJupyter(host) {
       display,
       get params() {
         return readParams();
+      },
+      get version() {
+        return host.version?.() ?? "";
+      },
+      get runtime() {
+        return readRuntime();
       },
       result,
       table,

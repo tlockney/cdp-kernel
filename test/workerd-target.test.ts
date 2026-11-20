@@ -46,6 +46,7 @@ test("workerdConfig serves the driver on a Unix socket with UnsafeEval and secre
   assert.match(config, /address = "unix:\/tmp\/x y\/sock"/);
   assert.match(config, /\(name = "UNSAFE", unsafeEval = void\)/);
   assert.match(config, /\(name = "TOKEN", fromEnvironment = "CDPK_TOKEN"\)/);
+  assert.match(config, /\(name = "CDPK_VERSION", fromEnvironment = "CDPK_VERSION"\)/);
   assert.match(config, /compatibilityDate = "2026-10-15"/);
   assert.match(config, /tlsOptions = \(trustBrowserCas = true\)/);
   for (const name of WORKER_MODULES) assert.ok(config.includes(`esModule = embed "${name}"`), name);

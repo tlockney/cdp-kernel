@@ -24,7 +24,7 @@ import { dirname, join, resolve } from "node:path";
 import { build } from "esbuild";
 import { type CdpParams, isRecord } from "./cdp.ts";
 import { parseJsonc } from "./deno-config.ts";
-import { runtimeDir } from "./package.ts";
+import { runtimeDir, VERSION } from "./package.ts";
 import { childPids, killOnExit, reapWith } from "./children.ts";
 import type { TargetEvents } from "./target.ts";
 import { withStartTimeout } from "./target-api.ts";
@@ -62,7 +62,8 @@ export function celldConfig(
   const vars = project && typeof project.vars === "object" && project.vars !== null ? project.vars : {};
   // CDPK_PARAMS: jupyter.params (#456), the JSON text of GANYMEDE_PARAMS;
   // prefixed so a project's own PARAMS is kept.
-  config.vars = { ...vars, TOKEN: token, META: JSON.stringify(meta), CDPK_PARAMS: params };
+  // CDPK_VERSION and CDPK_TARGET: jupyter.version and jupyter.runtime (#531).
+  config.vars = { ...vars, TOKEN: token, META: JSON.stringify(meta), CDPK_PARAMS: params, CDPK_VERSION: VERSION, CDPK_TARGET: "celld" };
   return config;
 }
 

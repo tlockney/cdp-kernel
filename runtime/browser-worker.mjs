@@ -67,8 +67,13 @@ const jupyter = createJupyter({
   input: () => null,
   // jupyter.params (#456): the target's `params` option, sent with info.
   params: () => paramsText,
+  // jupyter.version and jupyter.runtime (#531): the version arrives with
+  // info; a page's browser version isn't passed, so it stays "".
+  version: () => versionText,
+  runtime: () => ({ name: "browser", version: "" }),
 });
 let paramsText;
+let versionText;
 
 // --- Modules ----------------------------------------------------------------
 let cdn = DEFAULT_CDN;
@@ -155,8 +160,9 @@ async function preload(urls, base) {
 // --- The shim cells and the evaluator use -----------------------------------
 let handle = null;
 
-function install({ base, cdn: cdnBase, modules: moduleMap, params }) {
+function install({ base, cdn: cdnBase, modules: moduleMap, params, version }) {
   if (typeof params === "string") paramsText = params;
+  if (typeof version === "string") versionText = version;
   if (typeof cdnBase === "string") cdn = cdnBase.endsWith("/") ? cdnBase : cdnBase + "/";
   if (moduleMap !== null && typeof moduleMap === "object") modules = { ...moduleMap };
   const url = new URL("$cdpk$repl.mjs", base).href;

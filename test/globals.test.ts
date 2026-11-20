@@ -43,6 +43,8 @@ test("declared jupyter namespace matches the runtime namespace", () => {
     widget: true,
     signal: true,
     params: true,
+    version: true,
+    runtime: true,
     result: true,
     table: true,
     sql: true,

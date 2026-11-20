@@ -904,6 +904,23 @@ shim doesn't cover.
 
 New notebooks should use `jupyter`, which works on every kernel.
 
+### Version and runtime
+
+`jupyter.version` is the version of cdp-kernel running the cell, as
+`cdp-kernel version` prints it. `jupyter.runtime` is a frozen
+`{ name, version }` for the target the cell runs on, so a notebook that
+has to behave differently on one can check:
+
+```ts cell
+const { name, version } = jupyter.runtime; // "node", "22.12.0"
+`cdp-kernel ${jupyter.version} on ${name} ${version}`;
+```
+
+`name` is `"node"`, `"deno"`, `"bun"`, `"workerd"`, `"celld"` or
+`"browser"`. `version` is the runtime's own version on Node, Deno and Bun;
+workerd, celld and the browser target can't tell it from inside, so it is
+`""` there. Both are read-only.
+
 ### Differences by runtime
 
 Everything on this page works on every runtime, except:

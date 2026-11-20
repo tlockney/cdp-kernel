@@ -103,8 +103,14 @@ const jupyter = createJupyter({
   input: () => null,
   // jupyter.params (#456): the CDPK_PARAMS binding, set when install() runs.
   params: () => paramsText,
+  // jupyter.version and jupyter.runtime (#531): bindings, set when install()
+  // runs. workerd can't tell its own version from inside.
+  version: () => versionText,
+  runtime: () => ({ name: targetName, version: "" }),
 });
 let paramsText;
+let versionText;
+let targetName = "workerd";
 
 // --- Modules ----------------------------------------------------------------
 const modules = new Map();
@@ -135,6 +141,8 @@ let handle = null;
 function install(env) {
   const meta = JSON.parse(env.META);
   paramsText = typeof env.CDPK_PARAMS === "string" ? env.CDPK_PARAMS : undefined;
+  versionText = typeof env.CDPK_VERSION === "string" ? env.CDPK_VERSION : undefined;
+  if (env.CDPK_TARGET === "celld") targetName = "celld";
   globalThis.__cdpk = {
     import: cellImport,
     meta: { ...meta, resolve: (specifier) => new URL(specifier, meta.url).href },
@@ -168,7 +176,7 @@ function install(env) {
   globalThis.confirm = jupyter.confirm;
   // A cell has no fetch(request, env), so the Worker's bindings (#26) are a
   // global, without the kernel's own.
-  const { UNSAFE, TOKEN, META, CDPK_PARAMS, ...bindings } = env;
+  const { UNSAFE, TOKEN, META, CDPK_PARAMS, CDPK_VERSION, CDPK_TARGET, ...bindings } = env;
   globalThis.env = bindings;
   // workerd forbids eval without its UnsafeEval binding; celld (#25) allows
   // a plain global eval and has no such binding.

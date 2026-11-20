@@ -145,6 +145,7 @@ reference](widgets-reference.md).`,
       { title: "Data", members: ["jupyter.table", "jupyter.sql", "jupyter.chart"] },
       { title: "Asking and interrupting", members: ["prompt", "confirm", "jupyter.signal", "jupyter.comm", "jupyter.widget"] },
       { title: "Notebooks as programs", members: ["jupyter.params", "jupyter.result", "jupyter.host", "host"] },
+      { title: "The kernel", members: ["jupyter.version", "jupyter.runtime"] },
     ],
   },
   {

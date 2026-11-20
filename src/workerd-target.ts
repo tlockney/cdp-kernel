@@ -27,7 +27,7 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
-import { runtimeDir } from "./package.ts";
+import { runtimeDir, VERSION } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, type TargetEvents } from "./target.ts";
 import { type TargetUsage, withStartTimeout } from "./target-api.ts";
@@ -82,6 +82,7 @@ const driver :Workerd.Worker = (
     (name = "TOKEN", fromEnvironment = "CDPK_TOKEN"),
     (name = "META", fromEnvironment = "CDPK_META"),
     (name = "CDPK_PARAMS", fromEnvironment = "CDPK_PARAMS"),
+    (name = "CDPK_VERSION", fromEnvironment = "CDPK_VERSION"),
   ],
 );
 `;
@@ -360,6 +361,7 @@ export class RawWorkerd implements WorkerHost {
     const env: Record<string, string | undefined> = { ...process.env, CDPK_TOKEN: token, CDPK_META: JSON.stringify(cellMeta(cwd)),
       // jupyter.params (#456); always set, so the binding exists.
       CDPK_PARAMS: process.env.GANYMEDE_PARAMS ?? "",
+      CDPK_VERSION: VERSION, // jupyter.version (#531)
     };
     // --experimental: the UnsafeEval binding.
     const child = spawn(workerd, ["serve", "config.capnp", "--experimental"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env });

@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { build } from "esbuild";
 import type { CdpParams } from "./cdp.ts";
 import { childPids, reap } from "./children.ts";
-import { runtimeDir } from "./package.ts";
+import { runtimeDir, VERSION } from "./package.ts";
 import { withStartTimeout } from "./target-api.ts";
 import { cellMeta, WORKER_MODULES, type WorkerHost } from "./workerd-target.ts";
 import type { WsChannel } from "./ws-client.ts";
@@ -240,7 +240,7 @@ export async function startMiniflare(configPath: string, cwd: string, startTimeo
     unsafeEvalBinding: "UNSAFE",
     compatibilityDate: date,
     compatibilityFlags: compatibilityFlagsFor(workerOptions.compatibilityFlags ?? []),
-    bindings: { ...workerOptions.bindings, TOKEN: token, META: JSON.stringify(cellMeta(cwd)), CDPK_PARAMS: process.env.GANYMEDE_PARAMS ?? "" },
+    bindings: { ...workerOptions.bindings, TOKEN: token, META: JSON.stringify(cellMeta(cwd)), CDPK_PARAMS: process.env.GANYMEDE_PARAMS ?? "", CDPK_VERSION: VERSION },
     // Miniflare 5 renamed Miniflare 4's defaultPersistRoot.
     ...(v5 ? { resourcePersistencePath: state } : { defaultPersistRoot: state }),
   };

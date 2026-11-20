@@ -12,6 +12,7 @@ interface Sent {
 function setup(
   input: (prompt: string, password: boolean) => string | null = () => null,
   params?: () => string | undefined,
+  info: Pick<DisplayHost, "version" | "runtime"> = {},
 ): {
   jupyter: Jupyter;
   sent: Sent[];
@@ -30,6 +31,7 @@ function setup(
       return input(prompt, password);
     },
     params,
+    ...info,
   };
   return { jupyter: createJupyter(host), sent, prompts };
 }
@@ -424,6 +426,37 @@ test("jupyter.params is {} without parameters, and the parsed object with them (
   assert.ok(Object.isFrozen(params) && Object.isFrozen(params.opts) && Object.isFrozen(params.opts.tags));
   assert.equal(jupyter.namespace.params, params, "parsed once");
   assert.equal(reads, 1);
+});
+
+test("jupyter.version and jupyter.runtime come from the host, read-only (#531)", () => {
+  const { jupyter } = setup(undefined, undefined, {
+    version: () => "9.8.7",
+    runtime: () => ({ name: "node", version: "22.1.0" }),
+  });
+  const ns = jupyter.namespace;
+  assert.equal(ns.version, "9.8.7");
+  assert.deepEqual(ns.runtime, { name: "node", version: "22.1.0" });
+  assert.ok(Object.isFrozen(ns.runtime));
+  assert.equal(ns.runtime, ns.runtime, "the same object on every read");
+  assert.throws(() => {
+    "use strict";
+    (ns as { version: string }).version = "x";
+  }, TypeError);
+  assert.throws(() => {
+    "use strict";
+    (ns as { runtime: unknown }).runtime = {};
+  }, TypeError);
+  assert.throws(() => {
+    "use strict";
+    (ns.runtime as { name: string }).name = "x";
+  }, TypeError);
+});
+
+test("jupyter.version and jupyter.runtime are empty when the host says nothing (#531)", () => {
+  const ns = setup().jupyter.namespace;
+  assert.equal(ns.version, "");
+  assert.deepEqual(ns.runtime, { name: "", version: "" });
+  assert.ok(Object.isFrozen(ns.runtime));
 });
 
 test("jupyter.params throws a TypeError for a value that isn't a JSON object (#456)", () => {

@@ -12,6 +12,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { VERSION } from "../src/package.ts";
 
 const ENGINES = ["chromium", "webkit", "firefox"] as const;
 type Engine = typeof ENGINES[number];
@@ -175,6 +176,10 @@ test("cells run in a browser Worker, with types stripped and state kept", { skip
 
   // The `params` option reaches the cell (#456).
   assert.equal(result(await execute("jupyter.params.counter")), "'2nd Ave'");
+  // jupyter.version and jupyter.runtime (#531).
+  assert.equal(result(await execute("jupyter.version")), `'${VERSION}'`);
+  assert.equal(result(await execute("JSON.stringify(jupyter.runtime)")), `'{"name":"browser","version":""}'`);
+  assert.equal(result(await execute("Object.isFrozen(jupyter.runtime)")), "true");
   assert.match(String(of(r, "execute_reply")[0].execution_count), /^2$/);
 
   r = await execute(`console.log("hi", { a: [1, "b"] }); console.error("oops")`);
