@@ -240,7 +240,7 @@ export async function startMiniflare(configPath: string, cwd: string, startTimeo
     unsafeEvalBinding: "UNSAFE",
     compatibilityDate: date,
     compatibilityFlags: compatibilityFlagsFor(workerOptions.compatibilityFlags ?? []),
-    bindings: { ...workerOptions.bindings, TOKEN: token, META: JSON.stringify(cellMeta(cwd)), CDPK_PARAMS: process.env.GANYMEDE_PARAMS ?? "", CDPK_VERSION: VERSION },
+    bindings: { ...workerOptions.bindings, TOKEN: token, META: JSON.stringify(cellMeta(cwd)), CDPK_PARAMS: process.env.GANYMEDE_PARAMS ?? "", CDPK_VERSION: VERSION, CDPK_TARGET: "workerd" },
     // Miniflare 5 renamed Miniflare 4's defaultPersistRoot.
     ...(v5 ? { resourcePersistencePath: state } : { defaultPersistRoot: state }),
   };

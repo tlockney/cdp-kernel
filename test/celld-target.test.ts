@@ -218,7 +218,11 @@ test("a project's bindings, its Durable Objects, and state beside celld dev's", 
   await first.target.evaluate(first.target.transform("const stub = env.COUNTER.get(env.COUNTER.idFromName('t'))", {}));
   assert.equal(await first.value("return await stub.increment()"), "1");
   assert.equal(await first.value("return await (await worker.fetch(new Request('https://x/'))).text()"), "project");
-  assert.equal(await first.value("return Object.keys(env).includes('TOKEN')"), "false");
+  assert.equal(
+    await first.value("return ['TOKEN', 'META', 'CDPK_PARAMS', 'CDPK_VERSION', 'CDPK_TARGET'].filter((k) => Object.keys(env).includes(k)).join()"),
+    "",
+    "the kernel's own bindings stay hidden",
+  );
   first.target.kill();
   // Removed once celld dev exits; a graceful stop can take a few seconds
   // (a fixed 1.5 s wait was flaky in CI).

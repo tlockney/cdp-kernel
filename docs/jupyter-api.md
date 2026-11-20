@@ -51,6 +51,12 @@ at the end.
 | [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
 | [`jupyter.host(options?)`](#other-notebooks-jupyter-host) | Read, search and run other notebooks through the Ganymede server running this kernel. Not in Deno. |
 
+**The kernel**
+
+| Member | What it does |
+| --- | --- |
+| [`jupyter.version`, `jupyter.runtime`](#version-and-runtime) | The cdp-kernel version running the cell, and the runtime's name and version. Not in Deno. |
+
 The [`jupyter` reference](jupyter-reference.md) lists every member's
 arguments and return value.
 
