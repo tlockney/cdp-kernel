@@ -13,7 +13,7 @@ import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import { asEvaluateResult, type CdpParams, type EvaluateResult, type RemoteObject } from "./cdp.ts";
 import { transformCellForEval } from "./transform.ts";
-import { runtimeDir } from "./package.ts";
+import { runtimeDir, VERSION } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
 import { type TargetUsage, withStartTimeout } from "./target-api.ts";
@@ -85,6 +85,7 @@ export class BunTarget implements KernelTarget {
     const bootstrap = join(await runtimeDir(new URL("../runtime/", import.meta.url).href), "bootstrap.mjs");
     const { cmd, args } = bunLaunchCommand(bootstrap, options.executable);
     const env: Record<string, string | undefined> = { ...process.env, FORCE_COLOR: "1" };
+    env.CDPK_VERSION = VERSION; // jupyter.version (#531)
     delete env.NO_COLOR;
     const child = spawn(cmd, args, { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe", "pipe"], env });
     killOnExit(child);

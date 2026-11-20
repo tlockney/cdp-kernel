@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { VERSION } from "../src/package.ts";
 import { bundleDriver, celldConfig, celldVersionOf, findCelld, freePort, launchCelld, PROJECT_KEYS } from "../src/celld-target.ts";
 import { restartNote } from "../src/workerd-target.ts";
 import { Interrupted, type TargetEvents, type TargetMessage } from "../src/target.ts";
@@ -53,7 +54,7 @@ test("celldConfig runs the pre-built driver, with the token and meta as vars", (
   const config = celldConfig(null, { token: "t", meta: META, params: '{"a":1}' });
   assert.equal(config.main, "driver.mjs");
   assert.equal(config.no_bundle, true);
-  assert.deepEqual(config.vars, { TOKEN: "t", META: JSON.stringify(META), CDPK_PARAMS: '{"a":1}' });
+  assert.deepEqual(config.vars, { TOKEN: "t", META: JSON.stringify(META), CDPK_PARAMS: '{"a":1}', CDPK_VERSION: VERSION, CDPK_TARGET: "celld" });
 });
 
 test("celldConfig keeps a project's bindings and drops what celld would apply to the driver", () => {
@@ -74,7 +75,7 @@ test("celldConfig keeps a project's bindings and drops what celld would apply to
   assert.equal(config.compatibility_date, "2026-01-02");
   assert.equal(config.name, "cdpk");
   assert.equal(config.main, "driver.mjs");
-  assert.deepEqual(config.vars, { GREETING: "hi", TOKEN: "t", META: JSON.stringify(META), CDPK_PARAMS: "" });
+  assert.deepEqual(config.vars, { GREETING: "hi", TOKEN: "t", META: JSON.stringify(META), CDPK_PARAMS: "", CDPK_VERSION: VERSION, CDPK_TARGET: "celld" });
   for (const key of ["assets", "triggers", "define"]) assert.equal(config[key], undefined, key);
   assert.ok(PROJECT_KEYS.includes("d1_databases") && PROJECT_KEYS.includes("workflows"));
 });
@@ -217,7 +218,11 @@ test("a project's bindings, its Durable Objects, and state beside celld dev's", 
   await first.target.evaluate(first.target.transform("const stub = env.COUNTER.get(env.COUNTER.idFromName('t'))", {}));
   assert.equal(await first.value("return await stub.increment()"), "1");
   assert.equal(await first.value("return await (await worker.fetch(new Request('https://x/'))).text()"), "project");
-  assert.equal(await first.value("return Object.keys(env).includes('TOKEN')"), "false");
+  assert.equal(
+    await first.value("return ['TOKEN', 'META', 'CDPK_PARAMS', 'CDPK_VERSION', 'CDPK_TARGET'].filter((k) => Object.keys(env).includes(k)).join()"),
+    "",
+    "the kernel's own bindings stay hidden",
+  );
   first.target.kill();
   // Removed once celld dev exits; a graceful stop can take a few seconds
   // (a fixed 1.5 s wait was flaky in CI).

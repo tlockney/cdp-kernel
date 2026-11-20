@@ -51,6 +51,12 @@ at the end.
 | [`jupyter.params`, `jupyter.result(name, value)`](#parameters-and-named-results) | A run's parameters, and values published by name for whoever ran the notebook. Not in Deno. |
 | [`jupyter.host(options?)`](#other-notebooks-jupyter-host) | Read, search and run other notebooks through the Ganymede server running this kernel. Not in Deno. |
 
+**The kernel**
+
+| Member | What it does |
+| --- | --- |
+| [`jupyter.version`, `jupyter.runtime`](#version-and-runtime) | The cdp-kernel version running the cell, and the runtime's name and version. Not in Deno. |
+
 The [`jupyter` reference](jupyter-reference.md) lists every member's
 arguments and return value.
 
@@ -903,6 +909,23 @@ with `typeof Deno`, and would take Deno code paths that call APIs the
 shim doesn't cover.
 
 New notebooks should use `jupyter`, which works on every kernel.
+
+### Version and runtime
+
+`jupyter.version` is the version of cdp-kernel running the cell, as
+`cdp-kernel version` prints it. `jupyter.runtime` is a frozen
+`{ name, version }` for the target the cell runs on, so a notebook that
+has to behave differently on one can check:
+
+```ts cell
+const { name, version } = jupyter.runtime; // "node", "22.12.0"
+`cdp-kernel ${jupyter.version} on ${name} ${version}`;
+```
+
+`name` is `"node"`, `"deno"`, `"bun"`, `"workerd"`, `"celld"` or
+`"browser"`. `version` is the runtime's own version on Node, Deno and Bun;
+workerd, celld and the browser target can't tell it from inside, so it is
+`""` there. Both are read-only.
 
 ### Differences by runtime
 

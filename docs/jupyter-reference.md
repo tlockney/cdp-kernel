@@ -65,6 +65,13 @@ reference](widgets-reference.md).
 | [`host.self.edit(params?, options?)`](#host-self-edit-params-options) | Change a cell's source, given the hash of the source it replaces. |
 | [`host.self.delete(params?, options?)`](#host-self-delete-params-options) | Delete a cell, given its source's hash. |
 
+**The kernel**
+
+| Member | What it does |
+| --- | --- |
+| [`jupyter.version`](#jupyter-version) | The version of cdp-kernel running this cell, as `cdp-kernel version` prints it. |
+| [`jupyter.runtime`](#jupyter-runtime) | The target the cell runs on and that runtime's version: a frozen `{ name, version }`. |
+
 ## `jupyter`
 
 The `jupyter` global: how values appear in the notebook. The same object
@@ -503,6 +510,43 @@ const { counter = "Fremont", days = 30 } = jupyter.params as { counter?: string;
 ```
 
 Guide: [The `jupyter` namespace](jupyter-api.md#parameters-and-named-results)
+
+### `jupyter.version`
+
+```ts
+readonly version: string;
+```
+
+The version of cdp-kernel running this cell, as `cdp-kernel version`
+prints it. The same on every target.
+
+**Availability**: Every target.
+
+```ts cell
+jupyter.version;
+```
+
+Guide: [The `jupyter` namespace](jupyter-api.md#version-and-runtime)
+
+### `jupyter.runtime`
+
+```ts
+readonly runtime: { readonly name: string; readonly version: string };
+```
+
+The target the cell runs on and that runtime's version: a frozen
+`{ name, version }`. `name` is `"node"`, `"deno"`, `"bun"`,
+`"workerd"`, `"celld"` or `"browser"`. `version` is the runtime's own
+version (`"22.12.0"` for Node, for example) where the target can tell,
+and `""` where it can't: workerd, celld and the browser target.
+
+**Availability**: Every target.
+
+```ts cell
+jupyter.runtime;
+```
+
+Guide: [The `jupyter` namespace](jupyter-api.md#version-and-runtime)
 
 ### `jupyter.result(name, value)`
 

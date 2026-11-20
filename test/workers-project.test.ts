@@ -147,7 +147,11 @@ test("cells get the project's bindings as env, and its worker", { skip }, async 
     "7",
   );
   assert.equal(await value("await (await worker.fetch(new Request('https://x/path'), env)).text()"), "hello from /path");
-  assert.equal(await value("Object.keys(env).includes('TOKEN')"), "false", "the kernel's own bindings stay hidden");
+  assert.equal(
+    await value("['TOKEN', 'META', 'CDPK_PARAMS', 'CDPK_VERSION', 'CDPK_TARGET'].filter((k) => Object.keys(env).includes(k)).join()"),
+    "",
+    "the kernel's own bindings stay hidden",
+  );
 });
 
 test("project state persists across kernels, beside wrangler dev's", { skip }, async (t) => {

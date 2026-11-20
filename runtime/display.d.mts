@@ -28,6 +28,10 @@ export interface DisplayHost {
   input: (prompt: string, password: boolean) => string | null;
   /** The run's parameters as JSON text, or `undefined` when there are none. */
   params?: () => string | undefined;
+  /** cdp-kernel's version, as `cdp-kernel version` prints it. */
+  version?: () => string | undefined;
+  /** The target's name and the runtime's version, or `""` for a version it can't tell. */
+  runtime?: () => { name: string; version: string };
 }
 
 /** The MIME type of a named result: `{ name, value }`. */
@@ -434,6 +438,33 @@ export interface JupyterNamespace {
    * @see jupyter-api.md#parameters-and-named-results
    */
   readonly params: { readonly [name: string]: JsonValue };
+  /**
+   * The version of cdp-kernel running this cell, as `cdp-kernel version`
+   * prints it. The same on every target.
+   *
+   * @availability Every target.
+   * @example
+   * ```ts cell
+   * jupyter.version;
+   * ```
+   * @see jupyter-api.md#version-and-runtime
+   */
+  readonly version: string;
+  /**
+   * The target the cell runs on and that runtime's version: a frozen
+   * `{ name, version }`. `name` is `"node"`, `"deno"`, `"bun"`,
+   * `"workerd"`, `"celld"` or `"browser"`. `version` is the runtime's own
+   * version (`"22.12.0"` for Node, for example) where the target can tell,
+   * and `""` where it can't: workerd, celld and the browser target.
+   *
+   * @availability Every target.
+   * @example
+   * ```ts cell
+   * jupyter.runtime;
+   * ```
+   * @see jupyter-api.md#version-and-runtime
+   */
+  readonly runtime: { readonly name: string; readonly version: string };
   /**
    * Publish a value under a name, as an output that a run's caller reads
    * by name instead of parsing outputs: `ganymede execute --results`, or

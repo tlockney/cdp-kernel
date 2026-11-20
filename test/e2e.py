@@ -12,6 +12,7 @@ Set CDPK_E2E_CLI to the command that runs the CLI (default: node src/main.ts),
 e.g. an installed npm bin, or "deno run -A src/main.ts" to test a Deno host.
 """
 
+import ast
 import json
 import os
 import shlex
@@ -161,6 +162,20 @@ def checks(runtime, workdir, offline):
         assert "2nd Ave" in result_of(out)["text/plain"], out
         shown = [c["data"] for t, c in out if t == "display_data"]
         assert shown[0]["application/vnd.ganymede.result+json"] == {"name": "got", "value": PARAMS}, out
+
+    def version_and_runtime(s):
+        # jupyter.version and jupyter.runtime on every target (#531).
+        package = json.loads((ROOT / "package.json").read_text())
+        _, out = s.run("JSON.stringify([jupyter.version, jupyter.runtime, Object.isFrozen(jupyter.runtime)])")
+        version, rt, frozen = json.loads(ast.literal_eval(strip_ansi(result_of(out)["text/plain"])))
+        assert version == package["version"], version
+        # "node-deno" and the project variants run on the first name's target.
+        assert rt["name"] == runtime.split("-")[0], rt
+        assert frozen is True
+        if rt["name"] in ("node", "deno", "bun"):
+            assert rt["version"] != "", rt
+        else:
+            assert rt["version"] == "", rt
 
     def stdout_stream(s):
         reply, out = s.run('console.log("asdf")')
@@ -1102,10 +1117,11 @@ def checks(runtime, workdir, offline):
         # The busy interrupt restarts workerd, so it goes last.
         return [project_notice_once, kernel_info, project_bindings, durable_object_stub_across_cells,
                 project_worker_fetch, session_carries_over, relative_ts_import, params_and_result,
+                version_and_runtime,
                 interrupt_await_keeps_state, interrupt_busy_restarts]
 
     tests = [
-        kernel_info, stdout_stream, execute_result, params_and_result, typescript, redeclare_const,
+        kernel_info, stdout_stream, execute_result, params_and_result, version_and_runtime, typescript, redeclare_const,
         top_level_await, object_literal, thrown_error, structured_traceback, syntax_error,
         display_ordering, display_symbol, markdown_template, update_display,
         png_bytes, node_builtin_import, relative_ts_import, import_meta,

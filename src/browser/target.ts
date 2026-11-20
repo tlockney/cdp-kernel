@@ -7,6 +7,7 @@
 
 import { asEvaluateResult, type CdpParams, type EvaluateResult, isRecord, type RemoteObject } from "../cdp.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, type TargetEvents } from "../target-api.ts";
+import { VERSION } from "../package.ts";
 import { transformCellForEval } from "../transform.ts";
 
 /** See BunTarget: how long an interrupted cell has to show it isn't busy. */
@@ -109,7 +110,7 @@ export class BrowserTarget implements KernelTarget {
     const base = options.base ?? globalThis.location?.href ?? "file:///";
     try {
       const params = options.params === undefined ? undefined : JSON.stringify(options.params);
-      const { userAgent } = await target.#request("info", { base, cdn: options.cdn, modules: options.modules, preload: options.preload ?? [], params });
+      const { userAgent } = await target.#request("info", { base, cdn: options.cdn, modules: options.modules, preload: options.preload ?? [], params, version: VERSION });
       if (typeof userAgent === "string") target.versions.runtime = browserName(userAgent);
       target.versions.engine = engineName(typeof userAgent === "string" ? userAgent : "");
     } catch (err) {

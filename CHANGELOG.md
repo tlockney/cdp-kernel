@@ -6,6 +6,13 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- `jupyter.version` is the cdp-kernel version running the cell, and
+  `jupyter.runtime` a frozen `{ name, version }` naming the target (`node`,
+  `deno`, `bun`, `workerd`, `celld` or `browser`) and the runtime's version
+  where it can tell (Node, Deno and Bun; `""` elsewhere), on every target.
+  See [The `jupyter` namespace](https://cdp-kernel.org/docs/jupyter-api#version-and-runtime)
+  ([#531](https://github.com/tlockney/cdp-kernel/issues/531)).
+
 ## 0.14.0 (2026-11-19)
 
 - The browser kernel can have TypeScript's language service: the

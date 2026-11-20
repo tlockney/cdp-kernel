@@ -81,10 +81,22 @@ function send(payload) {
   sendRecord(`{"barrier":${n},${body.slice(1)}`);
 }
 
+// Read once, so a cell that changes the environment can't change it (#531).
+const kernelVersion = isDeno ? Deno.env.get("CDPK_VERSION") : process.env.CDPK_VERSION;
+
 const jupyter = createJupyter({
   inspect: (value) => inspect(value),
   // jupyter.params (#456): the kernel's environment reaches the target.
   params: () => (isDeno ? Deno.env.get("GANYMEDE_PARAMS") : process.env.GANYMEDE_PARAMS),
+  // jupyter.version and jupyter.runtime (#531): the version rides in the
+  // environment like params; the runtime tells its own name and version.
+  version: () => kernelVersion,
+  runtime: () =>
+    isDeno
+      ? { name: "deno", version: Deno.version.deno }
+      : isBun
+      ? { name: "bun", version: Bun.version }
+      : { name: "node", version: process.versions.node },
   base64,
   readFile,
   send(msgType, content, metadata, buffers) {
