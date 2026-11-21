@@ -6,6 +6,8 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+## 0.15.0 (2026-11-21)
+
 - `jupyter.version` is the cdp-kernel version running the cell, and
   `jupyter.runtime` a frozen `{ name, version }` naming the target (`node`,
   `deno`, `bun`, `workerd`, `celld` or `browser`) and the runtime's version
