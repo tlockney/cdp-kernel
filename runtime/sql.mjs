@@ -393,10 +393,31 @@ async function wasmEngine(importModule, mapped) {
   // script loads DuckDB's.
   const loader = URL.createObjectURL(new Blob([`importScripts(${JSON.stringify(bundle.mainWorker)});`], { type: "text/javascript" }));
   const worker = new Worker(loader);
-  const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
-  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  URL.revokeObjectURL(loader);
-  const conn = await db.connect();
+  // A worker that fails to load (its script or wasm unreachable) reports
+  // only an error event. duckdb-wasm then drops its pending requests
+  // without settling them, so instantiate() would wait forever (#539).
+  let onError;
+  const failed = new Promise((_, reject) => {
+    onError = (event) => {
+      event.preventDefault?.();
+      reject(new Error(`jupyter.sql: DuckDB's worker failed to load: ${event.message || "no details"}`));
+    };
+    worker.addEventListener("error", onError);
+  });
+  failed.catch(() => {});
+  let db, conn;
+  try {
+    db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
+    await Promise.race([db.instantiate(bundle.mainModule, bundle.pthreadWorker), failed]);
+    conn = await Promise.race([db.connect(), failed]);
+  } catch (err) {
+    // createSql drops the engine, so the next query starts a new worker.
+    worker.terminate();
+    throw err;
+  } finally {
+    worker.removeEventListener("error", onError);
+    URL.revokeObjectURL(loader);
+  }
   let cancelled = false;
   return {
     connection: conn,

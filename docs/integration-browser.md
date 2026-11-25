@@ -234,7 +234,9 @@ A relative import that isn't served to the language service is an error
   as they are, the wasm as `application/wasm`. A pair counts only when
   both of its files are mapped; one left out, or half mapped, loads from
   jsDelivr. Current browsers all run `eh`, so mapping `eh` is enough,
-  and `mvp` alone never takes effect there.
+  and `mvp` alone never takes effect there. If DuckDB's worker can't
+  load (offline, with the files neither mapped nor cached), the query
+  fails with that error, and the next `jupyter.sql` call tries again.
 - Typed completion, tooltips, type errors and signature help, definition
   and rename, when the page opts in ([TypeScript language
   service](#typescript-language-service)).
