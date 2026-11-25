@@ -528,7 +528,7 @@ export class KernelCore {
           this.#log(`error handling target message: ${err}`);
           this.#fault(err, "target message");
         }),
-      exit: (code, note) => {
+      exit: (code, note, reason = "exit") => {
         this.#target = null;
         // What its cells declared died with it.
         this.#types?.reset();
@@ -544,7 +544,10 @@ export class KernelCore {
         this.#comms.clear();
         if (!this.#shuttingDown) {
           const text = note ?? `[cdp-kernel] ${this.#runtime} exited (${code}); restarting on next cell`;
-          this.#publish("stream", { name: "stderr", text: `\n${text}\n` });
+          // The metadata tells a frontend the runtime's state is gone, so it needn't match the text.
+          this.#publish("stream", { name: "stderr", text: `\n${text}\n` }, {
+            metadata: { cdp_kernel: { state_reset: true, reason, runtime: this.#runtime } },
+          });
         }
       },
     };

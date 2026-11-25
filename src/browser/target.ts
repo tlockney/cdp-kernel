@@ -6,7 +6,7 @@
 // (transformCellForEval).
 
 import { asEvaluateResult, type CdpParams, type EvaluateResult, isRecord, type RemoteObject } from "../cdp.ts";
-import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, type TargetEvents } from "../target-api.ts";
+import { type ExitReason, Interrupted, isTargetMessage, type KernelTarget, parseBundle, type TargetEvents } from "../target-api.ts";
 import { VERSION } from "../package.ts";
 import { transformCellForEval } from "../transform.ts";
 
@@ -91,6 +91,7 @@ export class BrowserTarget implements KernelTarget {
   /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
   #cells = 0;
   #stopNote: string | undefined;
+  #stopReason: ExitReason | undefined;
   #exited = false;
 
   private constructor(worker: WorkerLike, events: TargetEvents, host: HostHandler | undefined) {
@@ -190,7 +191,7 @@ export class BrowserTarget implements KernelTarget {
     this.#hostCalls.clear();
     // Reported before the requests it cut off fail, so the note lands in
     // the interrupted cell's output.
-    this.#events.exit(code, this.#stopNote);
+    this.#events.exit(code, this.#stopNote, this.#stopReason);
     for (const pending of this.#pending.values()) pending.reject(new Abandoned("the browser Worker stopped"));
     this.#pending.clear();
   }
@@ -255,6 +256,7 @@ export class BrowserTarget implements KernelTarget {
       return;
     }
     this.#stopNote = RESTART_NOTE;
+    this.#stopReason = "interrupt";
     this.#exit(null);
   }
 

@@ -233,3 +233,21 @@ starts with a new signal: on Node and Deno the cell's prelude calls
 the host dispatches while no cell runs carries `ownSignal`, so its
 handlers get a signal of their own; an interrupt aborts the running
 cell's and those handlers' signals only.
+
+### Telling a frontend the state is gone
+
+When a target ends and the kernel starts a new one on the next cell, the
+kernel publishes a stderr `stream` message with the reason as text. That
+message also carries metadata, so a frontend need not match the text:
+
+```json
+{ "cdp_kernel": { "state_reset": true, "reason": "interrupt", "runtime": "bun" } }
+```
+
+`reason` is `"interrupt"` when the target was stopped because a busy cell
+couldn't be interrupted in place (Bun, workerd, celld and the browser
+Worker), and `"exit"` for any other end: a crash, `process.exit()`, or a
+message the kernel couldn't parse. `runtime` is the kernel's runtime name.
+An interrupt that a waiting cell answers in place keeps the target and
+publishes no such metadata. No message type is added, and Jupyter clients
+that don't know the metadata ignore it.

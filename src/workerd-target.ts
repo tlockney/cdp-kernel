@@ -30,7 +30,7 @@ import { transformCellForEval } from "./transform.ts";
 import { runtimeDir, VERSION } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, type TargetEvents } from "./target.ts";
-import { type TargetUsage, withStartTimeout } from "./target-api.ts";
+import { type ExitReason, type TargetUsage, withStartTimeout } from "./target-api.ts";
 import { processesUsage } from "./usage.ts";
 import { connectUnixWebSocket, type WsChannel } from "./ws-client.ts";
 import { findWranglerConfig, startMiniflare } from "./workers-project.ts";
@@ -452,6 +452,7 @@ export class WorkerdTarget implements KernelTarget {
   /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
   #cells = 0;
   #stopNote: string | undefined;
+  #stopReason: ExitReason | undefined;
   #exitedOnce = false;
   readonly #startedAt = Date.now();
 
@@ -553,7 +554,7 @@ export class WorkerdTarget implements KernelTarget {
     this.#exitedOnce = true;
     // The exit (and its note) is reported before the requests it cut off
     // fail, so the note lands in the interrupted cell's output.
-    this.#events.exit(code, this.#stopNote);
+    this.#events.exit(code, this.#stopNote, this.#stopReason);
     for (const pending of this.#pending.values()) pending.reject(new Abandoned(`workerd exited (${code})`));
     this.#pending.clear();
   }
@@ -636,6 +637,7 @@ export class WorkerdTarget implements KernelTarget {
       return;
     }
     this.#stopNote = restartNote(this.runtime);
+    this.#stopReason = "interrupt";
     this.#host.stop(true);
   }
 
