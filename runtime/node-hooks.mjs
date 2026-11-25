@@ -290,9 +290,14 @@ function lockedRequest(name, range, lockFile) {
  */
 const lockfileLockDir = (lockFile) => `${lockFile}.lock`;
 
-/** The lockfile with `key` set to `resolved`, from a fresh read. */
+/**
+ * The lockfile with `key` set to `resolved`, from a fresh read. An entry
+ * another install recorded meanwhile stays: a range keeps the version it
+ * first resolved to.
+ */
 function mergeLock(lockFile, key, resolved) {
   const lock = readLock(lockFile);
+  if (Object.hasOwn(lock.packages, key)) return;
   lock.packages[key] = resolved;
   writeLock(lockFile, lock);
 }
