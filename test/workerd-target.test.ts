@@ -167,14 +167,14 @@ test("bundleModule turns a missing module into an import-time error", async (t) 
 
 // --- Against a real workerd -------------------------------------------------
 
-type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string };
+type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string; reason?: string };
 
 async function launch(t: { after(fn: () => void): void }, cwd?: string) {
   const events: Event[] = [];
   const handlers: TargetEvents = {
     stream: (stream, text) => void events.push({ stream, text }),
     message: (message) => void events.push({ message }),
-    exit: (exit, note) => void events.push({ exit, note }),
+    exit: (exit, note, reason) => void events.push({ exit, note, reason }),
   };
   const target = await WorkerdTarget.launch(handlers, { executable: WORKERD, cwd });
   t.after(() => target.kill());
@@ -277,7 +277,7 @@ test("interrupting a busy cell stops workerd, reporting the exit before the cell
   await target.interrupt();
   assert.ok((await outcome) instanceof Interrupted);
   assert.ok(exitedFirst, "the restart note is published inside the cell");
-  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE });
+  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE, reason: "interrupt" });
 });
 
 test("kill during a busy cell stops workerd", { skip }, async (t) => {
@@ -289,6 +289,7 @@ test("kill during a busy cell stops workerd", { skip }, async (t) => {
   target.kill();
   for (let i = 0; i < 120 && !events.some((e) => "exit" in e); i++) await new Promise((r) => setTimeout(r, 50));
   assert.ok(events.some((e) => "exit" in e), "workerd exited within 6 s");
+  assert.notEqual((events.find((e) => "exit" in e) as { reason?: string }).reason, "interrupt");
 });
 
 test("comm messages reach registered targets inside a request", { skip }, async (t) => {

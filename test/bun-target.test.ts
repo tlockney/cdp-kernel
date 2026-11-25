@@ -10,14 +10,14 @@ import { loadTypeStripper } from "../src/transform.ts";
 
 await loadTypeStripper("esbuild");
 
-type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string };
+type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string; reason?: string };
 
 async function launch(t: { after(fn: () => void): void }) {
   const events: Event[] = [];
   const handlers: TargetEvents = {
     stream: (stream, text) => void events.push({ stream, text }),
     message: (message) => void events.push({ message }),
-    exit: (exit, note) => void events.push({ exit, note }),
+    exit: (exit, note, reason) => void events.push({ exit, note, reason }),
   };
   const target = await BunTarget.launch(handlers);
   t.after(() => target.kill());
@@ -104,7 +104,7 @@ test("interrupting a busy cell stops bun and says why", { skip }, async (t) => {
   await new Promise((r) => setTimeout(r, 200));
   await target.interrupt();
   await assert.rejects(pending, Interrupted);
-  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE });
+  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE, reason: "interrupt" });
 });
 
 test("comm messages reach registered targets", { skip }, async (t) => {

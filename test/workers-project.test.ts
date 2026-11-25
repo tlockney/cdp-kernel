@@ -107,14 +107,14 @@ export default {
   mkdirSync(join(dir, "notebooks"), { recursive: true });
 }
 
-type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string };
+type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string; reason?: string };
 
 async function launch(t: { after(fn: () => void): void }, cwd: string) {
   const events: Event[] = [];
   const handlers: TargetEvents = {
     stream: (stream, text) => void events.push({ stream, text }),
     message: (message) => void events.push({ message }),
-    exit: (exit, note) => void events.push({ exit, note }),
+    exit: (exit, note, reason) => void events.push({ exit, note, reason }),
   };
   const target = await WorkerdTarget.launch(handlers, { cwd });
   t.after(() => target.kill());
@@ -195,7 +195,7 @@ test("interrupting a busy cell restarts the project's Miniflare, saying so", { s
   await target.interrupt();
   assert.ok((await outcome) instanceof Interrupted);
   assert.ok(exitedFirst);
-  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE });
+  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: RESTART_NOTE, reason: "interrupt" });
 });
 
 test("the project's workerd goes when the kernel is SIGKILLed", { skip }, async (t) => {

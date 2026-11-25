@@ -113,11 +113,18 @@ export function isTargetMessage(value: unknown): value is TargetMessage {
     typeof (value as { barrier?: unknown }).barrier === "number";
 }
 
+/** Why a target ended: stopped by an interrupt it couldn't take in place, or anything else. */
+export type ExitReason = "interrupt" | "exit";
+
 export interface TargetEvents {
   stream(name: "stdout" | "stderr", text: string): void;
   message(msg: TargetMessage): void;
-  /** `note` says why, when the target was stopped on purpose. */
-  exit(code: number | null, note?: string): void;
+  /**
+   * `note` says why, when the target was stopped on purpose. `reason` is
+   * `"interrupt"` when an interrupt stopped a busy target, and `"exit"`
+   * (the default) for any other end.
+   */
+  exit(code: number | null, note?: string, reason?: ExitReason): void;
 }
 
 export class Interrupted extends Error {

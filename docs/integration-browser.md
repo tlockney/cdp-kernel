@@ -243,7 +243,9 @@ A relative import that isn't served to the language service is an error
   [`jupyter.signal`](jupyter-api.md#stopping-on-interrupt-jupyter-signal)
   is aborted. A busy cell can't be stopped in place, so the
   Worker is terminated and a new one starts on the next cell, without the
-  earlier cells' state.
+  earlier cells' state. The stderr note it prints carries metadata a
+  frontend can check ([Telling a frontend the state is
+  gone](integrations.md#telling-a-frontend-the-state-is-gone)).
 
 ## Not yet
 

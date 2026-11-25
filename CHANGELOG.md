@@ -6,6 +6,12 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- When a runtime is stopped and restarts on the next cell, the stderr note
+  carries `cdp_kernel` metadata (`state_reset`, `reason` of `interrupt` or
+  `exit`, and `runtime`), so a frontend can tell without matching text. See
+  [Interrupts](https://cdp-kernel.org/docs/integrations#telling-a-frontend-the-state-is-gone)
+  ([#538](https://github.com/tlockney/cdp-kernel/issues/538)).
+
 ## 0.15.0 (2026-11-21)
 
 - `jupyter.version` is the cdp-kernel version running the cell, and
