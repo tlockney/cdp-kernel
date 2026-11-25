@@ -16,7 +16,7 @@ import { transformCellForEval } from "./transform.ts";
 import { runtimeDir, VERSION } from "./package.ts";
 import { killOnExit } from "./children.ts";
 import { Gates, Interrupted, isTargetMessage, type KernelTarget, parseBundle, parseJson, PipeDemux, type TargetEvents, type TargetMessage } from "./target.ts";
-import { type TargetUsage, withStartTimeout } from "./target-api.ts";
+import { type ExitReason, type TargetUsage, withStartTimeout } from "./target-api.ts";
 import { processUsage } from "./usage.ts";
 
 /**
@@ -69,6 +69,7 @@ export class BunTarget implements KernelTarget {
   /** Cells running: a comm handler that starts with none gets its own jupyter.signal (#421). */
   #cells = 0;
   #stopNote: string | undefined;
+  #stopReason: ExitReason | undefined;
   readonly #startedAt = Date.now();
 
   private constructor(child: ChildProcess, channel: Duplex, events: TargetEvents) {
@@ -162,7 +163,7 @@ export class BunTarget implements KernelTarget {
     this.#gates.openAll();
     this.#stdout.close();
     this.#stderr.close();
-    events.exit(code, this.#stopNote);
+    events.exit(code, this.#stopNote, this.#stopReason);
     this.#abandonPending(`bun exited (${code})`);
   }
 
@@ -245,6 +246,7 @@ export class BunTarget implements KernelTarget {
       return;
     }
     this.#stopNote = RESTART_NOTE;
+    this.#stopReason = "interrupt";
     this.#child.kill("SIGKILL");
   }
 

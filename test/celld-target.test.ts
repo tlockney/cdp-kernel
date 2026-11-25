@@ -116,14 +116,14 @@ test("bundleDriver makes one module: the driver, and a project's exports", async
 
 // --- Against a real celld ---------------------------------------------------
 
-type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string };
+type Event = { stream: string; text: string } | { message: TargetMessage } | { exit: number | null; note?: string; reason?: string };
 
 async function launch(t: Hooks, cwd: string, executable = CELLD) {
   const events: Event[] = [];
   const handlers: TargetEvents = {
     stream: (stream, text) => void events.push({ stream, text }),
     message: (message) => void events.push({ message }),
-    exit: (exit, note) => void events.push({ exit, note }),
+    exit: (exit, note, reason) => void events.push({ exit, note, reason }),
   };
   const before = new Set(celldPids());
   const target = await launchCelld(handlers, { cwd, executable });
@@ -265,7 +265,7 @@ test("interrupting a waiting cell keeps state; a busy one stops celld entirely",
   await target.interrupt();
   assert.ok((await outcome) instanceof Interrupted);
   assert.ok(exitedFirst);
-  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: restartNote("celld") });
+  assert.deepEqual(events.find((e) => "exit" in e), { exit: null, note: restartNote("celld"), reason: "interrupt" });
   // Killed, but a slow runner can take a moment to reap them (#93). Only
   // this launch's processes count: a developer's own celld, or an orphan
   // from an earlier run (#127), is reported but doesn't fail the test (#151).
