@@ -6,6 +6,11 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- In the browser kernel, `jupyter.sql` no longer hangs when DuckDB's
+  worker fails to load (for example offline, with its files neither
+  served by the page nor cached): the query fails with the load error,
+  and the next call in the same kernel tries again
+  ([#539](https://github.com/tlockney/cdp-kernel/issues/539)).
 - When a runtime is stopped and restarts on the next cell, the stderr note
   carries `cdp_kernel` metadata (`state_reset`, `reason` of `interrupt` or
   `exit`, and `runtime`), so a frontend can tell without matching text. See

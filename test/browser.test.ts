@@ -100,19 +100,52 @@ const PRELOAD = `export default function ({ host, jupyter }) {
   host.onEvent((event, value) => globalThis.device.events.push([event, value]));
 }`;
 
+// The eh worker for the fake DuckDB; served only once a test adds it.
+const DUCKDB_WORKER = { type: "text/javascript", body: "onmessage = (e) => postMessage({ id: e.data.id });" };
+
 const FILES: Record<string, { type: string; body: string }> = {
   "/preload.mjs": { type: "text/javascript", body: PRELOAD },
   "/broken.mjs": { type: "text/javascript", body: "throw new Error('broken preload');" },
   "/local.mjs": { type: "text/javascript", body: "export const where = 'local';" },
   "/mapped-vega.mjs": { type: "text/javascript", body: "export const where = 'mapped';" },
-  // Stops at selectBundle and reports what it was given.
+  // Stops at selectBundle and reports what it was given; with
+  // globalThis.duckdbWorker set, starts the page's eh worker, with an
+  // AsyncDuckDB that, like duckdb-wasm's, drops its pending requests
+  // unsettled when the worker reports an error.
   "/fake-duckdb.mjs": {
     type: "text/javascript",
     body: `export const getJsDelivrBundles = () => ({
   mvp: { mainModule: "https://cdn.example/mvp.wasm", mainWorker: "https://cdn.example/mvp.js" },
   eh: { mainModule: "https://cdn.example/eh.wasm", mainWorker: "https://cdn.example/eh.js" },
 });
-export const selectBundle = async (bundles) => { throw new Error("bundles " + JSON.stringify(bundles)); };`,
+export const selectBundle = async (bundles) => {
+  if (globalThis.duckdbWorker) return { ...bundles.eh, pthreadWorker: null };
+  throw new Error("bundles " + JSON.stringify(bundles));
+};
+export class VoidLogger {}
+export class AsyncDuckDB {
+  constructor(logger, worker) {
+    this.worker = worker;
+    this.pending = new Map();
+    this.next = 0;
+    worker.addEventListener("message", (e) => this.pending.get(e.data.id)?.(e.data));
+    worker.addEventListener("error", () => this.pending.clear());
+  }
+  call(type) {
+    const id = this.next++;
+    return new Promise((resolve) => {
+      this.pending.set(id, resolve);
+      this.worker.postMessage({ id, type });
+    });
+  }
+  async instantiate() { await this.call("instantiate"); }
+  async connect() {
+    await this.call("connect");
+    const batch = { schema: { fields: [{ name: "x", type: "Int32" }] }, numRows: 1, getChildAt: () => ({ get: () => 1 }) };
+    return { send: async () => [batch], close: async () => {} };
+  }
+  async terminate() { this.worker.terminate(); }
+}`,
   },
   "/cdn/left-pad@1": { type: "text/javascript", body: "export default (s, n) => String(s).padStart(n);" },
 };
@@ -211,6 +244,23 @@ test("cells run in a browser Worker, with types stripped and state kept", { skip
 
   const completions = of(await request("shell", "complete_request", { code: "Mat", cursor_pos: 3 }), "complete_reply")[0];
   assert.ok((completions.matches as string[]).includes("Math"), String(completions.matches));
+});
+
+test("jupyter.sql fails when DuckDB's worker can't load, and retries on the next call (#539)", { skip }, async (t) => {
+  const { execute } = await open(t);
+  t.after(() => delete FILES["/duckdb/eh.worker.js"]);
+  await execute("globalThis.duckdbWorker = true");
+
+  // The worker script is a 404: the cell ends with the load error.
+  let r = await execute("await jupyter.sql`select 1 as x`");
+  assert.equal(of(r, "execute_reply")[0].status, "error");
+  assert.match(String(of(r, "error")[0].evalue), /DuckDB's worker failed to load/);
+
+  // Once it's reachable, the same kernel opens a new engine.
+  FILES["/duckdb/eh.worker.js"] = DUCKDB_WORKER;
+  r = await execute("(await jupyter.sql`select 1 as x`).rows[0].x");
+  assert.equal(of(r, "execute_reply")[0].status, "ok");
+  assert.equal(result(r), "1");
 });
 
 test("interrupting a busy cell restarts the Worker", { skip }, async (t) => {
