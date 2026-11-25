@@ -144,7 +144,7 @@ test("withInstallLock waits for a live holder, then times out", (t) => {
   mkdirSync(join(dir, ".install-lock"));
   writeFileSync(join(dir, ".install-lock", "pid"), String(process.pid));
   const started = Date.now();
-  assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 400 }), /timed out waiting for the install lock/);
+  assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 400 }), /timed out waiting for the lock/);
   assert.ok(Date.now() - started >= 400);
 });
 
@@ -193,7 +193,7 @@ test("withInstallLockAsync waits for a live holder without blocking, then times 
   const { value, ticks } = await ticksDuring(() =>
     withInstallLockAsync(dir, () => "never", { timeoutMs: 400 }).then(() => null, (err: Error) => err)
   );
-  assert.match(String(value), /timed out waiting for the install lock/);
+  assert.match(String(value), /timed out waiting for the lock/);
   assert.ok(ticks >= 10, `timers ran while waiting: ${ticks}`);
 });
 
@@ -205,7 +205,7 @@ test("withInstallLock waits for a live holder however old its lock (#144)", (t) 
   // Older than the 10-minute wait, as a long install's lock would be.
   const old = new Date(Date.now() - 15 * 60 * 1000);
   utimesSync(lockDir, old, old);
-  assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 300 }), /timed out waiting for the install lock/);
+  assert.throws(() => withInstallLock(dir, () => "never", { timeoutMs: 300 }), /timed out waiting for the lock/);
   assert.equal(readFileSync(join(lockDir, "pid"), "utf8"), String(process.pid));
 });
 
@@ -294,4 +294,67 @@ test("concurrent npm and bun installs both land in the lockfile (#537)", async (
     ensureInstalledAsync({ name: "is-even", range: "^1" }, "bun", { lockFile, run }),
   ]);
   assert.deepEqual(readLock(lockFile).packages, { "is-even@^1": "3.0.1", "is-odd@^3": "3.0.1" });
+});
+
+/** Holds the lock beside `lockFile` as a live process (this one) would. */
+function holdLockfileLock(lockFile: string): string {
+  const lockDir = `${lockFile}.lock`;
+  mkdirSync(lockDir);
+  writeFileSync(join(lockDir, "pid"), String(process.pid));
+  return lockDir;
+}
+
+test("recording waits for the lockfile lock, then merges what changed meanwhile (#537)", async (t) => {
+  const dir = scratch(t);
+  useCache(t, dir);
+  const lockFile = join(dir, LOCK_FILE);
+  writeFileSync(lockFile, "{}\n");
+  const lockDir = holdLockfileLock(lockFile);
+  let done = false;
+  const install = ensureInstalledAsync({ name: "is-odd", range: "^3" }, "npm", { lockFile, run: fakeInstaller("3.0.1") }).then(() => (done = true));
+  // Past the 100 ms retry, the install has finished and is waiting on the lock.
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.ok(!done, "recording waits while the lockfile lock is held");
+  assert.deepEqual(readLock(lockFile).packages, {});
+  // The holder writes its own entry, as another install would, then releases.
+  writeLock(lockFile, { version: 1, packages: { "is-even@^1": "1.0.0" } });
+  rmSync(lockDir, { recursive: true });
+  await install;
+  assert.deepEqual(readLock(lockFile).packages, { "is-even@^1": "1.0.0", "is-odd@^3": "3.0.1" });
+  assert.ok(!existsSync(lockDir), "the lock is released");
+});
+
+test("ensureInstalled re-reads the lockfile when it records, after the lockfile lock is free (#537)", (t) => {
+  const dir = scratch(t);
+  useCache(t, dir);
+  const lockFile = join(dir, LOCK_FILE);
+  writeFileSync(lockFile, "{}\n");
+  const lockDir = holdLockfileLock(lockFile);
+  // ensureInstalled blocks, so the other install acts from inside the runner,
+  // after this one read the lockfile and before it records.
+  const run: InstallRunner = (cmd, args, cwd, env) => {
+    const result = fakeInstaller("3.0.1")(cmd, args, cwd, env);
+    // Another install records its entry meanwhile, then lets go of the lock.
+    writeLock(lockFile, { version: 1, packages: { "is-even@^1": "1.0.0" } });
+    rmSync(lockDir, { recursive: true });
+    return result;
+  };
+  ensureInstalled({ name: "is-odd", range: "^3" }, "npm", { lockFile, run });
+  assert.deepEqual(readLock(lockFile).packages, { "is-even@^1": "1.0.0", "is-odd@^3": "3.0.1" });
+  assert.ok(!existsSync(lockDir), "the lock is released");
+});
+
+test("recording takes over a lockfile lock whose holder has died (#537)", (t) => {
+  const dir = scratch(t);
+  useCache(t, dir);
+  const lockFile = join(dir, LOCK_FILE);
+  writeFileSync(lockFile, "{}\n");
+  const lockDir = `${lockFile}.lock`;
+  mkdirSync(lockDir);
+  writeFileSync(join(lockDir, "pid"), "999999999");
+  const old = new Date(Date.now() - 5000);
+  utimesSync(lockDir, old, old);
+  ensureInstalled({ name: "is-odd", range: "^3" }, "npm", { lockFile, run: fakeInstaller("3.0.1") });
+  assert.deepEqual(readLock(lockFile).packages, { "is-odd@^3": "3.0.1" });
+  assert.ok(!existsSync(lockDir));
 });

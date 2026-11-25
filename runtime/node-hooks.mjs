@@ -163,7 +163,7 @@ function holderAlive(lockDir) {
   }
 }
 
-/** Takes the install lock at `lockDir` if it's free: false means wait and try again. */
+/** Takes the lock at `lockDir` if it's free: false means wait and try again. */
 function tryLock(lockDir, deadline) {
   for (;;) {
     try {
@@ -186,7 +186,7 @@ function tryLock(lockDir, deadline) {
         rmSync(lockDir, { recursive: true, force: true });
         continue;
       }
-      if (Date.now() > deadline) throw new Error(`timed out waiting for the install lock ${lockDir}`);
+      if (Date.now() > deadline) throw new Error(`timed out waiting for the lock ${lockDir}`);
       return false;
     }
   }
@@ -197,9 +197,8 @@ function releaseLock(lockDir) {
   if (holderPid(lockDir) === process.pid) rmSync(lockDir, { recursive: true, force: true });
 }
 
-/** Runs `fn` holding the cache's install lock. Synchronous, like the resolve hook. */
-export function withInstallLock(dir, fn, { timeoutMs = WAIT_MS } = {}) {
-  const lockDir = join(dir, LOCK_DIR);
+/** Runs `fn` holding the lock directory `lockDir`. Synchronous, like the resolve hook. */
+function withLock(lockDir, fn, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (!tryLock(lockDir, deadline)) sleep(100);
   try {
@@ -209,9 +208,8 @@ export function withInstallLock(dir, fn, { timeoutMs = WAIT_MS } = {}) {
   }
 }
 
-/** withInstallLock for a caller that mustn't block its event loop while it waits. */
-export async function withInstallLockAsync(dir, fn, { timeoutMs = WAIT_MS } = {}) {
-  const lockDir = join(dir, LOCK_DIR);
+/** withLock for a caller that mustn't block its event loop while it waits. */
+async function withLockAsync(lockDir, fn, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (!tryLock(lockDir, deadline)) await new Promise((resolve) => setTimeout(resolve, 100));
   try {
@@ -219,6 +217,16 @@ export async function withInstallLockAsync(dir, fn, { timeoutMs = WAIT_MS } = {}
   } finally {
     releaseLock(lockDir);
   }
+}
+
+/** Runs `fn` holding the cache's install lock. Synchronous, like the resolve hook. */
+export function withInstallLock(dir, fn, { timeoutMs = WAIT_MS } = {}) {
+  return withLock(join(dir, LOCK_DIR), fn, timeoutMs);
+}
+
+/** withInstallLock for a caller that mustn't block its event loop while it waits. */
+export function withInstallLockAsync(dir, fn, { timeoutMs = WAIT_MS } = {}) {
+  return withLockAsync(join(dir, LOCK_DIR), fn, timeoutMs);
 }
 
 function installedVersion(dir, alias) {
@@ -273,14 +281,34 @@ function lockedRequest(name, range, lockFile) {
   return { lock, locked: typeof locked === "string", version, alias: aliasFor(name, version) };
 }
 
+/**
+ * Each installer's cache lock is separate, so installs with different
+ * installers meet only at the lockfile. Recording takes a lock beside it
+ * and re-reads the file, so an entry another install added meanwhile
+ * isn't dropped (#537). Callers hold their cache lock first, never the
+ * reverse.
+ */
+const lockfileLockDir = (lockFile) => `${lockFile}.lock`;
+
+/** The lockfile with `key` set to `resolved`, from a fresh read. */
+function mergeLock(lockFile, key, resolved) {
+  const lock = readLock(lockFile);
+  lock.packages[key] = resolved;
+  writeLock(lockFile, lock);
+}
+
 /** Records an unlocked request's installed version in the lockfile. */
 function recordLock(dir, name, range, lockFile, { lock, locked, alias }) {
   if (!lock || locked) return;
   const resolved = installedVersion(dir, alias);
-  if (resolved !== null) {
-    lock.packages[`${name}@${range}`] = resolved;
-    writeLock(lockFile, lock);
-  }
+  if (resolved !== null) withLock(lockfileLockDir(lockFile), () => mergeLock(lockFile, `${name}@${range}`, resolved), WAIT_MS);
+}
+
+/** recordLock for the async path: waiting for the lockfile lock doesn't block the event loop. */
+async function recordLockAsync(dir, name, range, lockFile, { lock, locked, alias }) {
+  if (!lock || locked) return;
+  const resolved = installedVersion(dir, alias);
+  if (resolved !== null) await withLockAsync(lockfileLockDir(lockFile), () => mergeLock(lockFile, `${name}@${range}`, resolved), WAIT_MS);
 }
 
 function checkInstall(result, installer, name, version) {
@@ -315,7 +343,7 @@ export function ensureInstalledAsync({ name, range }, installer = "npm", { lockF
       const { cmd, args, env } = installCommand(installer, request.alias, name, request.version);
       checkInstall(await run(cmd, args, dir, env), installer, name, request.version);
     }
-    recordLock(dir, name, range, lockFile, request);
+    await recordLockAsync(dir, name, range, lockFile, request);
     return { dir, alias: request.alias };
   });
 }
