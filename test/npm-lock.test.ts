@@ -261,3 +261,37 @@ test("two kernels installing at once don't overlap, and install once", async (t)
   assert.match(lines[0], /^start /);
   assert.match(lines[1], /^end /);
 });
+
+/** XDG_CACHE_HOME for this test, where Bun's cache is (npm's is CDPK_CACHE_DIR). */
+function useXdgCache(t: { after(fn: () => void): void }, dir: string): void {
+  const before = process.env.XDG_CACHE_HOME;
+  process.env.XDG_CACHE_HOME = join(dir, "xdg");
+  t.after(() => {
+    if (before === undefined) delete process.env.XDG_CACHE_HOME;
+    else process.env.XDG_CACHE_HOME = before;
+  });
+}
+
+test("concurrent npm and bun installs both land in the lockfile (#537)", async (t) => {
+  const dir = scratch(t);
+  useCache(t, dir);
+  useXdgCache(t, dir);
+  const lockFile = join(dir, LOCK_FILE);
+  writeFileSync(lockFile, "{}\n");
+  // Each runner waits until both installs have read the lockfile (they read
+  // it before running), so both hold the empty lock when either finishes.
+  let arrived = 0;
+  let release!: () => void;
+  const barrier = new Promise<void>((resolve) => (release = resolve));
+  const fake = fakeInstaller("3.0.1");
+  const run = async (cmd: string, args: string[], cwd: string, env?: Record<string, string>) => {
+    if (++arrived === 2) release();
+    await barrier;
+    return fake(cmd, args, cwd, env);
+  };
+  await Promise.all([
+    ensureInstalledAsync({ name: "is-odd", range: "^3" }, "npm", { lockFile, run }),
+    ensureInstalledAsync({ name: "is-even", range: "^1" }, "bun", { lockFile, run }),
+  ]);
+  assert.deepEqual(readLock(lockFile).packages, { "is-even@^1": "3.0.1", "is-odd@^3": "3.0.1" });
+});
