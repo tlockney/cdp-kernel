@@ -11,6 +11,10 @@ Issue and pull request numbers refer to
   `exit`, and `runtime`), so a frontend can tell without matching text. See
   [Interrupts](https://cdp-kernel.org/docs/integrations#telling-a-frontend-the-state-is-gone)
   ([#538](https://github.com/tlockney/cdp-kernel/issues/538)).
+- Two installs using different installers (npm and Bun) no longer drop each
+  other's entries from `cdp-kernel.lock.json`: recording a version takes a
+  lock beside the lockfile and re-reads it first
+  ([#537](https://github.com/tlockney/cdp-kernel/issues/537)).
 
 ## 0.15.0 (2026-11-21)
 
