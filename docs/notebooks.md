@@ -59,7 +59,9 @@ imports with Deno and keep no lockfile (the kernel runs Deno with
 `npm:pkg@1.4.0`. Installs into the shared cache are serialized,
 so two kernels installing at once can't corrupt it, and so are updates to
 the lockfile, so two kernels recording at once (npm and Bun among them)
-keep both entries. While one records, a `cdp-kernel.lock.json.lock`
+keep both entries. If two kernels resolve the same range at once, the
+first to record wins; the other keeps the version it installed until it
+restarts. While one records, a `cdp-kernel.lock.json.lock`
 folder sits beside the lockfile for a moment; don't commit it.
 
 How an import uses the lockfile:
