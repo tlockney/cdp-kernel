@@ -6,6 +6,8 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+## 0.16.0 (2026-11-26)
+
 - In the browser kernel, `jupyter.sql` no longer hangs when DuckDB's
   worker fails to load (for example offline, with its files neither
   served by the page nor cached): the query fails with the load error,
