@@ -67,6 +67,7 @@ const typescript = q.has("plain") ? undefined : {
 };
 const kernel = startBrowserKernel({
   createWorker: () => new Worker("./worker.js", { type: "module" }),
+  ...(q.has("cdn") ? { cdn: location.origin + q.get("cdn") } : {}),
   log: (text) => globalThis.logs.push(text),
   typescript,
 });
@@ -111,12 +112,67 @@ function typescriptFile(path: string): Buffer | null {
 /** Stands in for typescript.js with an API that isn't TypeScript's. */
 const WRONG_TYPESCRIPT = "module.exports = { version: '0.0.0', createLanguageService() {} };";
 
-async function serve(dir: string, requested: string[]): Promise<{ server: Server; url: string }> {
+/** Fake CDN packages for #525: esm.sh X-TypeScript-Types, package.json types, and untyped. */
+const CDN_FILES: Record<string, { type: string; body: string; headers?: Record<string, string> }> = {
+  // 1. esm.sh style: entry JS carries X-TypeScript-Types header pointing to index.d.ts,
+  //    which pulls in a relative .d.ts via `.js` import and a `/// <reference path="..." />`.
+  "/cdn/esm-pkg@1": {
+    type: "text/javascript",
+    headers: { "x-typescript-types": "/cdn/esm-pkg@1/index.d.ts" },
+    body: "export function add(a, b) { return a + b; }\nexport function makePair(first) { return { first, second: 1, tag: true }; }\n",
+  },
+  "/cdn/esm-pkg@1/index.d.ts": {
+    type: "text/plain",
+    body: [
+      '/// <reference path="./extra.d.ts" />',
+      'export type { Pair } from "./types.js";',
+      "export function add(a: number, b: number): number;",
+      'export function makePair(first: string): import("./types.js").Pair;',
+    ].join("\n"),
+  },
+  "/cdn/esm-pkg@1/types.d.ts": {
+    type: "text/plain",
+    body: "export interface Pair { first: string; second: number; tag: ExtraTag; }\n",
+  },
+  "/cdn/esm-pkg@1/extra.d.ts": {
+    type: "text/plain",
+    body: "declare type ExtraTag = boolean;\n",
+  },
+  // 2. CDN package.json `types` entry (no X-TypeScript-Types header).
+  "/cdn/json-pkg@1": {
+    type: "text/javascript",
+    body: "export function greet(name) { return { greeting: 'hi ' + name, count: 1 }; }\n",
+  },
+  "/cdn/json-pkg@1/package.json": {
+    type: "application/json",
+    body: JSON.stringify({ name: "json-pkg", version: "1.0.0", types: "./dist/index.d.ts" }),
+  },
+  "/cdn/json-pkg@1/dist/index.d.ts": {
+    type: "text/plain",
+    body: 'import type { Greeting } from "./types";\nexport function greet(name: string): Greeting;\n',
+  },
+  "/cdn/json-pkg@1/dist/types.d.ts": {
+    type: "text/plain",
+    body: "export interface Greeting { greeting: string; count: number; }\n",
+  },
+  // 3. Package without any types: stays `any`.
+  "/cdn/untyped-pkg@1": {
+    type: "text/javascript",
+    body: "export const value = 42;\n",
+  },
+  "/cdn/untyped-pkg@1/package.json": {
+    type: "application/json",
+    body: JSON.stringify({ name: "untyped-pkg", version: "1.0.0", main: "./index.js" }),
+  },
+};
+
+async function serve(dir: string, requested: string[], state = { cdnOnline: true }): Promise<{ server: Server; url: string }> {
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://x").pathname;
     requested.push(path);
     const ts = typescriptFile(path);
     const runtime = /^\/runtime\/([\w.-]+\.d\.mts)$/.exec(path)?.[1];
+    const cdn = path.startsWith("/cdn/") ? CDN_FILES[path] : undefined;
     if (path === "/") {
       res.writeHead(200, { "content-type": "text/html" }).end(PAGE);
     } else if (path === "/hang-worker.js") {
@@ -129,6 +185,8 @@ async function serve(dir: string, requested: string[]): Promise<{ server: Server
       res.writeHead(200, { "content-type": "text/plain" }).end(readFileSync(join(ROOT, "runtime", runtime)));
     } else if (/^\/(?:kernel|worker|language-worker)\.js$/.test(path)) {
       res.writeHead(200, { "content-type": "text/javascript" }).end(readFileSync(join(dir, path)));
+    } else if (cdn !== undefined && state.cdnOnline) {
+      res.writeHead(200, { "content-type": cdn.type, ...cdn.headers }).end(req.method === "HEAD" ? "" : cdn.body);
     } else {
       res.writeHead(404).end();
     }
@@ -144,7 +202,8 @@ async function open(t: { after(fn: () => unknown): void }, query = "") {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   execFileSync(process.execPath, [join(ROOT, "scripts/build-browser.mjs"), dir], { cwd: ROOT, stdio: "pipe" });
   const requested: string[] = [];
-  const { server, url } = await serve(dir, requested);
+  const state = { cdnOnline: true };
+  const { server, url } = await serve(dir, requested, state);
   t.after(() => server.close());
   const browser = await playwright![engine].launch();
   t.after(() => browser.close());
@@ -160,6 +219,10 @@ async function open(t: { after(fn: () => unknown): void }, query = "") {
   const languageWorkers = async () => (await workers()).length;
   const logs = () => page.evaluate(() => (globalThis as unknown as { logs: string[] }).logs, null);
   const shutdown = () => page.evaluate(() => (globalThis as unknown as { shutdown(): Promise<void> }).shutdown(), null);
+  const reload = async () => {
+    await page.goto(url + query);
+    await page.waitForFunction("globalThis.ready === true");
+  };
   let comms = 0;
   /** Opens a comm to `target` and sends it `data`; the answer's data. */
   const ask = async (target: string, data: object): Promise<Record<string, unknown>> => {
@@ -168,7 +231,7 @@ async function open(t: { after(fn: () => unknown): void }, query = "") {
     const replies = await request("shell", "comm_msg", { comm_id: commId, data });
     return replies.find((r) => r.type === "comm_msg")!.content.data as Record<string, unknown>;
   };
-  return { request, execute, languageWorkers, workers, logs, shutdown, requested, ask };
+  return { request, execute, languageWorkers, workers, logs, shutdown, reload, requested, state, ask };
 }
 
 const of = (replies: Reply[], type: string) => replies.filter((r) => r.type === type).map((r) => r.content);
@@ -401,4 +464,95 @@ test("each of TypeScript's lib files is fetched once", { skip }, async (t) => {
   await until("typed completion", async () => ((await completeU(request)).matches as string[]).includes("age") ? true : undefined);
   const fetched = requested.filter((p) => /^\/ts\/lib\//.test(p)).map((p) => p.slice("/ts/lib/".length));
   assert.deepEqual([...fetched].sort(), esnextLibFiles().sort());
+});
+
+test("imported package types via X-TypeScript-Types and package.json give completion and errors, then work offline (#525)", { skip }, async (t) => {
+  const { request, execute, ask, shutdown, reload, requested, state } = await open(t, "?cdn=/cdn/");
+  // 1. esm.sh X-TypeScript-Types + referenced ./types.js and /// <reference path="./extra.d.ts" />
+  await execute('import { add, makePair } from "npm:esm-pkg@1";\nconst pair = makePair("io");');
+  const completePair = async () => of(await request("shell", "complete_request", { code: "pair.", cursor_pos: 5 }), "complete_reply")[0];
+  const typed = await until("typed completion from X-TypeScript-Types", async () => {
+    const reply = await completePair();
+    return (reply.matches as string[]).includes("second") ? reply : undefined;
+  });
+  assert.ok((typed.matches as string[]).includes("first"));
+  assert.ok((typed.matches as string[]).includes("tag"));
+
+  const esmError = await until("type error from X-TypeScript-Types", async () => {
+    const d = (await ask(DIAGNOSTICS, { request: 1, code: "const bad: string = add(1, 2);" })).diagnostics as { code: number }[] | null;
+    return d && d.length > 0 ? d : undefined;
+  });
+  assert.deepEqual(esmError.map((d) => d.code), [2322]);
+
+  // Tooltip and signature help also reflect the fetched types.
+  const sig = await ask(LANGUAGE, { request: 2, op: "signature", code: "add(1, ", cursor: 7 });
+  assert.match(String((sig.signature as { label: string } | null)?.label), /add\(a: number, b: number\): number/);
+
+  // 2. CDN package.json `types` entry (no X-TypeScript-Types header) + referenced file
+  await execute('import { greet } from "npm:json-pkg@1";\nconst g = greet("world");');
+  const jsonTyped = await until("typed completion from package.json types", async () => {
+    const reply = of(await request("shell", "complete_request", { code: "g.", cursor_pos: 2 }), "complete_reply")[0];
+    return (reply.matches as string[]).includes("greeting") ? reply : undefined;
+  });
+  assert.ok((jsonTyped.matches as string[]).includes("count"));
+
+  const jsonError = (await ask(DIAGNOSTICS, { request: 3, code: "const n: number = g.greeting;" })).diagnostics as { code: number }[];
+  assert.deepEqual(jsonError.map((d) => d.code), [2322]);
+
+  // 3. Offline after first load: disable CDN on the server and reload into a fresh Worker.
+  await shutdown();
+  state.cdnOnline = false;
+  const beforeOffline = requested.length;
+  await reload();
+
+  const offlineCode = [
+    'import { add, makePair } from "npm:esm-pkg@1";',
+    'import { greet } from "npm:json-pkg@1";',
+    "const bad: string = add(1, 2);",
+    'const p: number = makePair("a").tag;',
+    'const n: number = greet("a").greeting;',
+  ].join("\n");
+  const cachedOffline = await until("offline cached type errors", async () => {
+    const d = (await ask(DIAGNOSTICS, { request: 4, code: offlineCode })).diagnostics as { code: number }[] | null;
+    return d && d.length > 0 ? d : undefined;
+  });
+  assert.deepEqual(cachedOffline.map((d) => d.code), [2322, 2322, 2322]);
+
+  const offlineComplete = 'import { makePair } from "npm:esm-pkg@1";\nmakePair("a").';
+  const offlineReply = of(await request("shell", "complete_request", { code: offlineComplete, cursor_pos: offlineComplete.length }), "complete_reply")[0];
+  assert.ok((offlineReply.matches as string[]).includes("second"));
+
+  const offlineJsonComplete = 'import { greet } from "npm:json-pkg@1";\ngreet("a").';
+  const offlineJsonReply = of(await request("shell", "complete_request", { code: offlineJsonComplete, cursor_pos: offlineJsonComplete.length }), "complete_reply")[0];
+  assert.ok((offlineJsonReply.matches as string[]).includes("greeting"));
+
+  const offlineRequests = requested.slice(beforeOffline);
+  assert.deepEqual(
+    offlineRequests.filter((p) => p.startsWith("/cdn/")),
+    [],
+    `expected no CDN requests offline, saw: ${offlineRequests.join(", ")}`,
+  );
+});
+
+test("package type fetch failures stay silent and leave imports as any (#525)", { skip }, async (t) => {
+  const { execute, ask, logs } = await open(t, "?cdn=/cdn/");
+  await execute("const ok: number = 1;");
+  await until("diagnostics ready", async () => {
+    const ans = await ask(DIAGNOSTICS, { request: 1, code: "const s: string = ok;" });
+    return ans.diagnostics === null ? undefined : ans;
+  });
+
+  // Untyped package (no types in package.json) and 404 package both stay `any`.
+  const code = [
+    'import { value } from "npm:untyped-pkg@1";',
+    'import { nope } from "npm:missing-pkg@1";',
+    "const x: string = value.anything(nope.alsoAny);",
+  ].join("\n");
+  assert.deepEqual((await ask(DIAGNOSTICS, { request: 2, code })).diagnostics, []);
+  // Wait a bit to confirm async fetch failure does not break subsequent diagnostics or mark service unavailable.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.deepEqual((await ask(DIAGNOSTICS, { request: 3, code })).diagnostics, []);
+  const err = (await ask(DIAGNOSTICS, { request: 4, code: "const s: string = ok;" })).diagnostics as { code: number }[];
+  assert.deepEqual(err.map((d) => d.code), [2322]);
+  assert.ok(!(await logs()).some((line) => /unavailable/.test(line)), (await logs()).join("\n"));
 });

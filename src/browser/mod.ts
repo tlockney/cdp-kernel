@@ -146,8 +146,11 @@ export function startBrowserKernel(options: BrowserKernelOptions): BrowserKernel
 function languageClient(options: BrowserKernelOptions, log: (text: string) => void): LanguageClient {
   const typescript = options.typescript!;
   const { module, libs, runtimeTypes, budgetMs } = typescript;
-  const base = typescript.base ?? options.base ?? globalThis.location?.href ?? "file:///";
+  const targetBase = new URL(options.base ?? globalThis.location?.href ?? "file:///").href;
+  const base = typescript.base ?? targetBase;
   const url = (u: string) => new URL(u, base).href;
+  const cdn = options.cdn === undefined ? undefined : new URL(options.cdn, targetBase).href;
+  const modules = options.modules === undefined ? undefined : { ...options.modules };
   return new LanguageClient({
     budgetMs,
     log,
@@ -158,6 +161,9 @@ function languageClient(options: BrowserKernelOptions, log: (text: string) => vo
         module: url(module),
         libs: url(libs),
         runtimeTypes: runtimeTypes === undefined ? undefined : url(runtimeTypes),
+        base: targetBase,
+        cdn,
+        modules,
       } satisfies LanguageInit);
       return {
         postMessage: (message) => worker.postMessage(message),

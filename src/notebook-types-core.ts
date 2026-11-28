@@ -70,6 +70,8 @@ export interface NotebookTypesHost {
   libDir?: string;
   /** compilerOptions.lib; lib.esnext.d.ts by default. */
   lib?: string[];
+  /** Called once per newly seen import specifier in executed or checked cells (#525). */
+  onImportSpecifiers?: (specifiers: readonly string[]) => void;
 }
 
 /** A path made of `parts`, joined with `/` and with `.` and `..` resolved. */
@@ -218,12 +220,16 @@ export class NotebookTypesCore {
   readonly #globalsFile: string;
   readonly #service: TS.LanguageService;
   #compilerOptions: TS.CompilerOptions;
-  readonly #resolutionCache: TS.ModuleResolutionCache;
+  #resolutionCache: TS.ModuleResolutionCache;
   /** ts.sys, plus the remote modules a Deno target fetched (virtual paths). */
   readonly #resolutionHost: TS.ModuleResolutionHost;
   readonly #cells: Cell[] = [];
   /** Specifiers executed cells imported: the target has fetched them. */
   readonly #imported = new Set<string>();
+  /** Remote module specifiers resolved to virtual declaration files (#525). */
+  readonly #remoteModules = new Map<string, string>();
+  /** Specifiers already reported via `onImportSpecifiers`. */
+  readonly #reportedSpecifiers = new Set<string>();
   /** Declaration files that exist only in memory, e.g. `deno types`. */
   readonly #virtualTypes = new Map<string, string>();
   #typeFiles: string[];
@@ -281,6 +287,20 @@ export class NotebookTypesCore {
         this.#imported.add(stmt.moduleSpecifier.text);
       }
     }
+    this.#noteImports(code);
+  }
+
+  /** Registers a remote module specifier to resolve to a virtual declaration path (#525). */
+  addResolvedModule(specifier: string, filePath: string): void {
+    if (this.#remoteModules.get(specifier) === filePath) return;
+    this.#remoteModules.set(specifier, filePath);
+    // Earlier lookups cached a miss before the package types finished loading.
+    this.#resolutionCache = this.#ts.createModuleResolutionCache(
+      this.#options.notebookDir,
+      (f) => f,
+      this.#compilerOptions,
+    );
+    this.#projectVersion++;
   }
 
   /** The runtime restarted and lost its state. */
@@ -531,6 +551,7 @@ export class NotebookTypesCore {
 
   /** Sets the virtual file to the history plus `code`; returns where `code` starts. */
   #setDocument(code: string): number {
+    this.#noteImports(code);
     const history = this.#history(new Set(this.#statements(code).flatMap((s) => s.names)));
     const text = `${PREFIX}${history}\n`;
     this.#text = text + code;
@@ -569,6 +590,7 @@ export class NotebookTypesCore {
    * `cell`, as at runtime. Cells after it are kept whole: they hold uses.
    */
   #setNotebook(texts: string[], cell: number) {
+    for (const t of texts) this.#noteImports(t);
     const cells: Cell[] = texts.map((code) => ({ code, statements: this.#statements(code) }));
     const seen = new Set(cells[cell].statements.flatMap((s) => s.names));
     const pieces = [...this.#withoutRedeclared(cells.slice(0, cell), seen), ...texts.slice(cell)];
@@ -675,6 +697,21 @@ export class NotebookTypesCore {
     return [];
   }
 
+  /** Notifies `onImportSpecifiers` for any newly observed module specifiers in `code`. */
+  #noteImports(code: string): void {
+    const notify = this.#hostOptions.onImportSpecifiers;
+    if (notify === undefined) return;
+    const info = this.#ts.preProcessFile(code, true, true);
+    const fresh: string[] = [];
+    for (const file of info.importedFiles) {
+      if (!this.#reportedSpecifiers.has(file.fileName)) {
+        this.#reportedSpecifiers.add(file.fileName);
+        fresh.push(file.fileName);
+      }
+    }
+    if (fresh.length > 0) notify(fresh);
+  }
+
   /** Where an npm:/jsr: import is installed in the kernel's npm cache, if it is. */
   #cachedPackage(specifier: string): { dir: string; alias: string; subpath: string } | null {
     return this.#hostOptions.cachedPackage?.(specifier) ?? null;
@@ -682,6 +719,17 @@ export class NotebookTypesCore {
 
   #resolve(name: string, containingFile: string): TS.ResolvedModuleWithFailedLookupLocations {
     const ts = this.#ts;
+    const remote = this.#remoteModules.get(name);
+    if (remote !== undefined) {
+      const extension = extensionOf(ts, remote);
+      if (extension !== undefined) {
+        return { resolvedModule: { resolvedFileName: remote, extension, isExternalLibraryImport: true } };
+      }
+    }
+    const typesRoot = /^(\/types\/https?\/[^/]+)\//.exec(containingFile)?.[1];
+    if (typesRoot !== undefined && name.startsWith("/") && !name.startsWith("/types/")) {
+      return ts.resolveModuleName(typesRoot + name, containingFile, this.#compilerOptions, this.#resolutionHost, this.#resolutionCache);
+    }
     const deno = this.#options.deno;
     // Only what an executed cell imported (or a fetched module imports):
     // looking a specifier up never makes Deno fetch something new.
@@ -745,7 +793,19 @@ export class NotebookTypesCore {
 
 /** The extension TypeScript should load a remote module's path as, if it's one it can. */
 function extensionOf(ts: typeof TS, path: string): TS.Extension | undefined {
-  for (const ext of [ts.Extension.Dts, ts.Extension.Dmts, ts.Extension.Ts, ts.Extension.Mts, ts.Extension.Tsx, ts.Extension.Js, ts.Extension.Mjs, ts.Extension.Jsx]) {
+  for (const ext of [
+    ts.Extension.Dts,
+    ts.Extension.Dmts,
+    ts.Extension.Dcts,
+    ts.Extension.Ts,
+    ts.Extension.Mts,
+    ts.Extension.Cts,
+    ts.Extension.Tsx,
+    ts.Extension.Js,
+    ts.Extension.Mjs,
+    ts.Extension.Cjs,
+    ts.Extension.Jsx,
+  ]) {
     if (path.endsWith(ext)) return ext;
   }
   return undefined;

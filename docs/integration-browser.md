@@ -193,9 +193,17 @@ declarations leave out is an error in the diagnostics although the Worker
 has it; it can be added to that file. The `jupyter` types are 51 KB (17 KB
 gzipped file by file). TypeScript itself is 9.1 MB (1.6 MB gzipped).
 
-An import of a package is `any`: the language service doesn't fetch
-types for `npm:` or esm.sh imports, and doesn't report them as errors.
-A relative import that isn't served to the language service is an error
+For imported packages (`npm:`, `jsr:`, bare names resolved through
+`cdn`, and HTTP(S) URLs), the language Worker fetches the package's
+declaration files over HTTP: from `esm.sh`'s `X-TypeScript-Types`
+header, from a direct TypeScript URL, or from the package's
+`package.json` (`exports`, `types` or `typings`) on the CDN, along with
+the declaration files they reference. Loaded declarations are added as
+virtual files and stored in Cache Storage (`cdp-kernel-types-v1`) when
+available, so previously fetched packages stay typed offline in later
+sessions. If a package has no types, or fetching fails, the failure is
+silent and the import stays `any` without reporting an error. A relative
+import that isn't served to the language service is still an error
 (there are no files to resolve it from).
 
 ## What works
@@ -254,10 +262,6 @@ A relative import that isn't served to the language service is an error
 - `prompt()` and `confirm()` answer as when the frontend has no stdin. A
   synchronous prompt in a Worker needs `SharedArrayBuffer` and
   `Atomics.wait`, so a cross-origin isolated page (COOP and COEP headers).
-- Types for packages. In the browser's language service an import from
-  esm.sh or `npm:` is `any`, without an error; fetching the package's
-  types is not done yet
-  ([#525](https://github.com/tlockney/cdp-kernel/issues/525)).
 - The visual debugger: a page has no CDP.
 - `Deno.*` and Node's builtins, beyond what esm.sh polyfills for `node:`
   imports.
