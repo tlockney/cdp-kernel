@@ -12,6 +12,7 @@ import { LanguageServer } from "../language-server.ts";
 import type { WorkerRequest, WorkerResponse } from "../language-client.ts";
 import { kernelGlobals, NotebookTypesCore, posixJoin, type TypesFileSystem } from "../notebook-types-core.ts";
 import { BROWSER_GLOBALS } from "./language-globals.ts";
+import { type ModulesMap, PackageTypesLoader } from "./package-types.ts";
 
 /** What the page sends first (see LanguageInit in src/browser/mod.ts). */
 export interface LanguageInit {
@@ -22,6 +23,12 @@ export interface LanguageInit {
   libs: string;
   /** URL of the directory with the kernel's runtime/*.d.mts files, if the page serves them. */
   runtimeTypes?: string;
+  /** Base URL cell imports and `modules` resolve against (#525). */
+  base?: string;
+  /** CDN base URL for npm:, jsr: and bare imports (#525). */
+  cdn?: string;
+  /** Specifiers mapped directly to URLs by the page (#525). */
+  modules?: ModulesMap;
 }
 
 const NOTEBOOK_DIR = "/notebook";
@@ -30,6 +37,8 @@ const RUNTIME_DIR = "/runtime";
 
 const post = (response: WorkerResponse) => (self as unknown as { postMessage(message: unknown): void }).postMessage(response);
 const server = new LanguageServer(post);
+let loader: PackageTypesLoader | null = null;
+let messageQueue: Promise<void> = Promise.resolve();
 
 const directory = (url: string) => (url.endsWith("/") ? url : `${url}/`);
 
@@ -123,8 +132,21 @@ async function start(init: LanguageInit): Promise<void> {
     types: [],
     typeFiles: [],
     globals: kernelGlobals(display),
-  }, { fs: memoryFileSystem(files), join: posixJoin, libDir: LIB_DIR });
+  }, {
+    fs: memoryFileSystem(files),
+    join: posixJoin,
+    libDir: LIB_DIR,
+    onImportSpecifiers: (specifiers) => loader?.ensure(specifiers),
+  });
   service.addVirtualTypeFile("__cdpk_browser__.d.ts", BROWSER_GLOBALS);
+  loader = new PackageTypesLoader({
+    ts,
+    service,
+    files,
+    base: init.base ?? globalThis.location?.href ?? "file:///",
+    cdn: init.cdn,
+    modules: init.modules,
+  });
   server.start(service);
   post({ loaded: ts.version });
 }
@@ -137,8 +159,20 @@ function startOrGiveUp(init: LanguageInit): void {
   });
 }
 
+async function handleRequest(data: WorkerRequest): Promise<void> {
+  if (loader !== null && data.type !== "cell" && data.type !== "reset") {
+    const texts = "cells" in data ? data.cells : [data.code];
+    for (const text of texts) loader.ensure(loader.extractSpecifiers(text));
+    await loader.waitBriefly();
+  }
+  server.handle(data);
+}
+
 self.addEventListener("message", (event) => {
   const data = (event as MessageEvent).data as WorkerRequest | LanguageInit;
-  if (data.type === "init") startOrGiveUp(data);
-  else server.handle(data);
+  if (data.type === "init") {
+    startOrGiveUp(data);
+    return;
+  }
+  messageQueue = messageQueue.then(() => handleRequest(data)).catch(() => {});
 });

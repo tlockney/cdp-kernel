@@ -6,6 +6,15 @@ Issue and pull request numbers refer to
 
 ## Unreleased
 
+- The browser kernel's TypeScript language service now fetches declaration
+  files for imported packages (`npm:`, `jsr:`, bare names and HTTP(S) URLs)
+  from `X-TypeScript-Types` headers, direct TypeScript URLs, or CDN
+  `package.json` `types`/`exports` entries along with referenced files, and
+  caches them in Cache Storage for offline use. Failures stay silent and
+  leave the import as `any`. See
+  [The browser](https://cdp-kernel.org/docs/integration-browser#typescript-language-service)
+  ([#525](https://github.com/tlockney/cdp-kernel/issues/525)).
+
 ## 0.16.0 (2026-11-26)
 
 - In the browser kernel, `jupyter.sql` no longer hangs when DuckDB's
