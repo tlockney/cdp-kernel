@@ -33,6 +33,10 @@ jobs:
     name: test (${{ matrix.os }}, ${{ matrix.channel }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    # Experimental (`next`) is early warning only: neither a canary/nightly
+    # setup failure (such as a missing canary archive) nor a test failure fails
+    # the run or triggers `report`.
+    continue-on-error: ${{ matrix.experimental == true }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,6 +45,7 @@ jobs:
       - name: Node nightly major
         id: nightly
         if: matrix.channel == 'next'
+        continue-on-error: ${{ matrix.experimental == true }}
         run: |
           major=$(curl -fsSL https://nodejs.org/download/nightly/index.json | jq -r '.[0].version' | sed -E 's/^v([0-9]+).*/\1/')
           echo "major=$major" >> "$GITHUB_OUTPUT"
@@ -54,17 +59,25 @@ jobs:
         run: |
           version=$(curl -fsSL https://nodejs.org/dist/index.json | jq -r 'map(.version | select(contains("-") | not)) | .[0] | ltrimstr("v")')
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - id: setup-node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        continue-on-error: ${{ matrix.experimental == true }}
         with:
           node-version: ${{ matrix.channel == 'next' && format('{0}-nightly', steps.nightly.outputs.major) || steps.stable.outputs.version }}
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+      - id: setup-deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        continue-on-error: ${{ matrix.experimental == true }}
         with:
           deno-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - id: setup-bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        continue-on-error: ${{ matrix.experimental == true }}
         with:
           bun-version: ${{ matrix.channel == 'next' && 'canary' || 'latest' }}
-      - name: celld
+      - id: celld
+        name: celld
+        continue-on-error: ${{ matrix.experimental == true }}
         run: |
           case "$RUNNER_OS" in
             Linux) asset=celld-x86_64-unknown-linux-gnu.gz ;;
@@ -84,12 +97,12 @@ jobs:
             echo
             echo "| Runtime | Version |"
             echo "|---|---|"
-            echo "| Node | $(node --version) |"
-            echo "| Deno | $(deno --version | head -1) |"
-            echo "| Bun | $(bun --version) |"
-            echo "| workerd | $(node_modules/.bin/workerd --version) |"
-            echo "| wrangler | $(node_modules/.bin/wrangler --version | tail -1) |"
-            echo "| celld | $("$HOME/.local/bin/celld" --version) |"
+            echo "| Node | $(command -v node >/dev/null && node --version || echo unavailable) |"
+            echo "| Deno | $(command -v deno >/dev/null && deno --version | head -1 || echo unavailable) |"
+            echo "| Bun | $(command -v bun >/dev/null && bun --version || echo unavailable) |"
+            echo "| workerd | $([ -x node_modules/.bin/workerd ] && node_modules/.bin/workerd --version || echo unavailable) |"
+            echo "| wrangler | $([ -x node_modules/.bin/wrangler ] && node_modules/.bin/wrangler --version | tail -1 || echo unavailable) |"
+            echo "| celld | $([ -x "$HOME/.local/bin/celld" ] && "$HOME/.local/bin/celld" --version || echo unavailable) |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
       - id: check
         run: npm run check
@@ -103,13 +116,21 @@ jobs:
         timeout-minutes: 10
         continue-on-error: ${{ matrix.experimental == true }}
       - name: Early-warning result
-        if: matrix.experimental
+        if: matrix.experimental && always()
         run: |
-          for step in "check:${{ steps.check.outcome }}" "test:${{ steps.unit.outcome }}" "e2e:${{ steps.e2e.outcome }}"; do
+          for step in \
+            "nightly:${{ steps.nightly.outcome }}" \
+            "setup-node:${{ steps.setup-node.outcome }}" \
+            "setup-deno:${{ steps.setup-deno.outcome }}" \
+            "setup-bun:${{ steps.setup-bun.outcome }}" \
+            "celld:${{ steps.celld.outcome }}" \
+            "check:${{ steps.check.outcome }}" \
+            "test:${{ steps.unit.outcome }}" \
+            "e2e:${{ steps.e2e.outcome }}"; do
             name=${step%%:*} outcome=${step#*:}
             if [ "$outcome" != success ]; then
-              echo "::warning::npm run $name: $outcome on Node nightly / Deno canary / Bun canary"
-              echo "- \`npm run $name\`: $outcome" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning::$name: $outcome on Node nightly / Deno canary / Bun canary"
+              echo "- \`$name\`: $outcome" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
