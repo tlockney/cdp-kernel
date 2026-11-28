@@ -155,7 +155,27 @@ const CDN_FILES: Record<string, { type: string; body: string; headers?: Record<s
     type: "text/plain",
     body: "export interface Greeting { greeting: string; count: number; }\n",
   },
-  // 3. Package without any types: stays `any`.
+  // 3. Package whose .d.ts imports a direct HTTP .d.ts URL AND `node:events` (which 404s):
+  //    direct .d.ts must still be fetched and `node:events` must not abort the closure.
+  "/cdn/direct-dep@1": {
+    type: "text/javascript",
+    headers: { "x-typescript-types": "/cdn/direct-dep@1/index.d.ts" },
+    body: "export function label() { return { text: 'ok' }; }\n",
+  },
+  "/cdn/direct-dep@1/index.d.ts": {
+    type: "text/plain",
+    body: [
+      'import type { EventEmitter } from "node:events";',
+      'import type { DirectLabel } from "__ORIGIN__/cdn/direct-dep@1/dep.d.ts";',
+      "export function label(): DirectLabel;",
+      "export type Emitter = EventEmitter;",
+    ].join("\n"),
+  },
+  "/cdn/direct-dep@1/dep.d.ts": {
+    type: "text/plain",
+    body: "export interface DirectLabel { text: string; }\n",
+  },
+  // 4. Package without any types: stays `any`.
   "/cdn/untyped-pkg@1": {
     type: "text/javascript",
     body: "export const value = 42;\n",
@@ -186,7 +206,9 @@ async function serve(dir: string, requested: string[], state = { cdnOnline: true
     } else if (/^\/(?:kernel|worker|language-worker)\.js$/.test(path)) {
       res.writeHead(200, { "content-type": "text/javascript" }).end(readFileSync(join(dir, path)));
     } else if (cdn !== undefined && state.cdnOnline) {
-      res.writeHead(200, { "content-type": cdn.type, ...cdn.headers }).end(req.method === "HEAD" ? "" : cdn.body);
+      const origin = `http://${req.headers.host ?? "127.0.0.1"}`;
+      const body = cdn.body.replaceAll("__ORIGIN__", origin);
+      res.writeHead(200, { "content-type": cdn.type, ...cdn.headers }).end(req.method === "HEAD" ? "" : body);
     } else {
       res.writeHead(404).end();
     }
@@ -467,7 +489,8 @@ test("each of TypeScript's lib files is fetched once", { skip }, async (t) => {
 });
 
 test("imported package types via X-TypeScript-Types and package.json give completion and errors, then work offline (#525)", { skip }, async (t) => {
-  const { request, execute, ask, shutdown, reload, requested, state } = await open(t, "?cdn=/cdn/");
+  // Also tests `cdn` without a trailing slash (`/cdn`), matching BrowserTarget's normalization.
+  const { request, execute, ask, shutdown, reload, requested, state } = await open(t, "?cdn=/cdn");
   // 1. esm.sh X-TypeScript-Types + referenced ./types.js and /// <reference path="./extra.d.ts" />
   await execute('import { add, makePair } from "npm:esm-pkg@1";\nconst pair = makePair("io");');
   const completePair = async () => of(await request("shell", "complete_request", { code: "pair.", cursor_pos: 5 }), "complete_reply")[0];
@@ -498,6 +521,13 @@ test("imported package types via X-TypeScript-Types and package.json give comple
 
   const jsonError = (await ask(DIAGNOSTICS, { request: 3, code: "const n: number = g.greeting;" })).diagnostics as { code: number }[];
   assert.deepEqual(jsonError.map((d) => d.code), [2322]);
+
+  // 2b. Direct HTTP .d.ts dependency + `node:events` import inside a .d.ts (and cdn without trailing /).
+  const directErr = await until("direct HTTP .d.ts dependency error", async () => {
+    const d = (await ask(DIAGNOSTICS, { request: 31, code: 'import { label } from "npm:direct-dep@1";\nconst n: number = label().text;' })).diagnostics as { code: number }[] | null;
+    return d && d.length > 0 ? d : undefined;
+  });
+  assert.deepEqual(directErr.map((d) => d.code), [2322]);
 
   // 3. Offline after first load: disable CDN on the server and reload into a fresh Worker.
   await shutdown();

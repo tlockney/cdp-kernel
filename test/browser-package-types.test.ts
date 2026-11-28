@@ -80,6 +80,14 @@ test("packageJsonCandidates finds package.json URLs for npm:, jsr:, bare and HTT
     packageJsonCandidates("https://cdn.example.com/pkg@1", "https://cdn.example.com/pkg@1", "https://esm.sh/"),
     [{ manifestUrl: "https://cdn.example.com/pkg@1/package.json", subpath: "." }],
   );
+  assert.deepEqual(
+    packageJsonCandidates("https://cdn.example.com/pkg@1?target=es2022", "https://cdn.example.com/pkg@1?target=es2022", "https://esm.sh/"),
+    [{ manifestUrl: "https://cdn.example.com/pkg@1/package.json", subpath: "." }],
+  );
+  assert.deepEqual(
+    packageJsonCandidates("node:events", "https://esm.sh/node:events", "https://esm.sh/"),
+    [{ manifestUrl: "https://esm.sh/node:events/package.json", subpath: "." }],
+  );
 });
 
 test("resolvePackageTypesField reads exports conditions, types and typings", () => {

@@ -81,20 +81,27 @@ export function packageJsonCandidates(
         : specifier;
     const parsed = parsePackageName(stripped);
     if (parsed !== null) {
-      const root = new URL(`${isJsr ? "jsr/" : ""}${parsed.pkg}/`, cdnDir).href;
-      return [{
-        manifestUrl: new URL("package.json", root).href,
-        subpath: parsed.subpath ? `./${parsed.subpath}` : ".",
-      }];
+      try {
+        // Prefix with `./` so names containing `:` (such as `node:events`) stay
+        // relative to `cdnDir` instead of being parsed as a URL scheme.
+        const root = new URL(`./${isJsr ? "jsr/" : ""}${parsed.pkg}/`, cdnDir).href;
+        return [{
+          manifestUrl: new URL("package.json", root).href,
+          subpath: parsed.subpath ? `./${parsed.subpath}` : ".",
+        }];
+      } catch {
+        return [];
+      }
     }
   }
   try {
     const u = new URL(resolvedUrl);
     if (u.protocol !== "http:" && u.protocol !== "https:") return [];
+    const cleanUrl = `${u.origin}${u.pathname}`;
     if (/\.[cm]?js$/i.test(u.pathname)) {
-      return [{ manifestUrl: new URL("package.json", resolvedUrl).href, subpath: "." }];
+      return [{ manifestUrl: new URL("package.json", cleanUrl).href, subpath: "." }];
     }
-    const baseDir = resolvedUrl.endsWith("/") ? resolvedUrl : `${resolvedUrl}/`;
+    const baseDir = cleanUrl.endsWith("/") ? cleanUrl : `${cleanUrl}/`;
     return [{ manifestUrl: new URL("package.json", baseDir).href, subpath: "." }];
   } catch {
     return [];
@@ -243,7 +250,8 @@ export class PackageTypesLoader {
     this.#service = options.service;
     this.#files = options.files;
     this.#base = options.base;
-    this.#cdn = options.cdn ?? DEFAULT_CDN;
+    const rawCdn = options.cdn ?? DEFAULT_CDN;
+    this.#cdn = rawCdn.endsWith("/") ? rawCdn : `${rawCdn}/`;
     this.#modules = options.modules;
   }
 
@@ -413,17 +421,29 @@ export class PackageTypesLoader {
     if (fallbackPath === null) return null;
 
     let resolvedEntryPath: string | null = null;
-    const queue: { candidates: string[]; isEntry?: boolean }[] = [{ candidates: [entryUrl], isEntry: true }];
+    // Separate from `seenUrls` so a dependency whose discovered entry URL equals
+    // its import specifier (e.g. a direct `.d.ts` HTTP URL) is still fetched.
+    const seenDeps = new Set<string>();
+    const queue: { candidates: string[]; isEntry?: boolean; specifier?: string }[] = [
+      { candidates: [entryUrl], isEntry: true },
+    ];
     while (queue.length > 0 && loaded.size < MAX_CLOSURE_FILES) {
       const item = queue.shift()!;
       const fetched = await this.#fetchFirst(item.candidates, seenUrls, signal);
       if (fetched === null) continue;
-      if (fetched.alreadyLoaded) continue;
+      if (fetched.alreadyLoaded) {
+        const existing = loaded.get(fetched.url);
+        if (item.specifier !== undefined && existing !== undefined) {
+          mappings.push([item.specifier, existing.path]);
+        }
+        continue;
+      }
 
       const vPath = virtualPathForUrl(fetched.url);
       const originPrefix = virtualOriginPrefix(fetched.url);
       if (vPath === null || originPrefix === null) continue;
       if (item.isEntry) resolvedEntryPath = vPath;
+      if (item.specifier !== undefined) mappings.push([item.specifier, vPath]);
       const text = rewriteRootReferencePaths(fetched.text, originPrefix);
       loaded.set(fetched.url, { url: fetched.url, path: vPath, text });
 
@@ -433,28 +453,24 @@ export class PackageTypesLoader {
         if (/^(?:\.{0,2}\/|\/)/.test(ref)) {
           queue.push({ candidates: referenceCandidates(ref, fetched.url) });
         } else if (/^https?:\/\//i.test(ref)) {
-          if (!seenUrls.has(ref) && loaded.size + queue.length < MAX_CLOSURE_FILES) {
-            seenUrls.add(ref);
-            const subUrl = await this.#discoverEntryUrl(ref, ref, signal);
-            if (subUrl !== null) {
-              const subPath = virtualPathForUrl(subUrl);
-              if (subPath !== null) {
-                mappings.push([ref, subPath]);
-                queue.push({ candidates: [subUrl] });
-              }
+          if (!seenDeps.has(ref) && loaded.size + queue.length < MAX_CLOSURE_FILES) {
+            seenDeps.add(ref);
+            try {
+              const subUrl = await this.#discoverEntryUrl(ref, ref, signal);
+              if (subUrl !== null) queue.push({ candidates: [subUrl], specifier: ref });
+            } catch {
+              // One unreachable dependency must not abort the parent package.
             }
           }
         } else if (isFetchableSpecifier(ref, this.#modules) && loaded.size + queue.length < MAX_CLOSURE_FILES) {
           const resolvedDep = resolveSpecifier(ref, fetched.url, this.#cdn, this.#modules);
-          if (!seenUrls.has(resolvedDep)) {
-            seenUrls.add(resolvedDep);
-            const subUrl = await this.#discoverEntryUrl(ref, resolvedDep, signal);
-            if (subUrl !== null) {
-              const subPath = virtualPathForUrl(subUrl);
-              if (subPath !== null) {
-                mappings.push([ref, subPath]);
-                queue.push({ candidates: [subUrl] });
-              }
+          if (!seenDeps.has(resolvedDep)) {
+            seenDeps.add(resolvedDep);
+            try {
+              const subUrl = await this.#discoverEntryUrl(ref, resolvedDep, signal);
+              if (subUrl !== null) queue.push({ candidates: [subUrl], specifier: ref });
+            } catch {
+              // One unreachable dependency must not abort the parent package.
             }
           }
         }
@@ -467,9 +483,9 @@ export class PackageTypesLoader {
     candidates: string[],
     seenUrls: Set<string>,
     signal: AbortSignal,
-  ): Promise<{ alreadyLoaded: true } | { alreadyLoaded: false; url: string; text: string } | null> {
+  ): Promise<{ alreadyLoaded: true; url: string } | { alreadyLoaded: false; url: string; text: string } | null> {
     for (const url of candidates) {
-      if (seenUrls.has(url)) return { alreadyLoaded: true };
+      if (seenUrls.has(url)) return { alreadyLoaded: true, url };
       seenUrls.add(url);
       const res = await this.#tryFetch(url, "GET", signal);
       if (!res?.ok) {

@@ -174,5 +174,5 @@ self.addEventListener("message", (event) => {
     startOrGiveUp(data);
     return;
   }
-  messageQueue = messageQueue.then(() => handleRequest(data));
+  messageQueue = messageQueue.then(() => handleRequest(data)).catch(() => {});
 });
